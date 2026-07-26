@@ -1,0 +1,344 @@
+-- Voxel world mode: the texture terrain samples.
+--
+-- Voxel terrain is textured from the tileset atlas, so a map's colors have
+-- to live IN that atlas. Two of the three color paths already do:
+--
+--   RED++      TileRenderer.new bakes a fully recolored per-map atlas
+--              (getGbcAtlas) and hands it over as renderer.image -- nothing
+--              to do here, true GBC terrain color comes through untouched.
+--   trueColor  a mod's full-color atlas is already its own colors.
+--
+-- The SGB modes are the gap. There the atlas is raw 4-shade grayscale and
+-- the color normally arrives as a screen-space shade-remap pass over
+-- rectangular zones (PaletteFX) -- which has no meaning once the ground is
+-- geometry rather than a rectangle. So bake instead: one atlas copy per
+-- (atlas, palette), remapped through the same cutoffs the shader uses.
+--
+-- A map has exactly one world palette, so this is a handful of 128x48
+-- images for a whole session, built once and cached.
+--
+-- ANIMATED TILES (water, flowers) are the other thing this file owns. The
+-- 2D path animates them by OVERDRAWING the animated cells on top of the
+-- static tile layer each frame, which a single static mesh has no
+-- equivalent of -- the geometry samples one texture and that is that. So
+-- animate the texture: rewrite the animated tile's slot in a private copy
+-- of the atlas whenever the step advances, and every instance of that tile
+-- across the whole mesh moves at once. Which is what the Game Boy does in
+-- the first place (home/vcopy.asm rewrites the tile's VRAM bytes); the 2D
+-- overdraw is the port's workaround, not the original.
+
+local Assets = require("src.render.Assets")
+local TileRenderer = require("src.render.TileRenderer")
+
+local TerrainAtlas = {}
+
+local cache = {}
+local cacheData = {}    -- the pixels behind the atlases we baked ourselves
+local animated = {}     -- key -> one map's private, mutable animated atlas
+
+local function paletteKey(colors)
+  local parts = {}
+  for i = 1, 4 do
+    local c = colors[i]
+    parts[i] = c and (c[1] .. "," .. c[2] .. "," .. c[3]) or "-"
+  end
+  return table.concat(parts, ";")
+end
+
+-- The atlas image `map`'s terrain should sample, given the 4-color world
+-- palette it sits under (nil to leave the atlas as-is). Falls back to the
+-- renderer's own image whenever a bake is impossible -- headless, or no
+-- pixel access -- which just means grayscale terrain rather than no
+-- terrain.
+-- The static atlas for `map` under `colors`: the answer this file gave
+-- before animation existed, and the base every animated frame is patched
+-- over. Returns the image and, when we baked it ourselves, its pixels.
+local function staticAtlas(map, colors)
+  local renderer = map.renderer
+  local base = renderer and renderer.image
+  if not base then return nil end
+  -- already true color: RED++'s baked per-map atlas, or a mod's own art
+  if not colors or renderer.gbcAtlas or map.tileset.trueColor then
+    return base, false
+  end
+  if not (love.image and love.image.newImageData) then return base, false end
+
+  local path = map.tileset.image
+  local key = path .. "#" .. paletteKey(colors)
+  if cache[key] ~= nil then return cache[key] or base, cacheData[key] end
+
+  local data
+  local ok, img = pcall(function()
+    local src = Assets.imageData(path)
+    local w, h = src:getDimensions()
+    local out = love.image.newImageData(w, h)
+    for y = 0, h - 1 do
+      for x = 0, w - 1 do
+        local r, g, b, a = src:getPixel(x, y)
+        r, g, b, a = TileRenderer.recolorSample(r, g, b, a, colors)
+        out:setPixel(x, y, r, g, b, a)
+      end
+    end
+    local image = love.graphics.newImage(out)
+    image:setFilter("nearest", "nearest")
+    data = out
+    return image
+  end)
+  cache[key] = ok and img or false
+  cacheData[key] = (ok and data) or false
+  return cache[key] or base, cacheData[key]
+end
+
+-- ------------------------------------------------------------ animation --
+
+-- The four GB shades as the ORIGINAL art carries them, by the same cutoffs
+-- TileRenderer.recolorSample splits on -- so a shade learned here and a
+-- shade recolored there are the same shade.
+local function shadeOf(r)
+  if r > 0.83 then return 1 end
+  if r > 0.5 then return 2 end
+  if r > 0.17 then return 3 end
+  return 4
+end
+
+-- How this atlas recolored one tile, learned by reading the tile's slot in
+-- the raw art and in the finished atlas side by side: shade -> the colour
+-- it became.
+--
+-- Learned rather than recomputed because the two recolour paths do not
+-- share a rule -- SGB bakes one world palette over everything, RED++ picks
+-- a palette group per tile GRAPHIC -- and a flower frame arrives as its own
+-- little grayscale file that never went through either. Asking "what
+-- happened to the tile I am replacing" gets the right answer from both
+-- without this file knowing which one ran.
+local function learnShades(raw, baked, tile, perRow)
+  local sx, sy = (tile % perRow) * 8, math.floor(tile / perRow) * 8
+  local map = {}
+  for y = 0, 7 do
+    for x = 0, 7 do
+      local k = shadeOf(raw:getPixel(sx + x, sy + y))
+      if not map[k] then
+        local r, g, b, a = baked:getPixel(sx + x, sy + y)
+        map[k] = { r, g, b, a }
+      end
+    end
+  end
+  return map
+end
+
+-- One animated entry's tile slot, written into `out` at step `step`.
+local function patch(out, entry, spec, step)
+  local perRow, tile = entry.perRow, spec.tile
+  local dx, dy = (tile % perRow) * 8, math.floor(tile / perRow) * 8
+  if spec.kind == "hshift" then
+    -- the water rotate (the asm's rrca/rlca run): the tile's own pixels,
+    -- rolled sideways. Read from the UNANIMATED base, or each step would
+    -- compound on the last one's shift.
+    local o = spec.offsets[step % #spec.offsets + 1]
+    for y = 0, 7 do
+      for x = 0, 7 do
+        local r, g, b, a = entry.base:getPixel(dx + x, dy + y)
+        out:setPixel(dx + (x + o) % 8, dy + y, r, g, b, a)
+      end
+    end
+  elseif spec.kind == "frames" then
+    local path = spec.images[spec.sequence[step % #spec.sequence + 1]]
+    if not path then return end
+    local ok, frame = pcall(Assets.imageData, path)
+    if not ok or not frame then return end
+    local shades = entry.shades and entry.shades[tile]
+    for y = 0, 7 do
+      for x = 0, 7 do
+        local r, g, b, a = frame:getPixel(x, y)
+        local col = shades and shades[shadeOf(r)]
+        if col and a > 0 then r, g, b = col[1], col[2], col[3] end
+        out:setPixel(dx + x, dy + y, r, g, b, a)
+      end
+    end
+  end
+end
+
+-- The animation specs this file can serve: the two that rewrite a tile's
+-- pixels. "toggle" (the spinner-puzzle blur) is a whole-atlas swap gated on
+-- a gameplay state, and is left to the 2D path -- voxel mode does not draw
+-- the spinner rooms' tile layer any differently for it.
+local function specsFor(tileset)
+  local declared = tileset.animatedTiles
+                   or TileRenderer.defaultAnimatedTiles(tileset)
+  local out = nil
+  for _, spec in ipairs(declared or {}) do
+    local usable = spec.tile
+      and ((spec.kind == "hshift" and spec.offsets and #spec.offsets > 0)
+           or (spec.kind == "frames" and spec.images and spec.sequence
+               and #spec.sequence > 0))
+    if usable then
+      out = out or {}
+      out[#out + 1] = spec
+    end
+  end
+  return out
+end
+
+local function newEntry(map, base, baked)
+  local tileset = map.tileset
+  local specs = specsFor(tileset)
+  if not specs then return false end
+  if not (love.image and love.image.newImageData
+          and base.replacePixels) then
+    return false
+  end
+  -- the pixels the atlas texture was built from: our own SGB bake when we
+  -- made one, else whatever the engine's renderer is drawing with
+  local src = baked or TileRenderer.atlasImageData(map.renderer)
+  if not src then return false end
+
+  local ok, entry = pcall(function()
+    local w, h = src:getDimensions()
+    -- A PRIVATE copy, always. The base may be the engine's own atlas, and
+    -- the 2D path draws the static tile from it and overdraws the animated
+    -- cell on top -- rewriting the slot underneath would animate the tile
+    -- twice over there and corrupt every still frame of it.
+    local data = love.image.newImageData(w, h)
+    data:paste(src, 0, 0, 0, 0, w, h)
+    local image = love.graphics.newImage(data)
+    image:setFilter("nearest", "nearest")
+    local e = { base = src, data = data, image = image, specs = specs,
+                perRow = tileset.tilesPerRow or 16, step = nil }
+    -- the frame files are raw grayscale; learn what the atlas did to the
+    -- tile each one stands in for, so they land on the same colours
+    local recolored = baked or (map.renderer and map.renderer.gbcAtlas)
+    if recolored and not tileset.trueColor then
+      local raw = Assets.imageData(tileset.image)
+      e.shades = {}
+      for _, spec in ipairs(specs) do
+        if spec.kind == "frames" then
+          e.shades[spec.tile] = learnShades(raw, src, spec.tile, e.perRow)
+        end
+      end
+    end
+    return e
+  end)
+  return (ok and entry) or false
+end
+
+-- The atlas for this frame: the static one when nothing on this tileset
+-- animates (or anything at all goes wrong), else a private copy with the
+-- animated slots rewritten to the current step. Repatched only when the
+-- step actually changes -- three times a second, ~130 pixels of work.
+function TerrainAtlas.animate(map, colors, base, baked)
+  -- RED++ bakes a per-MAP atlas, so its animated copy is per map too and
+  -- has to be evicted with the meshes (setLive below); the shared paths key
+  -- on the tileset and palette alone, which is bounded by how many of those
+  -- exist at all.
+  local perMap = map.renderer and map.renderer.gbcAtlas and map.id or nil
+  local key = map.tileset.image .. "#a#" .. paletteKey(colors or {})
+    .. (perMap or "")
+  local entry = animated[key]
+  if entry == nil then
+    entry = newEntry(map, base, baked)
+    if entry then entry.mapId = perMap end
+    animated[key] = entry
+  end
+  if not entry then return nil end
+
+  local frame = TileRenderer.animFrame and TileRenderer.animFrame() or 0
+  -- one number for the whole entry: every spec's own step, folded together,
+  -- so a repatch happens when ANY of them turns over
+  local step = 0
+  for i, spec in ipairs(entry.specs) do
+    local n = spec.kind == "hshift" and #spec.offsets or #spec.sequence
+    step = step + (math.floor(frame / (spec.period or 20)) % n) * (16 ^ i)
+  end
+  if step ~= entry.step then
+    entry.step = step
+    local ok = pcall(function()
+      for _, spec in ipairs(entry.specs) do
+        local n = spec.kind == "hshift" and #spec.offsets or #spec.sequence
+        patch(entry.data, entry, spec,
+              math.floor(frame / (spec.period or 20)) % n)
+      end
+      entry.image:replacePixels(entry.data)
+    end)
+    if not ok then
+      animated[key] = false
+      return nil
+    end
+  end
+  return entry.image
+end
+
+function TerrainAtlas.forMap(map, colors)
+  local base, baked = staticAtlas(map, colors)
+  if not base then return nil end
+  return TerrainAtlas.animate(map, colors, base, baked) or base
+end
+
+-- The image a character model should texture from under an SGB palette.
+--
+-- In the 2D SGB modes, sprites are colorized by the screen-space
+-- shade-remap shader at blit time -- the sheet itself stays grayscale. The
+-- voxel canvas composites 1:1 with no shader pass, so a model textured
+-- straight from the sheet renders in raw DMG grays (a black-and-gray
+-- character standing in a colored room). Bake instead, exactly like the
+-- terrain above: one recolored sheet per (sheet, palette), remapped
+-- through the same cutoffs the shader uses, alpha preserved so OBJ color
+-- 0 stays transparent. Falls back to nil (caller keeps its texture) when
+-- pixels are unreachable.
+function TerrainAtlas.forSprite(path, colors)
+  if not (colors and love.image and love.image.newImageData) then
+    return nil
+  end
+  local key = "spr:" .. path .. "#" .. paletteKey(colors)
+  if cache[key] ~= nil then return cache[key] or nil end
+
+  local ok, img = pcall(function()
+    local src = Assets.imageData(path)
+    local w, h = src:getDimensions()
+    local out = love.image.newImageData(w, h)
+    for y = 0, h - 1 do
+      for x = 0, w - 1 do
+        local r, g, b, a = src:getPixel(x, y)
+        r, g, b, a = TileRenderer.recolorSample(r, g, b, a, colors)
+        out:setPixel(x, y, r, g, b, a)
+      end
+    end
+    local image = love.graphics.newImage(out)
+    image:setFilter("nearest", "nearest")
+    return image
+  end)
+  cache[key] = ok and img or false
+  return cache[key] or nil
+end
+
+-- Release the animated copies of maps outside `live` (a set of map ids),
+-- the same neighbourhood ChunkMesher bounds its meshes to and called from
+-- the same place. Only the per-map RED++ copies are held this way; the rest
+-- are keyed by tileset and palette, of which a session sees a handful.
+-- Without this a cross-region trek accumulates one atlas and one texture
+-- per map ever entered, and each pins the engine's own baked ImageData
+-- alive behind it.
+function TerrainAtlas.setLive(live)
+  for key, entry in pairs(animated) do
+    if entry and entry.mapId and not live[entry.mapId] then
+      if entry.image and entry.image.release then
+        pcall(entry.image.release, entry.image)
+      end
+      animated[key] = nil
+    end
+  end
+end
+
+function TerrainAtlas.invalidate()
+  cache = {}
+  cacheData = {}
+  for _, entry in pairs(animated) do
+    if entry and entry.image and entry.image.release then
+      pcall(entry.image.release, entry.image)
+    end
+  end
+  animated = {}
+end
+
+Assets.register(TerrainAtlas.invalidate)
+
+return TerrainAtlas

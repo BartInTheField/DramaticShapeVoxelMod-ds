@@ -1,0 +1,17 @@
+{
+  "id": "DRAMATIC_SHAPE",
+  "name": "Dramatic Shape Voxel Mod",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "game_version": "<2.0.0",
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "permissions": ["engine_internals"],
+  "affects_link": false,
+  "description": "A full 3D diorama overworld: extruded terrain, depth-buffered occlusion, voxel characters and a tilt-shift miniature pass. Registers two render pipelines (hotkeys 6 and 9); presentational only."
+}
