@@ -2,8 +2,8 @@
 -- and the manager detail pane; never by the loader's merge.
 return {
   summary = "The overworld as a 3D diorama: extruded terrain, real occlusion, voxel characters, tilt-shift miniature blur.",
-  author = "Pokemon Gen 1 Recompilation Project",
-  contact = "https://github.com/bryanthaboi/pokemon-gen1-recomp-project",
+  author = "DramaticShape",
+  contact = "https://github.com/DramaticShape/DRAMATIC_SHAPE",
   tags = { "graphics", "3d", "voxel", "render-pipeline", "presentation" },
   differences = {
     changed = {
@@ -14,7 +14,7 @@ return {
       "the VOXEL key (3) turns TILT and GBC FX off on every press -- both fight the diorama, and 3 is now the only key that reaches either",
     },
     added = {
-      "VOXEL options row and hotkey 3 (OFF / 15 / 35 / 50 degrees)",
+      "VOXEL options row and hotkey 3 (OFF / 15 / 35 / 50 / 75 degrees)",
       "T-SHIFT options row and hotkey 6 (OFF / 1 / 2 / 3), the miniature blur",
       "V-GRID on hotkey 5 and V-CURVE on hotkey 7",
       "a sky behind the diorama at the 75-degree rung, outdoor maps only, coloured by the active palette mode",
@@ -30,5 +30,5 @@ return {
   credits = {
     { who = "pret/pokered", for_ = "the tile and sprite data the geometry is derived from" },
   },
-  compat = { engine = ">=0.1.0 <2.0.0", modApi = 2 },
+  compat = { engine = ">=0.1.28 <2.0.0", modApi = 2 },
 }
