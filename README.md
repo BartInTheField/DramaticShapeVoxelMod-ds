@@ -106,8 +106,19 @@ The mod reads a few engine internals (hence `"permissions":
 - `TileRenderer.animFrame()` / `.atlasImageData()` / `.defaultAnimatedTiles()`
   — the tile-animation clock, the pixels behind the atlas texture, and the
   vanilla water/flower spec. A static mesh cannot overdraw animated cells
-  the way the tile layer does, so it animates the texture instead; all
-  three are needed to do that on the engine's own clock and colours.
+  the way the tile layer does, so it animates the texture instead, and
+  these are what let it do that on the engine's own clock and colours.
+
+  Only `defaultAnimatedTiles` is required. The other two are OPTIONAL and
+  read guarded, because an engine build is free not to carry them — this
+  one does not carry either. Missing `animFrame` freezes the tile clock at
+  step 0 (terrain stops animating in voxel mode; everything else is
+  unaffected). Missing `atlasImageData` costs nothing where the mod baked
+  the atlas itself, falls back to the tileset art where the engine is
+  drawing that art unmodified, and skips animating a RED++ per-map bake,
+  whose pixels are unreachable without the seam. None of the three may ever
+  be called unguarded: a throw inside `drawWorld` costs the player the whole
+  pipeline for the session, not one frame of moving water.
 
 ## Tests
 

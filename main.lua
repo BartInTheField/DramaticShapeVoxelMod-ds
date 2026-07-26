@@ -235,9 +235,25 @@ mod.events:on("world.block_replaced", function(payload)
   if mapId then ChunkMesher.invalidate(mapId) end
 end)
 
--- A reloaded map is rebuilt from scratch (palette pack switches, warps
--- that re-enter the same map), so its mesh is stale for the same reason.
+-- A reloaded map is rebuilt from scratch (warps that re-enter the same map,
+-- hot reload), so its mesh is stale for the same reason -- with one
+-- exception, and it is the common one.
+--
+-- A palette switch reloads the map ONLY to rebuild its atlas
+-- (PaletteFX.setMode -> reloadMap(id, "colors")). The geometry that comes
+-- back is identical: this mesher reads block layout and tile ids and never
+-- reads colour, and the palette lives entirely in the texture TerrainAtlas
+-- hands back per frame -- which is keyed BY palette, so the new colours are
+-- already built by the time the next frame draws.
+--
+-- Dropping the mesh anyway cost a visible flash of the flat 2D world on
+-- every palette toggle. Mesh builds are asynchronous, so the frames between
+-- the drop and the first finished mesh have no terrain to draw, and
+-- drawWorld returning nil IS the 2D fallback. Keeping the geometry lets the
+-- new colours land on the diorama already on screen, in one frame, which is
+-- what a palette toggle should look like from inside voxel mode.
 mod.events:on("map.reloaded", function(payload)
+  if payload and payload.reason == "colors" then return end
   local mapId = payload and (payload.mapId or (payload.map and payload.map.id))
   if mapId then ChunkMesher.invalidate(mapId) end
 end)

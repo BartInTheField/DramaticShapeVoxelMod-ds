@@ -179,6 +179,121 @@ local function specsFor(tileset)
   return out
 end
 
+-- Pixels back off a texture the engine built on the GPU and kept no copy
+-- of. LOVE 11 hands out no ImageData for an Image, so the only route is a
+-- round trip: draw it 1:1 into a canvas and read that back.
+--
+-- This runs inside the world pass, with the pipeline's own canvas bound, so
+-- the previous target is captured and put back rather than unbound -- the
+-- usual setCanvas() would drop the rest of the frame on the floor. One
+-- readback per map, cached with the entry it feeds; the atlas is a couple
+-- of hundred pixels square, so the GPU sync costs far less than the mesh
+-- build it happens alongside. Every step is guarded: a driver that refuses
+-- canvas readback costs the animation and nothing else.
+local function readback(image)
+  if not (image and love.graphics and love.graphics.newCanvas
+          and love.graphics.getCanvas) then
+    return nil
+  end
+  local prev = love.graphics.getCanvas()
+  local ok, data = pcall(function()
+    local w, h = image:getDimensions()
+    local canvas = love.graphics.newCanvas(w, h)
+    love.graphics.setCanvas(canvas)
+    love.graphics.clear(0, 0, 0, 0)
+    -- straight copy: no blending against the cleared target, no tint from
+    -- whatever colour the pass left set, or the atlas comes back wrong
+    love.graphics.setBlendMode("replace", "premultiplied")
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(image, 0, 0)
+    love.graphics.setBlendMode("alpha", "alphamultiply")
+    local out = canvas:newImageData()
+    if canvas.release then canvas:release() end
+    return out
+  end)
+  pcall(love.graphics.setCanvas, prev)
+  return ok and data or nil
+end
+
+-- The pixels behind the atlas texture the engine is drawing with, for the
+-- frames where we did not bake one ourselves (staticAtlas returns `false`
+-- for its own bake whenever the palette is absent, RED++ already baked, or
+-- the tileset is trueColor).
+--
+-- TileRenderer.atlasImageData is the engine's own accessor for exactly this
+-- and is preferred wherever the build offers it -- but like the sibling
+-- clock TileRenderer.animFrame it is an OPTIONAL seam, and a build without
+-- it has to cost us the animation, not the whole render pipeline. Reading
+-- it unguarded is what took the pass down for the session.
+--
+-- Without the seam the pixels are still recoverable, by two different
+-- routes. An atlas neither we nor RED++ replaced is the tileset art itself,
+-- so the art on disk IS what it was built from. RED++'s per-map bake exists
+-- only on the GPU -- getGbcAtlas throws its ImageData away once the texture
+-- is made -- so that one has to come back off the texture (readback below).
+local function rendererPixels(map)
+  local renderer = map.renderer
+  if not renderer then return nil end
+  if TileRenderer.atlasImageData then
+    local ok, data = pcall(TileRenderer.atlasImageData, renderer)
+    if ok and data then return data end
+  end
+  if renderer.gbcAtlas then return readback(renderer.image) end
+  local ok, data = pcall(Assets.imageData, map.tileset.image)
+  return ok and data or nil
+end
+
+-- The engine's tile-animation clock: TileRenderer's 60Hz counter, by
+-- whatever route this build offers.
+--
+-- It matters that this is the ENGINE's number and not one of our own. The
+-- 2D tile layer and this texture animate the same water off the same
+-- counter, so toggling voxel mode mid-cycle continues the animation instead
+-- of restarting or jumping it. A clock of our own would free-run against
+-- the one the flat path is drawing from.
+--
+--   1. TileRenderer.animFrame(), where the build exports it.
+--   2. else the counter itself, off tick()'s upvalues. It is a plain local
+--      in that module, so this is exact and live -- the same number, not an
+--      approximation of it. Reading engine internals is what this mod's
+--      "engine_internals" permission is declared for, and this one is
+--      read-only and entirely optional.
+--   3. else wall time in 60Hz steps. Free-running, but the water moves,
+--      which beats a frozen pond. Derived from absolute time rather than
+--      accumulated deltas because animate() is called once per map in the
+--      neighbourhood, so a per-call accumulator would run several times
+--      too fast.
+local clockUpvalue = nil        -- nil = not looked for yet, false = absent
+
+local function findClockUpvalue()
+  if not (debug and debug.getupvalue) then return false end
+  if type(TileRenderer.tick) ~= "function" then return false end
+  for i = 1, 32 do
+    local ok, name, value = pcall(debug.getupvalue, TileRenderer.tick, i)
+    if not (ok and name) then break end
+    if name == "animFrame" and type(value) == "number" then return i end
+  end
+  return false
+end
+
+local function animFrame()
+  if TileRenderer.animFrame then
+    local ok, f = pcall(TileRenderer.animFrame)
+    if ok and type(f) == "number" then return f end
+  end
+  if clockUpvalue == nil then clockUpvalue = findClockUpvalue() end
+  if clockUpvalue then
+    local ok, _, value = pcall(debug.getupvalue, TileRenderer.tick, clockUpvalue)
+    if ok and type(value) == "number" then return value end
+  end
+  if love.timer and love.timer.getTime then
+    return math.floor(love.timer.getTime() * 60)
+  end
+  return 0
+end
+
+TerrainAtlas._animFrame = animFrame   -- named for the suite
+
 local function newEntry(map, base, baked)
   local tileset = map.tileset
   local specs = specsFor(tileset)
@@ -189,7 +304,7 @@ local function newEntry(map, base, baked)
   end
   -- the pixels the atlas texture was built from: our own SGB bake when we
   -- made one, else whatever the engine's renderer is drawing with
-  local src = baked or TileRenderer.atlasImageData(map.renderer)
+  local src = baked or rendererPixels(map)
   if not src then return false end
 
   local ok, entry = pcall(function()
@@ -241,7 +356,7 @@ function TerrainAtlas.animate(map, colors, base, baked)
   end
   if not entry then return nil end
 
-  local frame = TileRenderer.animFrame and TileRenderer.animFrame() or 0
+  local frame = animFrame()
   -- one number for the whole entry: every spec's own step, folded together,
   -- so a repatch happens when ANY of them turns over
   local step = 0

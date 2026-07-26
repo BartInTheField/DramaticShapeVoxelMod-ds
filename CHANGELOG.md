@@ -105,6 +105,82 @@ long as the thing throwing them is tall.
 
 ### Fixed
 
+- Cycling palette modes with voxel mode on eventually killed the pipeline
+  outright: `attempt to call field 'atlasImageData' (a nil value) --
+  disabled for this session`. Nothing brought it back short of a restart.
+
+  `TerrainAtlas` reads three engine seams to animate water and flowers in
+  the terrain texture, and this build ships only one of them
+  (`defaultAnimatedTiles`). The tile clock, `animFrame`, was already read
+  guarded and simply degrades. `atlasImageData` was called straight -- but
+  only down the branch where the mod had NOT baked the atlas itself, which
+  is why it looked stable until a palette changed. Every mode with no world
+  palette for the map (`PaletteFX.pal` answering nil), plus RED++ and any
+  trueColor tileset, takes that branch, so the first map with animated
+  tiles entered under one of them threw out of `drawWorld` and the engine
+  disabled the pass for the session, exactly as it should.
+
+  The seam is now read guarded like its sibling, and when it is absent the
+  pixels are recovered rather than given up on. An atlas neither we nor
+  RED++ replaced is the tileset art itself, so animation carries on from
+  the art on disk. RED++'s per-map bake exists only as a texture --
+  `getGbcAtlas` throws its `ImageData` away -- so that one comes back off
+  the GPU: the atlas is drawn 1:1 into a canvas and read back, once per map,
+  with the pass's own render target captured and restored around it (the
+  usual `setCanvas()` would drop the rest of the frame). A driver that
+  refuses the readback declines to animate and keeps the static atlas.
+  Worst case now costs one animation, never the pipeline.
+
+- Water and flowers did not animate in voxel mode at all, and had not since
+  the mode shipped -- a silent one, since the terrain was otherwise correct.
+
+  The tile clock is the third seam, and this build does not export it
+  either. Being read guarded, it answered 0 forever instead of throwing,
+  which pinned every animated tile at step 0. `animFrame` is a plain local
+  in `TileRenderer`, but an upvalue of the exported `tick()`, so the mod now
+  reads the real counter through it. That it is the ENGINE's counter is the
+  point: the flat tile layer draws from the same number, so toggling voxel
+  mode mid-cycle continues the animation rather than restarting it. A build
+  that exports `animFrame()` outright is preferred; a build that hides the
+  local falls back to wall time in 60Hz steps, which free-runs against the
+  2D path but still moves the water.
+
+- Toggling palettes in voxel mode flashed the flat 2D world for a moment on
+  every switch.
+
+  `PaletteFX.setMode` reloads the live map to rebuild its atlas, and this
+  mod dropped that map's terrain mesh on any `map.reloaded` at all. Mesh
+  builds are asynchronous, so the frames between the drop and the first
+  rebuilt mesh had no terrain to draw -- and a voxel `drawWorld` with no
+  terrain returns nil, which is exactly how the pipeline asks for the 2D
+  fallback. The flash was the mod correctly reporting that it had nothing
+  to show.
+
+  The geometry was never stale: the mesher reads block layout and tile ids
+  and never reads colour, and the palette lives entirely in the texture
+  `TerrainAtlas` hands back per frame, keyed by palette and so already
+  rebuilt by the next frame. A reload whose reason is `colors` now keeps
+  the mesh, and the new palette lands on the diorama already on screen in
+  one frame. Every other reload -- warps re-entering a map, hot reload, a
+  replaced block -- still drops it.
+
+- Every non-colour palette mode rendered as SGB in voxel mode: GRAY and
+  both INVERTED modes came through as the map's blue.
+
+  `paletteFor` hands a pipeline the map's RAW SGB zone palette. The flat
+  path runs that through `PaletteFX.effectiveColors` on its way to the
+  shade-remap shader, and that call is where the non-colour modes actually
+  happen -- OG and OG INV swap in the DMG greys (reversed for the latter),
+  CLASSIC swaps in the green set, GBC INV permutes the zone's own shades,
+  and only GBC and RED++ pass through. This pass bakes colour into the
+  atlas and the sprite sheets ahead of the draw rather than shading at blit
+  time, so it never reached that call and painted the raw zone palette in
+  every mode.
+
+  Both bakes now run the same transform the shader would have. Terrain and
+  characters go through one resolve, so they cannot disagree about what
+  mode is on.
+
 - VOID FILL did nothing in voxel mode, in two separate ways.
 
   **BLACK crashed the build.** The mode is not a block at all --

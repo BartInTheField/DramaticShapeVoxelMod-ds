@@ -20,8 +20,31 @@ local VoxelModels = V.require("VoxelModels")
 local SpriteBillboards = V.require("SpriteBillboards")
 local TileShape = V.require("TileShape")
 local TerrainAtlas = V.require("TerrainAtlas")
+local PaletteFX = require("src.render.PaletteFX")
 
 local VoxelScene = {}
+
+-- What the active display mode actually paints with.
+--
+-- paletteFor hands back a map's RAW SGB zone palette, and that is not what
+-- any of the non-colour modes draw. The flat path runs it through
+-- PaletteFX.effectiveColors on the way to the shade-remap shader, and that
+-- call IS where GRAY, INVERTED and CLASSIC happen -- OG / OG INV replace
+-- the palette with the DMG greys (inverted for the latter), CLASSIC
+-- replaces it with the green DMG set, and GBC INV permutes the zone's own
+-- shades. GBC and RED++ pass through untouched.
+--
+-- This pass has no shader to apply that in: colour is baked into the atlas
+-- and into the sprite sheets ahead of the draw, so it has to run the same
+-- transform itself. Without it every mode that is not already a colour mode
+-- comes through wearing the SGB palette -- grey and inverted both rendering
+-- as plain SGB blue.
+local function modeColors(paletteFor, map)
+  local c = paletteFor and paletteFor(map) or nil
+  return PaletteFX.effectiveColors(c)
+end
+
+VoxelScene._modeColors = modeColors   -- named for the suite
 
 -- A facing is a yaw about +Y. Models are carved facing +Z (south, "down"),
 -- and Mat4.rotateY(+90 deg) maps +Z to +X, so east is +90 and west is -90.
@@ -367,15 +390,14 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   local cx, cy = cam.x + vw / 2, cam.y + vh / 2
 
   local function atlasFor(map)
-    return TerrainAtlas.forMap(map, paletteFor and paletteFor(map) or nil)
+    return TerrainAtlas.forMap(map, modeColors(paletteFor, map))
   end
 
   -- sprite palettes only exist in the SGB modes; under RED++ the OBP bake
   -- inside sprite:resolveImage() already colors the sheet
-  local PaletteFX = require("src.render.PaletteFX")
   local function spriteColors(map)
     if PaletteFX.usesGbcPack() then return nil end
-    return paletteFor and paletteFor(map) or nil
+    return modeColors(paletteFor, map)
   end
 
   local posed = posesOf(state, spriteColors)
