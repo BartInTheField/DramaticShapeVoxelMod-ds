@@ -95,11 +95,11 @@ long as the thing throwing them is tall.
   branch inside it, because it needs shader derivatives (`fwidth`) -- the
   one part of the mode a driver can refuse. A refusal costs the grid and
   nothing else.
-- `tests/drivers/voxel_shadow_probe.lua`: reports the fitted frustum and
-  the resolution rung, dumps the map itself, and shoots a stand point at
-  every pitch. `SHADOW_SUN="kx,kz"` retunes the bearing for one run,
-  `SHADOW_GRID=1` forces the wireframe on, and `SHADOW_ZOOM` pins the
-  zoom, without which two runs are not comparable -- a driver inherits
+- `mods/DRAMATIC_SHAPE/tests/voxel_shadow_probe.lua`: reports the fitted
+  frustum and the resolution rung, dumps the map itself, and shoots a
+  stand point at every pitch. `SHADOW_SUN="kx,kz"` retunes the bearing for
+  one run, `SHADOW_GRID=1` forces the wireframe on, and `SHADOW_ZOOM` pins
+  the zoom, without which two runs are not comparable -- a driver inherits
   whatever the player left in `options.lua`, and the world view size (which
   the light frustum is fitted to) swings 3x across that range.
 
@@ -128,10 +128,10 @@ long as the thing throwing them is tall.
   announces it, and checked ahead of the active() gate so switching it
   while voxel mode is off still drops what is cached.
 
-  `tests/drivers/voxel_void_probe.lua` walks the three modes and reports
-  the border block, whether the mesh built and whether the scene took the
-  3D path. It deliberately does NOT invalidate the cache itself, since
-  doing so would hide the second half of this.
+  `mods/DRAMATIC_SHAPE/tests/voxel_void_probe.lua` walks the three modes
+  and reports the border block, whether the mesh built and whether the
+  scene took the 3D path. It deliberately does NOT invalidate the cache
+  itself, since doing so would hide the second half of this.
 
 - Water and flowers did not animate. The 2D path animates them by
   OVERDRAWING the animated cells on top of the static tile layer each
@@ -448,8 +448,9 @@ written up in `assets/docs/buidling_to_voxel/`.
 
 ## 1.1.0
 
-Interior furniture gets the shapes it depicts (docs/voxel-survey.md is the
-procedure that found and verified these).
+Interior furniture gets the shapes it depicts
+(mods/DRAMATIC_SHAPE/tools/voxel-survey.md is the procedure that found and
+verified these).
 
 ### Added
 
@@ -487,9 +488,10 @@ procedure that found and verified these).
   standing monitor, bookcases, TV standing on the floor behind the game
   console's relief, potted plant, flower pot, both staircases, and the
   wall/window band.
-- `tests/drivers/voxel_survey.lua`: screenshot-survey driver behind the
-  repeatable inspection procedure (SURVEY_MAP / SURVEY_SPOTS /
-  SURVEY_LEVELS / SHOT_DIR), documented in docs/voxel-survey.md.
+- `mods/DRAMATIC_SHAPE/tests/voxel_survey.lua`: screenshot-survey driver
+  behind the repeatable inspection procedure (SURVEY_MAP / SURVEY_SPOTS /
+  SURVEY_LEVELS / SHOT_DIR), documented in
+  mods/DRAMATIC_SHAPE/tools/voxel-survey.md.
 
 ### Changed
 
