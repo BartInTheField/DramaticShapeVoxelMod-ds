@@ -343,7 +343,7 @@ mod.events:on("map.reloaded", function(payload)
   if mapId then ChunkMesher.invalidate(mapId) end
 end)
 
-mod.exports.version = "1.0.0"
+mod.exports.version = "1.0.1"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
 -- camera without reaching into this mod's file layout
 mod.exports.lib = V

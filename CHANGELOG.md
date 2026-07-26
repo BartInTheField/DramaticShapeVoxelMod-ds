@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.1
+
+### Fixed
+
+- The RED++ texture-readback fallback in `TerrainAtlas` never worked on real
+  drivers: LOVE refuses `Canvas:newImageData` while that canvas is currently
+  active, and `readback()` read the pixels back before restoring the previous
+  render target, so the call threw on every driver rather than only on
+  stubborn ones. The previous target is now put back BEFORE the read. The
+  headless suite could not see this -- its stub canvas does not enforce the
+  rule -- so it survived until a live probe ran the chain unguarded.
+
+  Harmless for vanilla tilesets, where the CPU rebuild (`gbcPixels`) answers
+  first and the fallback is never consulted; it was the last-resort route for
+  a map the palette pack does not know, which until now had no working route
+  at all.
+
 ## 1.0.0
 
 First release, ported from the engine-internal voxel branch onto the
