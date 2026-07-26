@@ -208,11 +208,16 @@ love.image = { newImageData = function(a, b)
   return fakePixels()          -- the "decoded from a path" overload
 end }
 -- animate() only uploads when the animation step actually turns over, so
--- counting replacePixels is how the suite sees the step move from outside
-local patches = 0
+-- counting replacePixels is how the suite sees the step move from outside.
+-- builds counts entries made, and uploadFails forces the upload to throw.
+local patches, builds, uploadFails = 0, 0, false
 love.graphics.newImage = function()
+  builds = builds + 1
   return { setFilter = function() end,
-           replacePixels = function() patches = patches + 1 end }
+           replacePixels = function()
+             if uploadFails then error("transient upload failure", 0) end
+             patches = patches + 1
+           end }
 end
 
 -- a tileset whose water tile rotates, i.e. one specsFor will accept
@@ -280,6 +285,51 @@ T.eq(love.graphics.getCanvas(), passCanvas,
   "and the readback puts the pass's render target back")
 love.graphics.newCanvas = realNewCanvas
 love.graphics.setCanvas()
+
+-- 3c. RED++ WITH the renderer's data in hand: the atlas is rebuilt on the
+--     CPU from the raw art and the map's palette groups, so water animates
+--     under RED++ without asking the driver for anything. This is the case
+--     that was actually broken on hardware -- RED++ is the only mode where
+--     staticAtlas declines to bake, so it was the only mode whose animated
+--     tiles depended on a readback, and it stood still.
+TerrainAtlas.invalidate()
+local realNewCanvas2 = love.graphics.newCanvas
+love.graphics.newCanvas = function() error("driver refuses canvas readback", 0) end
+local redppMap = animatedMap("REDPP",
+  { image = base, gbcAtlas = true, data = Data })
+redppMap.id = "PALLET_TOWN"          -- a map the palette groups know about
+redppMap.tileset.id = "OVERWORLD"
+local PaletteFX = require("src.render.PaletteFX")
+local modeWas = PaletteFX.mode
+PaletteFX.mode = "redpp"
+local okRedpp, redppImg = pcall(TerrainAtlas.animate, redppMap, nil, base, false)
+T.check(okRedpp and redppImg ~= nil,
+  "RED++ animates from a CPU rebuild, with no readback available at all")
+PaletteFX.mode = modeWas
+love.graphics.newCanvas = realNewCanvas2
+
+-- 3d. A failure that might not repeat must not cost the animation for the
+--     rest of the session. It used to: the key was condemned on the first
+--     miss and nothing rebuilt it, so water stopped and stayed stopped.
+TerrainAtlas.invalidate()
+uploadFails = true
+T.eq(TerrainAtlas.animate(plain, nil, base, false), nil,
+  "a patch that throws declines the frame")
+uploadFails = false
+local okRetry, retryImg = pcall(TerrainAtlas.animate, plain, nil, base, false)
+T.check(okRetry and retryImg ~= nil,
+  "and the next frame rebuilds, rather than staying dead until a hot reload")
+
+-- but a key that keeps failing is given up on, not rebuilt every frame
+TerrainAtlas.invalidate()
+uploadFails = true
+for _ = 1, 6 do TerrainAtlas.animate(plain, nil, base, false) end
+local settledBuilds = builds
+for _ = 1, 6 do TerrainAtlas.animate(plain, nil, base, false) end
+T.eq(builds, settledBuilds,
+  "a key that fails repeatedly is condemned rather than rebuilt forever")
+uploadFails = false
+TerrainAtlas.invalidate()
 
 -- 4. the reported path end to end: cycle every palette mode over a map with
 --    animated tiles. PaletteFX.pal returns nil for a mode with no world

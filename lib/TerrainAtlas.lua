@@ -29,12 +29,32 @@
 
 local Assets = require("src.render.Assets")
 local TileRenderer = require("src.render.TileRenderer")
+local PaletteFX = require("src.render.PaletteFX")
 
 local TerrainAtlas = {}
 
 local cache = {}
 local cacheData = {}    -- the pixels behind the atlases we baked ourselves
 local animated = {}     -- key -> one map's private, mutable animated atlas
+                        -- false = given up on; nil = not built (or retrying)
+local attempts = {}     -- key -> consecutive failures, for the retry budget
+
+-- A failure that might not repeat -- a driver refusing one readback, an
+-- asset briefly unreadable, a patch that threw once mid-reload -- must not
+-- cost the animation for the rest of the session. It used to: the key was
+-- condemned to `false` on the first miss and nothing ever rebuilt it, so
+-- water stopped moving and stayed stopped until a hot reload.
+--
+-- Retry a few times, then give up for good so a genuinely broken atlas is
+-- not rebuilt on every frame forever.
+local MAX_ATTEMPTS = 3
+
+local function attemptFailed(key)
+  local n = (attempts[key] or 0) + 1
+  attempts[key] = n
+  if n >= MAX_ATTEMPTS then return false end   -- condemn it
+  return nil                                    -- rebuild next frame
+end
 
 local function paletteKey(colors)
   local parts = {}
@@ -207,12 +227,81 @@ local function readback(image)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(image, 0, 0)
     love.graphics.setBlendMode("alpha", "alphamultiply")
+    -- LOVE refuses newImageData on the currently-active canvas, so the
+    -- previous target has to come back BEFORE the read, not just after
+    love.graphics.setCanvas(prev)
     local out = canvas:newImageData()
     if canvas.release then canvas:release() end
     return out
   end)
   pcall(love.graphics.setCanvas, prev)
   return ok and data or nil
+end
+
+-- RED++'s per-map atlas, rebuilt on the CPU.
+--
+-- This is the case that has no pixels anywhere: `getGbcAtlas` bakes one
+-- ImageData per map, hands the texture to the renderer and drops the
+-- pixels on the floor. Without them the animated tiles cannot be patched,
+-- which is why water and flowers stood still under RED++ and nowhere else.
+--
+-- The readback below can recover them from the texture, but it is at the
+-- mercy of whether the driver will read a canvas back, and it costs a GPU
+-- sync mid-frame. Everything the engine baked FROM is public, so bake it
+-- again instead: the raw art, the per-tile palette group, the group's
+-- colours, and the same recolorSample cutoffs. Deterministic, no driver
+-- involved, and it can be tested without a GPU.
+--
+-- It does mirror engine logic and could drift from getGbcAtlas if that
+-- changes -- the readback stays behind it as the exact-but-fragile route.
+local function gbcPixels(map)
+  local renderer, tileset = map.renderer, map.tileset
+  local data = renderer and renderer.data
+  if not (data and tileset and love.image and love.image.newImageData) then
+    return nil
+  end
+  local ok, out = pcall(function()
+    local groupColors = PaletteFX.worldGroupColors(data, tileset.id, map.id, nil)
+    if not groupColors then return nil end
+    local src = Assets.imageData(tileset.image)
+    local iw, ih = src:getDimensions()
+    local perRow = tileset.tilesPerRow or 16
+    local total = (iw / 8) * (ih / 8)
+    local dst = love.image.newImageData(iw, ih)
+
+    local function bake(from, to, colors)
+      local sxo, syo = (from % perRow) * 8, math.floor(from / perRow) * 8
+      local dxo, dyo = (to % perRow) * 8, math.floor(to / perRow) * 8
+      for py = 0, 7 do
+        for px = 0, 7 do
+          local r, g, b, a = src:getPixel(sxo + px, syo + py)
+          r, g, b, a = TileRenderer.recolorSample(r, g, b, a, colors)
+          dst:setPixel(dxo + px, dyo + py, r, g, b, a)
+        end
+      end
+    end
+
+    local tileColors = {}
+    for t = 0, total - 1 do
+      local colors = tileColors[t]
+      if colors == nil then
+        local group = PaletteFX.worldGroupAt(tileset.id, map.id, t)
+        colors = (group and groupColors[group + 1]) or false
+        tileColors[t] = colors
+      end
+      bake(t, t, colors)
+    end
+    -- duplicate-tile aliases: the same graphic baked into a spare slot
+    -- under a second palette group, so cells drawing the alias colour apart
+    for _, al in ipairs(PaletteFX.TILE_ALIASES
+                        and PaletteFX.TILE_ALIASES[map.id] or {}) do
+      if al.alias < total then
+        bake(al.tile, al.alias, groupColors[al.group + 1])
+      end
+    end
+    return dst
+  end)
+  return ok and out or nil
 end
 
 -- The pixels behind the atlas texture the engine is drawing with, for the
@@ -238,7 +327,9 @@ local function rendererPixels(map)
     local ok, data = pcall(TileRenderer.atlasImageData, renderer)
     if ok and data then return data end
   end
-  if renderer.gbcAtlas then return readback(renderer.image) end
+  if renderer.gbcAtlas then
+    return gbcPixels(map) or readback(renderer.image)
+  end
   local ok, data = pcall(Assets.imageData, map.tileset.image)
   return ok and data or nil
 end
@@ -294,18 +385,23 @@ end
 
 TerrainAtlas._animFrame = animFrame   -- named for the suite
 
+-- false = this can never work and asking again is waste; nil = it did not
+-- work THIS time and might next. The caller latches the first and retries
+-- the second (see attemptFailed).
 local function newEntry(map, base, baked)
   local tileset = map.tileset
   local specs = specsFor(tileset)
-  if not specs then return false end
+  if not specs then return false end        -- nothing on this tileset animates
   if not (love.image and love.image.newImageData
           and base.replacePixels) then
-    return false
+    return false                            -- no pixel access on this machine
   end
   -- the pixels the atlas texture was built from: our own SGB bake when we
-  -- made one, else whatever the engine's renderer is drawing with
+  -- made one, else whatever the engine's renderer is drawing with. A
+  -- readback can fail for one frame and work the next, so this is a
+  -- retryable miss rather than a verdict.
   local src = baked or rendererPixels(map)
-  if not src then return false end
+  if not src then return nil end
 
   local ok, entry = pcall(function()
     local w, h = src:getDimensions()
@@ -351,8 +447,14 @@ function TerrainAtlas.animate(map, colors, base, baked)
   local entry = animated[key]
   if entry == nil then
     entry = newEntry(map, base, baked)
-    if entry then entry.mapId = perMap end
-    animated[key] = entry
+    if entry then
+      entry.mapId = perMap
+      animated[key] = entry
+    else
+      -- false from newEntry is a verdict (nothing animates on this tileset,
+      -- no pixel access at all); nil is a miss that may not repeat
+      animated[key] = (entry == false) and false or attemptFailed(key)
+    end
   end
   if not entry then return nil end
 
@@ -375,10 +477,17 @@ function TerrainAtlas.animate(map, colors, base, baked)
       entry.image:replacePixels(entry.data)
     end)
     if not ok then
-      animated[key] = false
+      -- drop the entry rather than condemning the key: the next frame
+      -- rebuilds and tries again, and attemptFailed gives up eventually
+      animated[key] = attemptFailed(key)
       return nil
     end
   end
+  -- Only a frame that got all the way here counts as healthy. Clearing the
+  -- budget on a successful BUILD instead would never let it run out: an
+  -- entry that builds fine and fails on upload would rebuild every frame,
+  -- forever, which is worse than either animating or giving up.
+  if attempts[key] then attempts[key] = nil end
   return entry.image
 end
 
@@ -446,6 +555,7 @@ end
 function TerrainAtlas.invalidate()
   cache = {}
   cacheData = {}
+  attempts = {}
   for _, entry in pairs(animated) do
     if entry and entry.image and entry.image.release then
       pcall(entry.image.release, entry.image)
