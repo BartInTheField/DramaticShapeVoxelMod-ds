@@ -6,12 +6,12 @@
   "entry": "main.lua",
   "profile": "content",
   "category": "GRAPHICS",
-  "game_version": "<2.0.0",
+  "game_version": "0.0.0-dev || >=0.1.28 <2.0.0",
   "priority": 100,
   "dependencies": [],
   "optional_dependencies": [],
   "conflicts": [],
   "permissions": ["engine_internals"],
   "affects_link": false,
-  "description": "A full 3D diorama overworld: extruded terrain, depth-buffered occlusion, voxel characters and a tilt-shift miniature pass. Registers two render pipelines (hotkeys 6 and 9); presentational only."
+  "description": "A full 3D diorama overworld: extruded terrain, depth-buffered occlusion, voxel characters and a tilt-shift miniature pass. Registers two render pipelines and claims hotkeys 3, 5, 6 and 7 -- 3 and 5 displace the engine's TILT and GBC FX keys, both still reachable on the OPTIONS menu. Presentational only."
 }

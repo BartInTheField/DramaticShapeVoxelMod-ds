@@ -92,8 +92,9 @@ end
 mod.content.render_pipelines:register("voxel", {
   label = "VOXEL",
   levels = Voxel.ANGLE_LABELS,
-  -- 2/3/4/5 are the engine's own display hotkeys
-  hotkey = "6",
+  -- 3 is the engine's TILT key, which this mode supersedes -- see the
+  -- hotkey block near the bottom of this file for how it is claimed
+  hotkey = "3",
   -- above tiltshift, so the two sort together in the options list with the
   -- mode first and its post-process under it
   priority = 20,
@@ -163,7 +164,9 @@ mod.content.render_pipelines:register("voxel", {
 mod.content.render_pipelines:register("tiltshift", {
   label = "T-SHIFT",
   levels = TiltShift.LABELS,
-  hotkey = "9",
+  -- 6 is free: no engine branch claims it, so this one alone reaches the
+  -- registry by the documented route
+  hotkey = "6",
   priority = 10,
 
   update = function(dt, level)
@@ -201,6 +204,88 @@ for i, entry in ipairs(SETTINGS) do
   schema[i] = entry[1]:schema(entry[2])
 end
 mod.options:define(schema)
+
+-- ------- this mod's hotkeys
+--
+--   3  VOXEL    cycle the camera ladder      (was 6)
+--   5  V-GRID   toggle the wireframe         (new)
+--   6  T-SHIFT  cycle the blur ladder        (was 9)
+--   7  V-CURVE  cycle the horizon bend       (new)
+--
+-- Only 6 arrives by the documented route. Game:keypressed answers the
+-- engine's own display keys FIRST and returns -- 2 COLORS, 3 TILT, 4 ZOOM,
+-- 5 GBC FX -- and only then offers the key to Pipelines.hotkey, expressly
+-- so "a pipeline can never shadow one" (Schemas, render_pipelines.hotkey).
+-- 3 and 5 are two of those, and 7 belongs to a pair of plain mod settings
+-- that own no pass and so have no registry to claim a key from at all.
+--
+-- So this wraps Game:keypressed. It is the invasive option and it is the
+-- only one: polling the keyboard in update() would fire alongside the
+-- engine's handler rather than instead of it, so 3 would cycle this mode
+-- AND the engine's TILT on the same press.
+--
+-- Consequences worth being explicit about: while this mod is enabled, TILT
+-- (3) and GBC FX (5) are unreachable by key. Both are still reachable on
+-- the OPTIONS menu, and TILT is the one this mode supersedes anyway -- the
+-- registry already forces it off whenever a world pipeline takes the pass.
+--
+-- Everything the engine does around a pipeline hotkey has to happen here
+-- too, so the work is DELEGATED rather than reimplemented: Pipelines.hotkey
+-- applies its own gate and ladder, and the three lines after it are the
+-- engine's own (syncOptions, the tilt exclusion, writeOptions).
+
+local HOTKEYS = {
+  ["3"] = "pipeline",           -- voxel, by its declared hotkey
+  ["6"] = "pipeline",           -- tiltshift, likewise
+  ["5"] = VoxelGrid.setting,
+  ["7"] = WorldCurve.setting,
+}
+
+do
+  local Game = require("src.core.Game")
+  local Pipelines = require("src.render.Pipelines")
+  local inner = Game.keypressed
+
+  function Game:keypressed(key)
+    local claim = HOTKEYS[key]
+    local top = self.stack and self.stack:top()
+    -- A screen with its own key handler gets the key first, exactly as the
+    -- engine's first branch does: typing a nickname must not toggle a
+    -- render mode. Only free-roam presses are ours to take.
+    if claim and not (top and top.onKeyPressed) then
+      if claim == "pipeline" then
+        if Pipelines.hotkey(key, top, self.overworld) then
+          Pipelines.syncOptions(self.save.options)
+          -- 3 is the key that used to turn TILT on and sits next to the one
+          -- that used to turn GBC FX on, and this mod has taken both away.
+          -- A player who left either running before enabling the mod would
+          -- otherwise have no way back to off, and both fight the diorama:
+          -- TILT is the flat fake of what this mode does for real, and GBC
+          -- FX is a full-screen present pass over the top of it. So the
+          -- VOXEL key clears them on EVERY press, not just the press that
+          -- switches the mode on -- cycling back round to OFF leaves them
+          -- off too, which is the state the key is now the only route to.
+          if key == "3" then
+            self.save.options.tilt = 0
+            self.save.options.gbcfx = 0
+            require("src.render.GBCFX").setLevel(0)
+          end
+          require("src.render.Tilt").setLevel(self.save.options.tilt or 0)
+          self:writeOptions()
+          return
+        end
+      elseif Pipelines.canToggle("voxel", top, self.overworld) then
+        -- Both settings parameterise the voxel pass, so they answer to the
+        -- same free-roam gate it does -- borrowed from the registry rather
+        -- than restated, so a press mid-warp or mid-cutscene is refused for
+        -- the wireframe exactly when it would be for the mode itself.
+        claim:cycle(self)
+        return
+      end
+    end
+    return inner(self, key)
+  end
+end
 
 -- call next() first and decorate what comes back, so every other mod's
 -- rows survive this one

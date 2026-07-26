@@ -20,7 +20,9 @@ local VoxelModels = V.require("VoxelModels")
 local SpriteBillboards = V.require("SpriteBillboards")
 local TileShape = V.require("TileShape")
 local TerrainAtlas = V.require("TerrainAtlas")
+local Voxel = V.require("VoxelState")
 local PaletteFX = require("src.render.PaletteFX")
+local Map = require("src.world.Map")
 
 local VoxelScene = {}
 
@@ -45,6 +47,55 @@ local function modeColors(paletteFor, map)
 end
 
 VoxelScene._modeColors = modeColors   -- named for the suite
+
+-- ------------------------------------------------------------------ sky --
+--
+-- At the top rung the camera is pitched far enough over that the horizon
+-- comes into frame and a good part of the picture is void -- so the void
+-- becomes the sky, and the diorama reads as standing under something
+-- rather than floating on a black plate. Below that rung the camera looks
+-- down steeply enough that the horizon is off-screen, and painting the
+-- void only tints the gaps between meshes, so it stays transparent.
+--
+-- INDOORS THERE IS NO SKY. A house, a cave or a gym is a room with a
+-- ceiling, and the void past its walls is the outside of a box, not open
+-- air. Map.isOutdoor is the same test the engine uses for door SFX and the
+-- town map, and the same one Structures already asks to decide whether a
+-- map rings with trees.
+--
+-- The colour is a four-shade ramp shaped like a world palette so the
+-- display mode can transform it exactly like one: GRAY gets a grey sky,
+-- CLASSIC a green one, GBC INV a dark one, and the colour modes the blue.
+-- A hardcoded blue would sit wrong in every non-colour mode -- the same
+-- mismatch the terrain bake had.
+local SKY_SHADES = { { 222, 242, 255 }, { 135, 196, 240 },
+                     { 64, 120, 192 }, { 16, 40, 80 } }
+local SKY_SHADE = 2       -- the ramp's "sky" proper; 1 is its highlight
+
+-- fade across the approach to the top rung, so the sky arrives with the
+-- camera tween instead of popping in on the keypress
+local function skyStrength(angleRad)
+  local deg = math.deg(angleRad or 0)
+  local from = Voxel.ANGLES_DEG[Voxel.MAX_LEVEL] or 50      -- the rung below
+  local to = Voxel.ANGLES_DEG[Voxel.MAX_LEVEL + 1] or 75    -- the top rung
+  if to <= from then return deg >= to and 1 or 0 end
+  local t = (deg - from) / (to - from)
+  if t < 0 then return 0 end
+  if t > 1 then return 1 end
+  return t
+end
+
+local function skyFor(map)
+  if not (map and map.def and Map.isOutdoor(map.def)) then return nil end
+  local t = skyStrength(Voxel.angle)
+  if t <= 0 then return nil end
+  local shades = PaletteFX.effectiveColors(SKY_SHADES) or SKY_SHADES
+  local c = shades[SKY_SHADE] or SKY_SHADES[SKY_SHADE]
+  return { c[1] / 255, c[2] / 255, c[3] / 255, t }
+end
+
+VoxelScene._skyFor = skyFor           -- named for the suite
+VoxelScene._skyStrength = skyStrength
 
 -- A facing is a yaw about +Y. Models are carved facing +Z (south, "down"),
 -- and Mat4.rotateY(+90 deg) maps +Z to +X, so east is +90 and west is -90.
@@ -403,7 +454,9 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   local posed = posesOf(state, spriteColors)
   castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh, atlasFor)
 
-  if not Voxel3D.beginScene(w, h, cx, cy, vw, vh) then return nil end
+  if not Voxel3D.beginScene(w, h, cx, cy, vw, vh, skyFor(state.map)) then
+    return nil
+  end
 
   Voxel3D.draw(terrain, atlasFor(state.map), nil)
   for i, nb in ipairs(state.neighbors or {}) do

@@ -8,6 +8,63 @@ long as the thing throwing them is tall.
 
 ### Added
 
+- A sky at the 75-degree rung. Pitched that far over, the horizon comes
+  into frame and a good part of the picture is void, so the void gets
+  filled instead of reading as the black plate it does at every rung below.
+  No skybox and no geometry -- it is the colour the scene canvas clears to.
+
+  **Outdoor maps only.** A house, a cave or a gym is a room with a ceiling,
+  and the void past its walls is the outside of a box rather than open air.
+  The test is `Map.isOutdoor`, the same one the engine uses for door SFX
+  and the town map, and the same one `Structures` already asks to decide
+  whether a map rings with trees.
+
+  The colour is a four-shade ramp shaped like a world palette and run
+  through `PaletteFX.effectiveColors`, so it answers to the display mode
+  exactly as the baked terrain does: blue in the colour modes, grey under
+  GRAY, green under CLASSIC, dark under GBC INV. A hardcoded blue would sit
+  wrong in every mode that is not a colour mode. It fades across the
+  approach to the top rung rather than switching at the keypress, so it
+  arrives with the camera tween.
+
+- The mod's four controls sit on adjacent keys, and the two that never had
+  one now have a hotkey at all:
+
+  | key | control | was |
+  | --- | --- | --- |
+  | 3 | VOXEL, the camera ladder | 6 |
+  | 5 | V-GRID, the wireframe | menu only |
+  | 6 | T-SHIFT, the blur ladder | 9 |
+  | 7 | V-CURVE, the horizon bend | menu only |
+
+  Only 6 arrives by the documented route. `Game:keypressed` answers the
+  engine's own display keys first and returns -- 2 COLORS, 3 TILT, 4 ZOOM,
+  5 GBC FX -- and only then offers the key to `Pipelines.hotkey`, expressly
+  so that "a pipeline can never shadow one". Two of the four wanted keys are
+  in that set, and V-GRID and V-CURVE own no render pass, so they have no
+  registry to claim a key from in the first place. The mod wraps
+  `Game:keypressed` to take the four. Polling the keyboard in `update`
+  would not do: it fires alongside the engine's handler rather than instead
+  of it, so 3 would cycle this mode AND the engine's TILT on one press.
+
+  **TILT (3) and GBC FX (5) are no longer reachable by key while this mod
+  is enabled.** Both are still on the OPTIONS menu. Key 9 is now free.
+
+  So the VOXEL key turns both off itself, on every press. Both fight the
+  diorama -- TILT is the flat fake of what this mode does for real, GBC FX
+  a full-screen present pass laid over the top -- and with 3 the only key
+  that now reaches either, it also has to be the way back from having left
+  one on. Every press, not just the one that switches the mode on: the
+  registry's own tilt exclusion covers switching ON, but the press that
+  cycles the ladder round to OFF would otherwise leave both running with
+  no key left to clear them.
+
+  The wrapper delegates rather than reimplements: `Pipelines.hotkey` still
+  applies its own gate and ladder, the settings borrow the same free-roam
+  gate the voxel pipeline uses, and a screen with its own key handler keeps
+  the keyboard -- so typing a nickname cannot cycle a render mode behind
+  the text box.
+
 - `lib/ShadowMap.lua`: the scene rendered once from the sun into an
   orthographic depth map, which the main pass then samples per fragment.
   What the sun cannot see is in shadow, whatever surface it is, so a

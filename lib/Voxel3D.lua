@@ -338,7 +338,10 @@ end
 -- Begin the 3D pass into a `w` x `h` pixel canvas centred on world
 -- (cx, cy), covering `vw` x `vh` world pixels. Returns false when the pass
 -- could not start, in which case the caller must not call endScene.
-function Voxel3D.beginScene(w, h, cx, cy, vw, vh)
+-- `sky` is an optional {r, g, b, a} in 0..1 to clear the void to, for the
+-- pitch where the horizon is in frame (VoxelScene.skyFor). nil leaves the
+-- void transparent, which is what every rung below it wants.
+function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky)
   -- the wireframe variant when the player has it on AND it built; either
   -- answer falls through to the plain scene rather than to no scene
   local grid = VoxelGrid.enabled()
@@ -361,7 +364,11 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh)
     pcall(love.graphics.setCanvas)
     return false
   end
-  love.graphics.clear(0, 0, 0, 0, true, true)
+  if sky then
+    love.graphics.clear(sky[1], sky[2], sky[3], sky[4] or 1, true, true)
+  else
+    love.graphics.clear(0, 0, 0, 0, true, true)
+  end
   love.graphics.setDepthMode("lequal", true)
   -- models mirror on X for right-facing and alternate walk steps, which
   -- flips winding; hidden faces are already culled at build time, so there

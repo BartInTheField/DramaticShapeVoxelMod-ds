@@ -28,8 +28,8 @@ T.check(type(defs.tiltshift) == "table", "the tiltshift pipeline is registered")
 
 T.eq(defs.voxel.label, "VOXEL", "voxel carries its options-row label")
 T.eq(defs.tiltshift.label, "T-SHIFT", "tiltshift carries its options-row label")
-T.eq(defs.voxel.hotkey, "6", "voxel claims hotkey 6")
-T.eq(defs.tiltshift.hotkey, "9", "tiltshift claims hotkey 9")
+T.eq(defs.voxel.hotkey, "3", "voxel claims hotkey 3")
+T.eq(defs.tiltshift.hotkey, "6", "tiltshift claims hotkey 6")
 T.check(type(defs.voxel.drawWorld) == "function",
   "voxel is a world pipeline (drawWorld)")
 T.check(type(defs.tiltshift.worldPresent) == "function",
@@ -500,6 +500,208 @@ end)
 T.eq(modeColors(function() return nil end), nil,
   "a map with no world palette bakes no colour, as on the flat path")
 T.eq(modeColors(nil), nil, "and a pipeline given no paletteFor at all is safe")
+
+-- ------- the hotkeys this mod claims
+--
+--   3  VOXEL    cycle the camera ladder
+--   5  V-GRID   toggle the wireframe
+--   6  T-SHIFT  cycle the blur ladder
+--   7  V-CURVE  cycle the horizon bend
+--
+-- Only 6 reaches the pipeline registry the documented way. Game:keypressed
+-- answers the engine's own display keys first and returns -- 3 is TILT and
+-- 5 is GBC FX -- expressly so a pipeline cannot shadow one, and 7 belongs
+-- to settings that own no pass and so have no registry to claim from. The
+-- mod therefore wraps Game:keypressed, and these pin what that wrapper is
+-- allowed to take.
+
+local Game = require("src.core.Game")
+Pipelines.reset()
+Pipelines.setLevel("voxel", 0)
+Pipelines.setLevel("tiltshift", 0)
+
+-- a free-roam game: Zoom.gateOK wants the top screen to BE the overworld,
+-- not transitioning and not running a script
+local keyGame
+local overworld = { transitioning = false }
+keyGame = {
+  overworld = overworld,
+  stack = { top = function() return overworld end },
+  save = { options = { modOptions = {} } },
+  mods = { modOptions = {} },
+  writeOptions = function() end,
+}
+
+local VoxelGrid = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelGrid")
+local Curve = run.loader.exports.DRAMATIC_SHAPE.lib.require("WorldCurve")
+
+Game.keypressed(keyGame, "3")
+T.eq(Pipelines.level("voxel"), 1, "3 cycles the voxel camera ladder")
+Game.keypressed(keyGame, "3")
+T.eq(Pipelines.level("voxel"), 2, "and keeps climbing it")
+
+Game.keypressed(keyGame, "6")
+T.eq(Pipelines.level("tiltshift"), 1, "6 cycles the tilt-shift blur")
+
+Game.keypressed(keyGame, "5")
+T.eq(VoxelGrid.setting:get(), true, "5 toggles V-GRID on")
+Game.keypressed(keyGame, "5")
+T.eq(VoxelGrid.setting:get(), false, "and off again")
+
+local curveBefore = Curve.setting:get()
+Game.keypressed(keyGame, "7")
+T.neq(Curve.setting:get(), curveBefore, "7 cycles V-CURVE")
+
+-- 3 also clears the two engine modes it displaced. Without this a player
+-- who left TILT or GBC FX on before enabling the mod has no key left to
+-- turn them off with, and both fight the diorama -- TILT is the flat fake
+-- of what this mode does for real, GBC FX a present pass over the top.
+local GBCFX = require("src.render.GBCFX")
+Tilt.setLevel(2)
+GBCFX.setLevel(3)
+keyGame.save.options.tilt = 2
+keyGame.save.options.gbcfx = 3
+
+Game.keypressed(keyGame, "3")
+T.eq(keyGame.save.options.tilt, 0, "3 turns TILT off in the save")
+T.eq(Tilt.level, 0, "and on the live renderer")
+T.eq(keyGame.save.options.gbcfx, 0, "3 turns GBC FX off in the save")
+T.eq(GBCFX.level, 0, "and on the live renderer")
+
+-- Every press, not just the one that switches the mode on. This is the
+-- half the registry does NOT cover: its tilt exclusion fires when a world
+-- pipeline takes the pass, so a press that switches voxel ON would clear
+-- TILT with or without us. Park the ladder on its top rung and turn both
+-- back on, so the single press under test is the one that wraps to OFF --
+-- where nothing else is going to clear them.
+Pipelines.setLevel("voxel", Pipelines.maxLevel("voxel"))
+Tilt.setLevel(3)
+GBCFX.setLevel(4)
+keyGame.save.options.tilt = 3
+keyGame.save.options.gbcfx = 4
+
+Game.keypressed(keyGame, "3")
+T.eq(Pipelines.level("voxel"), 0, "the press wraps the ladder back to OFF")
+T.eq(keyGame.save.options.tilt, 0, "the press that wraps to OFF still clears TILT")
+T.eq(Tilt.level, 0, "with the renderer agreeing")
+T.eq(keyGame.save.options.gbcfx, 0, "and still clears GBC FX")
+T.eq(GBCFX.level, 0, "with the renderer agreeing there too")
+
+-- but 6 must not: T-SHIFT is a post-process that composes with TILT, and
+-- the registry deliberately leaves it alone
+Tilt.setLevel(2)
+keyGame.save.options.tilt = 2
+Game.keypressed(keyGame, "6")
+T.eq(keyGame.save.options.tilt, 2, "6 leaves TILT alone -- the blur composes with it")
+Tilt.setLevel(0)
+keyGame.save.options.tilt = 0
+
+-- the engine's own keys the mod did NOT claim must still reach it: 4 is
+-- ZOOM, and taking it would be a bug rather than a feature
+local zoomKeyReached = false
+local realZoomGate = require("src.render.Zoom").gateOK
+require("src.render.Zoom").gateOK = function() zoomKeyReached = true; return false end
+Game.keypressed(keyGame, "4")
+require("src.render.Zoom").gateOK = realZoomGate
+T.check(zoomKeyReached, "a key this mod does not claim still reaches the engine")
+
+-- A screen with its own key handler owns the keyboard: typing a nickname
+-- must not cycle a render mode behind the text box.
+local gridBefore = VoxelGrid.setting:get()
+local voxelBefore = Pipelines.level("voxel")
+local typed = {}
+local menu = { onKeyPressed = function(_, k) typed[#typed + 1] = k end }
+keyGame.stack.top = function() return menu end
+for _, k in ipairs({ "3", "5", "6", "7" }) do Game.keypressed(keyGame, k) end
+T.eq(#typed, 4, "every claimed key goes to a screen that handles keys itself")
+T.eq(VoxelGrid.setting:get(), gridBefore, "V-GRID is untouched while a screen has focus")
+T.eq(Pipelines.level("voxel"), voxelBefore, "and so is the voxel ladder")
+
+-- and the free-roam gate the engine applies to its own display keys applies
+-- to the settings too: no flipping the wireframe mid-cutscene
+keyGame.stack.top = function() return overworld end
+overworld.transitioning = true
+local midWarp = VoxelGrid.setting:get()
+Game.keypressed(keyGame, "5")
+T.eq(VoxelGrid.setting:get(), midWarp, "V-GRID refuses mid-transition, as the mode does")
+overworld.transitioning = false
+
+-- ------- the sky at the top rung
+--
+-- At 75 degrees the camera is pitched far enough over that the horizon is
+-- in frame, so the void behind the diorama becomes a sky rather than the
+-- black plate it reads as at every rung below. Outdoors only: a house or a
+-- cave is a room with a ceiling, and the void past its walls is the
+-- outside of a box, not open air.
+
+local Voxel = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelState")
+local skyFor = VoxelScene._skyFor
+local skyStrength = VoxelScene._skyStrength
+T.check(type(skyFor) == "function", "the scene exposes its sky resolve")
+
+local outside = { def = { id = "PALLET_TOWN", tileset = "OVERWORLD" } }
+local inside = { def = { id = "REDS_HOUSE_1F", tileset = "HOUSE" } }
+local TOP = math.rad(Voxel.ANGLES_DEG[Voxel.MAX_LEVEL + 1])
+
+-- the ladder, by angle: only the top rung paints anything
+for level = 0, Voxel.MAX_LEVEL do
+  Voxel.angle = math.rad(Voxel.ANGLES_DEG[level + 1])
+  local sky = skyFor(outside)
+  if level == Voxel.MAX_LEVEL then
+    T.check(sky ~= nil, "the 75-degree rung paints a sky outdoors")
+    T.eq(sky[4], 1, "and paints it at full strength")
+  else
+    T.eq(sky, nil, "rung " .. level .. " leaves the void alone")
+  end
+end
+
+-- indoors, never -- at any rung, including the top one
+for level = 0, Voxel.MAX_LEVEL do
+  Voxel.angle = math.rad(Voxel.ANGLES_DEG[level + 1])
+  T.eq(skyFor(inside), nil, "an interior has no sky at rung " .. level)
+end
+Voxel.angle = TOP
+T.eq(skyFor(inside), nil, "not even at 75 degrees, where outdoors would")
+
+-- a map record with nothing to ask is not a crash
+T.eq(skyFor(nil), nil, "no map, no sky")
+T.eq(skyFor({}), nil, "a map with no def is not an outdoor map")
+
+-- it fades in with the camera tween rather than popping on the keypress
+T.eq(skyStrength(math.rad(50)), 0, "the rung below the top is still skyless")
+T.eq(skyStrength(TOP), 1, "the top rung is full sky")
+local mid = skyStrength(math.rad(62.5))
+T.check(mid > 0 and mid < 1, "and the tween between them is partial")
+T.check(skyStrength(math.rad(70)) > skyStrength(math.rad(60)),
+  "strengthening as the camera pitches over")
+T.eq(skyStrength(math.rad(15)), 0, "a shallow pitch paints nothing at all")
+
+-- the colour answers to the display mode, exactly as the terrain does: a
+-- hardcoded blue would sit wrong in the modes that are not colour modes
+Voxel.angle = TOP
+local function skyRGB(mode)
+  local prev = PaletteFX.mode
+  PaletteFX.mode = mode
+  local c = skyFor(outside)
+  PaletteFX.mode = prev
+  return c
+end
+
+local blue = skyRGB("gbc")
+T.check(blue[3] > blue[1], "in a colour mode the sky is blue -- more blue than red")
+
+local grey = skyRGB("og")
+T.check(math.abs(grey[1] - grey[2]) < 1e-6 and math.abs(grey[2] - grey[3]) < 1e-6,
+  "GRAY paints a grey sky, not a blue one")
+
+local green = skyRGB("classic")
+T.check(green[2] > green[1] and green[2] > green[3],
+  "CLASSIC paints a green sky, matching its green world")
+
+T.check(skyRGB("gbc_inv")[3] ~= blue[3],
+  "GBC INV does not paint the same sky as GBC")
+
+Voxel.angle = 0
 
 Pipelines.reset()
 run.release()
