@@ -2091,14 +2091,21 @@ end
 
 -- ---- tall grass ----
 
--- A tall-grass tile draws its four tuft segments in two ROWS: the art's
--- top half is one row of grass, the bottom half another. Each row stands
--- as a thin per-pixel slab at its own drawn depth inside the tile, over
--- the flat grass base the tile already renders -- so the player walks
--- BETWEEN rows, and the southern row occludes their feet the way the 2D
--- grass overdraw did. Transparency respected: only the tuft strokes stand.
--- Runs of adjacent pixels merge into single quads, and one template per
--- grass tile id is stamped across the map (grass comes in fields).
+-- A tall-grass CELL is four tufts: 2x2 tiles, and each 8x8 tile is one
+-- whole clump of grass. Each tile stands as its own thin per-pixel slab
+-- at ITS OWN depth -- the cell's north tile row in the north half of the
+-- cell, the south row in the south half -- over the flat grass base the
+-- tile already renders. So the player walks BETWEEN the two rows, and
+-- the southern row occludes their feet the way the 2D grass overdraw
+-- did. Transparency respected: only the tuft strokes stand. Runs of
+-- adjacent pixels merge into single quads, and one template per grass
+-- tile id is stamped across the map (grass comes in fields).
+--
+-- One tile is ONE standing piece, full height. The first cut split each
+-- tile again into its top and bottom four art rows and stood those at
+-- two different depths, which cut every blade that runs down the tile
+-- clean in half -- the two halves ended up 4px tall and 4px apart in
+-- depth, so a clump read as two stubs rather than one tuft.
 local GRASS_THICK = 2
 
 local function grassTemplate(map, data, tileId)
@@ -2115,49 +2122,48 @@ local function grassTemplate(map, data, tileId)
   end
 
   local quads = {}
-  for half = 0, 1 do
-    local rowBase = half * 4
-    local zMid = half == 0 and 2.5 or 6.5
-    local zB, zF = zMid - GRASS_THICK / 2, zMid + GRASS_THICK / 2
-    for iy = 0, 3 do
-      local yTop = 4 - iy
-      local yBot = yTop - 1
-      local ix = 0
-      while ix < 8 do
-        if opaque(ix, rowBase + iy) then
-          local ix2 = ix
-          while ix2 + 1 < 8 and opaque(ix2 + 1, rowBase + iy) do
-            ix2 = ix2 + 1
-          end
-          local u0 = (ax0 + ix + 0.05) / atlasW
-          local u1 = (ax0 + ix2 + 0.95) / atlasW
-          local v0 = (ay0 + rowBase + iy + 0.05) / atlasH
-          local v1 = (ay0 + rowBase + iy + 0.95) / atlasH
-          quads[#quads + 1] = {           -- front
-            { ix, yBot, zF }, { ix2 + 1, yBot, zF },
+  -- the slab stands across the middle of its own tile, so the two tile
+  -- rows of a cell are half a cell apart in depth
+  local zMid = 4
+  local zB, zF = zMid - GRASS_THICK / 2, zMid + GRASS_THICK / 2
+  for iy = 0, 7 do
+    local yTop = 8 - iy
+    local yBot = yTop - 1
+    local ix = 0
+    while ix < 8 do
+      if opaque(ix, iy) then
+        local ix2 = ix
+        while ix2 + 1 < 8 and opaque(ix2 + 1, iy) do
+          ix2 = ix2 + 1
+        end
+        local u0 = (ax0 + ix + 0.05) / atlasW
+        local u1 = (ax0 + ix2 + 0.95) / atlasW
+        local v0 = (ay0 + iy + 0.05) / atlasH
+        local v1 = (ay0 + iy + 0.95) / atlasH
+        quads[#quads + 1] = {           -- front
+          { ix, yBot, zF }, { ix2 + 1, yBot, zF },
+          { ix2 + 1, yTop, zF }, { ix, yTop, zF },
+          uv = { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
+          shade = 1,
+        }
+        quads[#quads + 1] = {           -- back
+          { ix2 + 1, yBot, zB }, { ix, yBot, zB },
+          { ix, yTop, zB }, { ix2 + 1, yTop, zB },
+          uv = { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } },
+          shade = 0.68,
+        }
+        -- blade tips: a top strip where the row above is clear
+        if not opaque(ix, iy - 1) then
+          quads[#quads + 1] = {
+            { ix, yTop, zB }, { ix2 + 1, yTop, zB },
             { ix2 + 1, yTop, zF }, { ix, yTop, zF },
-            uv = { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
+            uv = { { u0, v0 }, { u1, v0 }, { u1, v0 }, { u0, v0 } },
             shade = 1,
           }
-          quads[#quads + 1] = {           -- back
-            { ix2 + 1, yBot, zB }, { ix, yBot, zB },
-            { ix, yTop, zB }, { ix2 + 1, yTop, zB },
-            uv = { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } },
-            shade = 0.68,
-          }
-          -- blade tips: a top strip where the row above is clear
-          if not opaque(ix, rowBase + iy - 1) then
-            quads[#quads + 1] = {
-              { ix, yTop, zB }, { ix2 + 1, yTop, zB },
-              { ix2 + 1, yTop, zF }, { ix, yTop, zF },
-              uv = { { u0, v0 }, { u1, v0 }, { u1, v0 }, { u0, v0 } },
-              shade = 1,
-            }
-          end
-          ix = ix2 + 1
-        else
-          ix = ix + 1
         end
+        ix = ix2 + 1
+      else
+        ix = ix + 1
       end
     end
   end

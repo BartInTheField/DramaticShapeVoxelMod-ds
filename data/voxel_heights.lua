@@ -111,7 +111,15 @@ return {
       -- the hop-down edges named by data.field.ledges' ledgeTile: their
       -- art is a ground lip seen from above, which the detector would
       -- otherwise raise as a wall
-      ledge = { 13, 29, 39, 54, 55 },
+      -- $34 is the cliff slope's FOOT, and it also punctuates the ledge
+      -- rows: the hop-down runs are set into the cliff face and this
+      -- tile is the pillar between segments.  It was `wall` with the
+      -- rest of the slope chain, which stood those pillars 16px beside
+      -- a 6px lip -- the ledge line came out interrupted by blocks
+      -- nearly three times its height.  At ledge height the run reads
+      -- as one continuous lip, and the mound loses nothing: its foot
+      -- row simply reads as the talus it is drawn as.
+      ledge = { 13, 29, 39, 52, 54, 55 },
       -- trees are drawn ROUND -- the lone canopy (42/43/58/59) and the
       -- border tree wall (64/65/80/81, blockset $0F). Boxes and per-pixel
       -- cutouts both read wrong for them; the cylinder archetype carves
@@ -129,15 +137,17 @@ return {
       -- fence-textured tower. `post` extracts each cell alone, so these
       -- render as the same thin posts, marching north
       post = { 14, 85 },
-      -- the cliff-mound's dark east slope and its corners ($02 the NE
-      -- corner, $24 the slope column, $34 the slope-to-rim seat). Their
-      -- drawn runs span the whole mound drawing, so the detector raised
-      -- them to 32px towers -- the rock pillar beside Diglett's Cave --
-      -- and the doorway column, which adopts its REGION's height,
-      -- inherited the same 32 and put the cave entrance a block above
-      -- the mound around it. Pinned to one 16px course they match the
-      -- plateau body, and the doorway drops with them.
-      wall = { 2, 36, 52 },
+      -- the cliff-mound's dark east slope and its NE corner ($24 the
+      -- slope column, $02 the corner).  Their drawn runs span the whole
+      -- mound drawing, so the detector raised them to 32px towers --
+      -- the rock pillar beside Diglett's Cave -- and the doorway
+      -- column, which adopts its REGION's height, inherited the same 32
+      -- and put the cave entrance a block above the mound around it.
+      -- Pinned to one 16px course they match the plateau body, and the
+      -- doorway drops with them.  ($34, the slope's foot, is `ledge`
+      -- instead -- see there.)
+      wall = { 2, 36 },
+
       -- the cuttable bush ($2D/$2E/$3D/$3E, the four tiles Cut deletes
       -- -- across the whole tileset they appear only in the five
       -- cut-tree blocks): a standing per-pixel cutout 5 voxels deep,
