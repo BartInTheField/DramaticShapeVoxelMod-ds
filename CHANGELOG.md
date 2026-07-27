@@ -128,6 +128,16 @@
   body is the scrap the mask is for. The mesher now reads the winding and
   keeps outward faces on the body's boundary planes, on all four edges.
 
+  The roof RIM had the same problem one step further out: an edge-row
+  house's eave overhangs `frontEave` voxels PAST the boundary plane into
+  the neighbour's airspace, and those quads are neither on the plane
+  (the winding rescue) nor over the body -- the neighbour-body mask ate
+  them as ring scraps, so from across the seam the roof edge was open
+  sky at low camera angles. Building placements only ever scan the map
+  BODY, so every building quad is this map's own structure by
+  construction: they now carry an `own` flag the edge keep-rules never
+  touch.
+
 ## 1.0.3
 
 ### Added

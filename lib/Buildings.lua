@@ -669,6 +669,13 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh)
       { q[3][1] + mx, q[3][2], q[3][3] + mz },
       { q[4][1] + mx, q[4][2], q[4][3] + mz },
       uv = q.uv, shade = q.shade,
+      -- placements only ever scan the BODY, so a building is always this
+      -- map's own structure: the mesher's edge keep-rules must not eat
+      -- the parts that poke past the boundary (an edge-row house's eave
+      -- juts frontEave voxels into the neighbour's airspace, and the
+      -- neighbour-body mask read that overhang as a ring scrap -- which
+      -- opened the roof rim into the sky from across the seam)
+      own = true,
     }
   end
 end

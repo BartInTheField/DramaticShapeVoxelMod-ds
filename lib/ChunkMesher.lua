@@ -679,7 +679,13 @@ local function runGeometry(map, bodyOnly, masks, sink)
     local x1 = math.max(q[1][1], q[2][1], q[3][1], q[4][1])
     local z0 = math.min(q[1][3], q[2][3], q[3][3], q[4][3])
     local z1 = math.max(q[1][3], q[2][3], q[3][3], q[4][3])
-    if outwardOnEdge(q, x0, z0, x1, z1) or keepQuad(x0, z0, x1, z1) then
+    -- q.own: a body-anchored structure's own quad (a building placed by
+    -- Buildings.build, whose scan never leaves the body). Exempt from
+    -- the edge keep-rules entirely: its eave legitimately overhangs the
+    -- boundary plane into the neighbour's airspace, and no variant of
+    -- the neighbour will ever draw that geometry
+    if q.own or outwardOnEdge(q, x0, z0, x1, z1)
+       or keepQuad(x0, z0, x1, z1) then
       push({ q[1], q[2], q[3], q[4] }, quadUV(q), groundShades(q, q.shade))
     end
   end
