@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.0.2
+
+### Fixed
+
+- On Android the diorama drew into the top-left corner at a fraction of the
+  screen -- about a third of the width and height on a 420dpi panel -- with
+  the field effects (dust, emotes, the cut-tree shudder) correspondingly
+  oversized against the world they sat on. Desktop was unaffected.
+
+  The pipeline ctx hands over `width`/`height` measured in LOVE UNITS
+  (`love.graphics.getDimensions`), but the engine composites a pipeline's
+  returned canvas with `draw(canvas, 0, 0, 0, 1/dpiX, 1/dpiY)` -- a scale
+  that only covers the window if the canvas is at PIXEL resolution. Sizing
+  the scene canvas from the ctx therefore paid the DPI scale twice: the
+  canvas came out that much smaller, and was then drawn that much smaller
+  again. On desktop the two units are the same number and nothing shows;
+  Android's DPI scale is the display density (2.625 at 420dpi), so that is
+  where it surfaced.
+
+  The scene canvas is now sized from `love.graphics.getPixelDimensions`
+  directly rather than from the ctx. That is the number a fixed engine would
+  hand over, so this does not double-correct if the ctx is ever changed to
+  agree with the compositor. It also squares the FX pass for free:
+  `ctx.scale` was ALREADY in pixels per world pixel (`Zoom.scale` over
+  `Renderer:fitScale`, which measures the drawable), so the closures were
+  being scaled for a canvas 2.6x bigger than the one they were drawing into
+  -- one wrong number, not two.
+
 ## 1.0.1
 
 ### Fixed

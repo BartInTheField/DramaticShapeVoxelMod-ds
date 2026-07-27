@@ -79,6 +79,33 @@ local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
 
 -- The last VOID FILL the terrain was meshed under; see the update hook.
+-- The scene canvas's size, in FRAMEBUFFER PIXELS.
+--
+-- `ctx.width/height` are the window measured in LOVE UNITS
+-- (love.graphics.getDimensions), but the engine composites a pipeline's
+-- returned canvas with `draw(canvas, 0, 0, 0, 1/dpiX, 1/dpiY)` -- a scale
+-- that only covers the window when the canvas is at PIXEL resolution.
+-- Sizing it in units costs the DPI scale TWICE: the canvas is that much
+-- smaller, then it is drawn that much smaller again, so the diorama lands
+-- in the top-left corner at 1/dpi of the screen.  Desktop never sees it --
+-- units and pixels are the same thing there -- but on Android the DPI scale
+-- is the display density (2.625 on a 420dpi panel), and the world came out
+-- a third of the size in each direction.
+--
+-- So ask for the pixel dimensions rather than trusting the ctx.  That is
+-- the number a fixed engine would hand over, so this keeps working either
+-- way instead of double-correcting.  It also squares the FX pass: ctx.scale
+-- is ALREADY in pixels per world pixel (Zoom.scale over Renderer:fitScale,
+-- which measures the drawable), so the closures ctx.drawFx runs were being
+-- scaled for a canvas 2.6x bigger than the one they drew into.
+local function sceneSize(ctx)
+  if love.graphics and love.graphics.getPixelDimensions then
+    local pw, ph = love.graphics.getPixelDimensions()
+    if pw and ph and pw > 0 and ph > 0 then return pw, ph end
+  end
+  return ctx.width, ctx.height
+end
+
 local voidFill = { last = nil }
 function voidFill.check()
   local TileRenderer = require("src.render.TileRenderer")
@@ -141,10 +168,12 @@ mod.content.render_pipelines:register("voxel", {
   drawWorld = function(ctx)
     -- Terrain and characters are geometry; the field FX stay ordinary 2D
     -- draws composited on top, anchored through the same camera the 3D
-    -- pass used (ctx.drawFx below).  The scene renders at window
-    -- resolution so the 3D pass is crisp rather than a magnified low-res
-    -- image, while the FX closures keep drawing in world-pixel units.
-    local canvas = VoxelScene.render(ctx.state, ctx.width, ctx.height,
+    -- pass used (ctx.drawFx below).  The scene renders at the window's
+    -- PIXEL resolution (see sceneSize) so the 3D pass is crisp rather than
+    -- a magnified low-res image, while the FX closures keep drawing in
+    -- world-pixel units.
+    local sw, sh = sceneSize(ctx)
+    local canvas = VoxelScene.render(ctx.state, sw, sh,
                                      ctx.vw, ctx.vh, ctx.paletteFor)
     if not canvas then return nil end   -- fall back to the 2D path
     if Voxel3D.beginOverlay() then
@@ -343,7 +372,7 @@ mod.events:on("map.reloaded", function(payload)
   if mapId then ChunkMesher.invalidate(mapId) end
 end)
 
-mod.exports.version = "1.0.1"
+mod.exports.version = "1.0.2"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
 -- camera without reaching into this mod's file layout
 mod.exports.lib = V
