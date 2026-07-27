@@ -420,6 +420,98 @@ T.check(okClock and type(clockVal) == "number",
   "a clock that throws falls back to a working one rather than propagating")
 TileRenderer.animFrame = nil
 
+-- ------- the flower's slot carries an animated SILHOUETTE, not a tile
+--
+-- The flower tile stands in voxel mode as a billboard one voxel deep
+-- (Structures.buildFlowers), cut to the drawing's darkest tones. Meshes
+-- are static, so the geometry spans the union of every frame's dark
+-- pixels and the animation lives in the atlas: patch() keys everything
+-- lighter to alpha 0, the shader discards it, and the silhouette trims
+-- itself frame by frame. Two halves to pin down: the CLASS is derived
+-- (any frames-animated tile resolves `flower` with no profile entry),
+-- and the PATCH writes alpha where the frame is not dark.
+
+local TileShape = run.loader.exports.DRAMATIC_SHAPE.lib.require("TileShape")
+
+local flowerSet = {
+  id = "T_FLOWER_PIN", image = "assets/tilesets/stub.png",
+  tilesPerRow = 16, imageWidth = 128, imageHeight = 48,
+  animatedTiles = { { tile = 0x03, kind = "frames", period = 20,
+                      images = { "stub_flowerframe.png" },
+                      sequence = { 1 } } },
+}
+local flowerShapes = TileShape.forMap({ tileset = flowerSet })
+T.eq(flowerShapes[0x03].class, "flower",
+  "a frames-animated tile is pinned `flower` with no profile entry, like grass")
+T.check(flowerShapes[0x03].flat,
+  "the flower cell still counts as flat ground for its neighbours")
+T.eq(flowerShapes[0x03].h, 0,
+  "and carries no height, so a build with no pixel access degrades to the flat tile")
+T.check(flowerShapes[0x03].authored,
+  "the pin is authored-strength: cell walkability cannot re-file it as plain ground")
+
+-- the patch, observed through a recording atlas copy: a crafted frame
+-- whose dark pixels form a diamond ring around one light pixel -- the
+-- billboard must keep the ring AND the pale pixel it encloses, and key
+-- the reachable background (light or transparent) to alpha
+local slotPx = {}
+local sectionNewImageData = love.image.newImageData
+do
+  local crafted = fakePixels()
+  local ring = { ["1,0"] = true, ["0,1"] = true,
+                 ["2,1"] = true, ["1,2"] = true }
+  local frame = fakePixels()
+  function frame:getPixel(x, y)
+    if ring[x .. "," .. y] then return 0.3, 0.3, 0.3, 1 end -- dark outline
+    if x == 7 and y == 0 then return 0.9, 0.9, 0.9, 0 end   -- transparent
+    return 1, 1, 1, 1                       -- light: petal inside at (1,1),
+  end                                       -- background everywhere else
+  love.image.newImageData = function(a, b)
+    if type(a) == "number" then
+      local d = fakePixels(a, b)
+      function d:setPixel(x, y, r, g, b2, al)
+        slotPx[x .. "," .. y] = { r, g, b2, al }
+      end
+      return d
+    end
+    if tostring(a):find("flowerframe") then return frame end
+    return crafted
+  end
+end
+
+TerrainAtlas.invalidate()
+local fmap = {
+  id = "T_FLOWER_PATCH_MAP",
+  tileset = {
+    id = "T_FLOWER_PATCH", image = "assets/tilesets/stub2.png",
+    tilesPerRow = 16, imageWidth = 128, imageHeight = 48,
+    animatedTiles = { { tile = 0x03, kind = "frames", period = 20,
+                        images = { "stub_flowerframe.png" },
+                        sequence = { 1 } } },
+  },
+  renderer = { image = base },
+}
+local okFlower, flowerImg = pcall(TerrainAtlas.animate, fmap, nil, base, false)
+T.check(okFlower and flowerImg ~= nil,
+  "a flower map animates: " .. tostring(flowerImg))
+
+local fdx = (0x03 % 16) * 8
+local function slotAlpha(x, y)
+  local p = slotPx[(fdx + x) .. "," .. y]
+  return p and p[4]
+end
+T.eq(slotAlpha(1, 0), 1,
+  "a dark frame pixel lands opaque -- it is the standing cutout")
+T.eq(slotAlpha(1, 1), 1,
+  "and so does the pale pixel the outline encloses -- the petal's inside "
+  .. "rides the billboard, not just its outline")
+T.eq(slotAlpha(5, 5), 0,
+  "a background pixel is keyed to alpha, so the billboard's shader discards it")
+T.eq(slotAlpha(7, 0), 0,
+  "a transparent frame pixel stays clear rather than painting black")
+
+love.image.newImageData = sectionNewImageData
+
 TerrainAtlas.invalidate()
 love.image, love.graphics.newImage = realImage, realNewImage
 

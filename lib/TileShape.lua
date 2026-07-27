@@ -60,6 +60,7 @@ local FALLBACK_HEIGHTS = {
   signpost = 16,
   post = 16,
   grass = 0,
+  flower = 0,
   -- interior furniture: face-on drawings the detector would otherwise
   -- raise to wall height (or merge into the wall).  A bed is drawn from
   -- above and lies low; tables and desks are boxes at their real height;
@@ -110,6 +111,11 @@ local ART = {
   signpost = "billboard",
   post = "post",
   grass = "grass",
+  -- animated flowers: flat synthesized ground PLUS a standing cutout of
+  -- the drawing's darkest tones, one voxel deep (see Structures'
+  -- buildFlowers). Height 0 so a build with no pixel access degrades to
+  -- the flat tile it always drew, not a box
+  flower = "flower",
   -- furniture: a bed's art depicts its top surface; tables and desks are
   -- boxes whose fronts fold up (the mesher's authored-fold rule).
   -- Stools, `prop` and `cutout` are standee pools alongside `billboard`
@@ -188,9 +194,11 @@ end
 local function shapeFor(class, heights, authored)
   return { class = class, h = heights[class] or 0,
            art = ART[class] or "upright",
-           -- grass draws its flat ground base like any walkable tile; the
-           -- standing tuft rows are additive geometry from Structures
-           flat = ART[class] == "flat" or class == "grass",
+           -- grass and flowers draw a flat ground base like any walkable
+           -- tile; the standing tufts and cutouts are additive geometry
+           -- from Structures
+           flat = ART[class] == "flat" or class == "grass"
+                  or class == "flower",
            authored = authored or false }
 end
 
@@ -210,6 +218,28 @@ function TileShape.forMap(map)
   local count = math.floor((tileset.imageWidth or 128) / 8)
                 * math.floor((tileset.imageHeight or 48) / 8)
 
+  -- derived pin: a tile the tileset animates by FRAME REWRITE (the
+  -- overworld's flower) is already named by its animation spec, so like
+  -- tall grass it needs no profile entry anywhere. Hand-authoring still
+  -- wins -- a mod animating a wall tile this way keeps its wall by
+  -- listing it. Guarded because the spec seam is engine data a stub map
+  -- may not carry.
+  local flowerTiles = {}
+  do
+    local ok, declared = pcall(function()
+      if tileset.animatedTiles then return tileset.animatedTiles end
+      local TileRenderer = require("src.render.TileRenderer")
+      return TileRenderer.defaultAnimatedTiles(tileset)
+    end)
+    if ok then
+      for _, spec in ipairs(type(declared) == "table" and declared or {}) do
+        if spec.kind == "frames" and spec.tile then
+          flowerTiles[spec.tile] = true
+        end
+      end
+    end
+  end
+
   local shapes = { classes = {} }
   for class in pairs(FALLBACK_HEIGHTS) do
     shapes.classes[class] = shapeFor(class, heights)
@@ -222,6 +252,8 @@ function TileShape.forMap(map)
       -- derived pin: every tileset already names its tall-grass tile, so
       -- the standing-tuft treatment needs no profile entry anywhere
       shapes[t] = shapeFor("grass", heights, true)
+    elseif flowerTiles[t] then
+      shapes[t] = shapeFor("flower", heights, true)
     elseif map.waterTiles and map.waterTiles[t] then
       shapes[t] = shapes.classes.water
     elseif map.walkable and map.walkable[t] then

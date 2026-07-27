@@ -117,12 +117,26 @@ return function(game)
   end
 
   -- one animation period is 20 logic frames at 60Hz, and TileRenderer.tick
-  -- runs on wall-clock steps, so ~22 rendered frames lands the next step
+  -- runs on wall-clock steps, so ~22 rendered frames lands the next step.
+  -- animFrame is an OPTIONAL engine seam this build may not export; the
+  -- mod's own clock (TerrainAtlas._animFrame) reads the same counter by
+  -- whatever route exists, so ask it first.
+  local function clock()
+    if TerrainAtlas and TerrainAtlas._animFrame then
+      local ok, f = pcall(TerrainAtlas._animFrame)
+      if ok and type(f) == "number" then return f end
+    end
+    if TileRenderer.animFrame then
+      local ok, f = pcall(TileRenderer.animFrame)
+      if ok and type(f) == "number" then return f end
+    end
+    return -1
+  end
   for i = 1, shots do
     game.capturePath = ("%s/anim_%s_L%d_%02d.png"):format(DIR, mapId, level, i)
     wait(3)
     print(("[anim] shot %d at animFrame %d step %d"):format(
-      i, TileRenderer.animFrame(), math.floor(TileRenderer.animFrame() / 20) % 8))
+      i, clock(), math.floor(clock() / 20) % 8))
     dumpAtlas(tostring(i))
     wait(22)
   end
