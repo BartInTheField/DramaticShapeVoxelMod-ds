@@ -16,7 +16,6 @@ local Mat4 = V.require("Mat4")
 local Voxel3D = V.require("Voxel3D")
 local ShadowMap = V.require("ShadowMap")
 local ChunkMesher = V.require("ChunkMesher")
-local VoxelModels = V.require("VoxelModels")
 local SpriteBillboards = V.require("SpriteBillboards")
 local TileShape = V.require("TileShape")
 local TerrainAtlas = V.require("TerrainAtlas")
@@ -97,11 +96,9 @@ end
 VoxelScene._skyFor = skyFor           -- named for the suite
 VoxelScene._skyStrength = skyStrength
 
--- A facing is a yaw about +Y. Models are carved facing +Z (south, "down"),
--- and Mat4.rotateY(+90 deg) maps +Z to +X, so east is +90 and west is -90.
--- Nothing is mirrored: yawing to face east shows the model's east side,
--- which carries the left-view art -- exactly the mirror the 2D game draws
--- for right-facing, arrived at by turning the model instead of flipping it.
+-- A facing as a yaw about +Y, kept for callers that reason about which way
+-- an entity points (the mod exports it). The character cards themselves
+-- never yaw -- they face south and lean, like the flat game.
 local YAW = {
   down = 0,
   up = math.pi,
@@ -133,26 +130,7 @@ local function groundAt(map, cellX, cellY)
   return s.h > 0 and s.h or 0
 end
 
--- Model matrix for a 16x16 character whose cell's top-left is world
--- (px, py), standing on ground height `gh`, yawed to `facing`. The yaw is
--- taken about the cell centre, not the model corner, so turning in place
--- keeps the character on its own tile.
-local function characterMatrix(px, py, gh, facing, mirror)
-  local m = Mat4.mul(Mat4.translate(px + 8, gh, py + 8),
-                     Mat4.rotateY(YAW[facing] or 0))
-  if mirror then
-    m = Mat4.mul(m, Mat4.scale(-1, 1, 1))
-  end
-  return Mat4.mul(m, Mat4.translate(-8, 0, -8))
-end
-
-VoxelScene.characterMatrix = characterMatrix
 VoxelScene.YAW = YAW
-
--- Character style: "billboard" renders each entity as its current sprite
--- frame voxelized with side-view relief, leaning back toward the camera;
--- "model" is the carved visual-hull figure that turns with its facing.
-VoxelScene.style = "billboard"
 
 -- Camera-ward pull distance for billboards (and the grass rows, which
 -- must keep their relative depth to feet): just enough that a leaned-back
@@ -229,37 +207,25 @@ local function drawEntity(sprite, px, py, facing, phase, flip, gh, colors,
   end
   local y = gh + (lift or 0)
 
-  if VoxelScene.style == "billboard" then
-    -- pick the very frame the 2D path would draw (same tables). The slab
-    -- always faces SOUTH -- the direction the 2D game implies -- and only
-    -- LEANS BACK, pivoting at its feet, by exactly the camera's pitch, so
-    -- at every tilt level the sprite reads face-on like the flat game.
-    -- No camera-tracking yaw: every sprite leans in parallel.
-    local frame, mirror = frameFor(def, facing, phase, flip)
-    local mesh = SpriteBillboards.mesh(def, frame)
-    if mesh then
-      -- Camera-ward pull (applied per vertex in the shader, along each
-      -- vertex's own eye ray, so it is a PURE depth bias with zero screen
-      -- drift): lets the leaned-back head win against the wall it leans
-      -- OVER while a character genuinely BEHIND a building is dozens of
-      -- pixels deeper and still loses, so real occlusion works.
-      -- the same slab UNLEANED is what the sun saw (castShadows draws
-      -- exactly this card), so that is where each vertex asks whether the
-      -- light reached it -- see Voxel3D.draw
-      Voxel3D.draw(mesh, tex, billboardMatrix(px, py, y, mirror),
-                   billboardPull(),
-                   Voxel3D.casterMatrix(px, py, y, mirror))
-      return true
-    end
-    -- no pixel access: fall through to the carved model
-  end
-
-  local mesh = VoxelModels.mesh(def, phase == 1 and "walk" or "stand")
+  -- pick the very frame the 2D path would draw (same tables). The card
+  -- always faces SOUTH -- the direction the 2D game implies -- and only
+  -- LEANS BACK, pivoting at its feet, by exactly the camera's pitch, so
+  -- at every tilt level the sprite reads face-on like the flat game.
+  -- No camera-tracking yaw: every sprite leans in parallel.
+  local frame, mirror = frameFor(def, facing, phase, flip)
+  local mesh = SpriteBillboards.mesh(def, frame)
   if not mesh then return false end
-  -- alternate walk steps mirror the down/up frames in 2D (the GB uses an
-  -- OAM flip); mirroring the model about its own centre is the same idea
-  local mirror = flip and phase == 1 and (facing == "down" or facing == "up")
-  Voxel3D.draw(mesh, tex, characterMatrix(px, py, y, facing, mirror))
+  -- Camera-ward pull (applied per vertex in the shader, along each
+  -- vertex's own eye ray, so it is a PURE depth bias with zero screen
+  -- drift): lets the leaned-back head win against the wall it leans
+  -- OVER while a character genuinely BEHIND a building is dozens of
+  -- pixels deeper and still loses, so real occlusion works.
+  -- the same card UNLEANED is what the sun saw (castShadows draws
+  -- exactly this mesh), so that is where each vertex asks whether the
+  -- light reached it -- see Voxel3D.draw
+  Voxel3D.draw(mesh, tex, billboardMatrix(px, py, y, mirror),
+               billboardPull(),
+               Voxel3D.casterMatrix(px, py, y, mirror))
   return true
 end
 
@@ -268,14 +234,13 @@ VoxelScene.drawEntity = drawEntity
 -- The player's silhouette, for wherever the scenery is standing in front of
 -- them (Voxel3D.beginGhost inverts the depth test around this call).
 --
--- A FLAT CARD, not the relief slab the solid pass draws. The slab carries
--- front and back faces and nothing is culled, so with the test inverted its
--- own back faces -- a few voxels deeper than the front ones that just won --
--- read as "behind something" and the figure repaints itself on open ground,
--- occluded or not. One quad has no self-overlap, which is the very reason
--- the shadow pass uses this same mesh, and it cannot double-blend into a
--- mottled patch either. A silhouette is an outline, so the outline is
--- exactly the right mesh for it.
+-- The same flat card the solid pass and the sun pass draw. That it has no
+-- self-overlap is what makes it safe here: with the depth test inverted, a
+-- mesh carrying both front and back faces would read its own back faces as
+-- "behind something" and repaint the figure on open ground, occluded or
+-- not. One quad cannot do that, and cannot double-blend into a mottled
+-- patch either. A silhouette is an outline, so an outline is the right
+-- mesh for it.
 local function drawGhost(p)
   local def = p.sprite.def
   local frame, mirror = frameFor(def, p.facing, p.phase, p.flip)

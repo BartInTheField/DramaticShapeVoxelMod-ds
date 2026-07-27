@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Characters are flat sprite billboards, and nothing about a sprite is
+  voxelized any more.** Every figure -- the player, NPCs, the ghosts
+  standing on a neighbour map -- is now its current 2D frame on a single
+  flat quad, with the shader's alpha discard cutting the exact silhouette
+  out of it. It still faces south and leans back by the camera's pitch,
+  so it reads face-on at every tilt exactly as before.
+
+  Two things went away with that. The contoured slab, which gave each row
+  a thickness measured from the sheet's own side view; and the carved
+  visual-hull models (`lib/VoxelModels.lua`, `tools/build_voxels.py`, and
+  ~70 generated files under `assets/voxels/`, 2 MB), which reconstructed
+  a figure from its three drawn views.
+
+  A sprite is a DRAWING, not an object seen from one side. Gen 1's
+  overworld figures are 16x16 icons with a fixed front-on reading, and
+  turning one into a solid invents a body the artist never drew and the
+  game never implied. The shipped models were also the one place this mod
+  carried a description of the ROM art -- a carve is a faithful record of
+  a sprite's silhouette, pixel for pixel -- which sat badly against a mod
+  that otherwise ships no game data at all.
+
+  The flat card is cheaper on every axis: no pixel access (only the
+  sheet's dimensions), one quad instead of hundreds of faces, and one
+  mesh shared by the solid draw, the sun pass and the player's occlusion
+  silhouette. That sharing is load-bearing rather than tidy -- the
+  silhouette draws with the depth test inverted, and any self-overlap in
+  the mesh would read as "behind something" and repaint the figure on
+  open ground.
+
+  A mod can still ship `overrides/voxels/<name>.lua`; that path is
+  unchanged and still wins where it exists.
+
 ## 1.0.6
 
 ### Added

@@ -1,13 +1,13 @@
 -- Voxel world mode: the voxel wireframe, 3D Dot Game Heroes style.
 --
 -- Every mesh in this mode is built on a one-unit-per-voxel grid in its OWN
--- model space -- terrain in world pixels, a character slab in the sprite's
--- own pixels, a carved model in its voxels. So the seams are simply the
+-- model space -- terrain in world pixels, a character card in the sprite's
+-- own pixels. So the seams are simply the
 -- integer planes of that space, and drawing them is a pixel-shader job:
 -- measure how far the fragment is from the nearest integer plane, in
 -- DISPLAY pixels, and darken the ones within half a pixel of it. Sitting in
 -- model space is what keeps the wireframe glued to a thing however it is
--- posed -- a character's slab leans back by the camera's pitch and its
+-- posed -- a character's card leans back by the camera's pitch and its
 -- seams lean with it, instead of the world's grid sliding across the
 -- sprite.
 --
