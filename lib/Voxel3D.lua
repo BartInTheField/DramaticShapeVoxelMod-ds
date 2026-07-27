@@ -198,6 +198,9 @@ local SHADER = [[
   }
 #endif
 
+  uniform vec3 ghostColor;    // the flat silhouette colour
+  uniform float ghost;        // 0 = shade normally, 1 = flatten to it
+
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     vec4 p = Texel(tex, tc);
     // sprite sheets key GB OBJ color 0 to alpha 0; discarding rather than
@@ -210,6 +213,13 @@ local SHADER = [[
     // dark grass and one across a white roof each stay in their own palette
     rgb *= 1.0 - gridDark * voxelSeam(vGrid);
 #endif
+    // The hidden player is a SHAPE, not a dimmed picture of itself. Tinting
+    // through `color` could only multiply the sprite's own pixels, which
+    // darkens each one by its own amount and keeps the character's internal
+    // detail; replacing the colour outright is what makes it read as one
+    // solid silhouette. Last in the chain, so neither the sun nor a voxel
+    // seam can mottle it.
+    rgb = mix(rgb, ghostColor, ghost);
     return vec4(rgb, 1.0) * color;
   }
 #endif
@@ -394,6 +404,12 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky)
     pcall(sh.send, sh, "gridDark", VoxelGrid.DARK)
     pcall(sh.send, sh, "gridWidth", VoxelGrid.WIDTH)
   end
+  -- ordinary shading until the silhouette pass asks for otherwise. Sent
+  -- every frame rather than once, because a scene that opened mid-ghost --
+  -- a driver hiccup between beginGhost and endGhost -- would otherwise
+  -- start out flattening everything it drew.
+  pcall(sh.send, sh, "ghost", 0)
+  pcall(sh.send, sh, "ghostColor", Voxel3D.GHOST_COLOR)
   -- the curved world bends about the camera's focus, so the horizon keeps
   -- a fixed distance ahead of the player rather than sitting on the map
   Voxel3D.curveK = WorldCurve.k(vh)
@@ -416,6 +432,66 @@ function Voxel3D.depth(mode)
   if not active then return end
   pcall(love.graphics.setDepthMode, mode == "always" and "always" or "lequal",
         true)
+end
+
+-- ------------------------------------------------ the player's own ghost --
+
+-- The silhouette's colour, and how solid it is.
+--
+-- ONE flat grey rather than a dimmed copy of the sprite, so the shape reads
+-- at a glance instead of competing with whatever is showing through it --
+-- and translucent rather than opaque, so it stays a hint of where the
+-- player is rather than a hole punched in the building. The wall it is
+-- seen through still shows, which is what keeps it reading as "behind
+-- that" instead of "in front of it".
+Voxel3D.GHOST_COLOR = { 0.26, 0.26, 0.28 }
+Voxel3D.GHOST_ALPHA = 0.5
+
+-- Draw a character AGAIN wherever the ordinary draw LOST the depth test.
+--
+-- Honest occlusion is the point of this mode -- walk behind the Mart and the
+-- Mart is genuinely in front of you -- but a player who cannot see their own
+-- character has lost track of where they are standing, which the flat game
+-- never allowed. So the figure is drawn a second time with the test
+-- INVERTED: "greater" passes exactly where "lequal" failed, and LOVE hands
+-- the compare straight to glDepthFunc, so the two are true complements.
+-- Every texel of the sprite is therefore drawn once and once only -- solid
+-- where it is visible, translucent where it is not -- with no seam where
+-- they meet and no double-blending anywhere.
+--
+-- Nothing is drawn at all when nothing is in the way, and no code here ever
+-- asks whether the player is occluded: the depth buffer already knows, and
+-- the test is the question.
+--
+-- Depth WRITES are off. This pass is behind the scenery by definition, and
+-- writing would file the hidden figure's depth in front of the building
+-- hiding it -- the grass pass at the end of the frame reads that buffer.
+--
+-- The caller redraws through the ordinary character path, so the ghost keeps
+-- the same mesh, matrix and camera-ward PULL as the real draw. The pull
+-- matching is what keeps the leaning-over-a-near-wall case out of here: pull
+-- already won that fight for the solid draw, so this pass finds nothing left
+-- to paint and a character merely standing close to a wall does not shimmer
+-- a ghost over it.
+function Voxel3D.beginGhost()
+  if not active then return end
+  pcall(love.graphics.setDepthMode, "greater", false)
+  love.graphics.setColor(1, 1, 1, Voxel3D.GHOST_ALPHA)
+  if activeShader then
+    pcall(activeShader.send, activeShader, "ghostColor", Voxel3D.GHOST_COLOR)
+    pcall(activeShader.send, activeShader, "ghost", 1)
+  end
+end
+
+function Voxel3D.endGhost()
+  if not active then return end
+  pcall(love.graphics.setDepthMode, "lequal", true)
+  love.graphics.setColor(1, 1, 1, 1)
+  -- back to ordinary shading before anything else draws; leaving it set
+  -- would flatten the grass pass that follows into one grey sheet
+  if activeShader then
+    pcall(activeShader.send, activeShader, "ghost", 0)
+  end
 end
 
 -- -------------------------------------------------------------- shadows --

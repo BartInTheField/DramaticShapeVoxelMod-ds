@@ -191,6 +191,27 @@ local function drawShadow(sprite, px, py, facing, phase, flip, gh, lift)
                Voxel3D.shadowMatrix(px, py, gh, lift, mirror))
 end
 
+-- Where a billboard character's card stands: on the middle of its cell at
+-- height `y`, pivoted at the feet and tipped back by exactly the camera's
+-- pitch. The slab is built centred on its sprite plane (z = 0), so only the
+-- x anchor shifts; the relief bulges symmetrically front and back of it.
+--
+-- Shared by the solid draw and the silhouette below, so the two can never
+-- drift apart -- a silhouette standing anywhere but exactly behind the
+-- figure would read as a second character.
+local function billboardMatrix(px, py, y, mirror)
+  local Voxel = V.require("VoxelState")
+  local m = Mat4.mul(Mat4.translate(px + 8, y, py + 8),
+                     Mat4.rotateX(Voxel.angle - math.pi / 2))
+  if mirror then m = Mat4.mul(m, Mat4.scale(-1, 1, 1)) end
+  return Mat4.mul(m, Mat4.translate(-8, 0, 0))
+end
+
+local function billboardPull()
+  local Voxel = V.require("VoxelState")
+  return VoxelScene.pull(math.max(Voxel.angle, 0.05))
+end
+
 -- Draw one posed entity. Returns true if 3D geometry carried it, false
 -- when nothing could be built and the caller should fall back.
 -- `colors` is the 4-color world palette the entity stands under in the SGB
@@ -217,25 +238,17 @@ local function drawEntity(sprite, px, py, facing, phase, flip, gh, colors,
     local frame, mirror = frameFor(def, facing, phase, flip)
     local mesh = SpriteBillboards.mesh(def, frame)
     if mesh then
-      local Voxel = V.require("VoxelState")
-      local pitch = Voxel.angle - math.pi / 2
       -- Camera-ward pull (applied per vertex in the shader, along each
       -- vertex's own eye ray, so it is a PURE depth bias with zero screen
       -- drift): lets the leaned-back head win against the wall it leans
       -- OVER while a character genuinely BEHIND a building is dozens of
       -- pixels deeper and still loses, so real occlusion works.
-      local a = math.max(Voxel.angle, 0.05)
-      local pull = VoxelScene.pull(a)
-      local m = Mat4.mul(Mat4.translate(px + 8, y, py + 8),
-                         Mat4.rotateX(pitch))
-      if mirror then m = Mat4.mul(m, Mat4.scale(-1, 1, 1)) end
-      -- the slab is built centered on its sprite plane (z = 0), so only
-      -- the x anchor shifts; the relief bulges symmetrically front/back
-      m = Mat4.mul(m, Mat4.translate(-8, 0, 0))
       -- the same slab UNLEANED is what the sun saw (castShadows draws
       -- exactly this card), so that is where each vertex asks whether the
       -- light reached it -- see Voxel3D.draw
-      Voxel3D.draw(mesh, tex, m, pull, Voxel3D.casterMatrix(px, py, y, mirror))
+      Voxel3D.draw(mesh, tex, billboardMatrix(px, py, y, mirror),
+                   billboardPull(),
+                   Voxel3D.casterMatrix(px, py, y, mirror))
       return true
     end
     -- no pixel access: fall through to the carved model
@@ -251,6 +264,31 @@ local function drawEntity(sprite, px, py, facing, phase, flip, gh, colors,
 end
 
 VoxelScene.drawEntity = drawEntity
+
+-- The player's silhouette, for wherever the scenery is standing in front of
+-- them (Voxel3D.beginGhost inverts the depth test around this call).
+--
+-- A FLAT CARD, not the relief slab the solid pass draws. The slab carries
+-- front and back faces and nothing is culled, so with the test inverted its
+-- own back faces -- a few voxels deeper than the front ones that just won --
+-- read as "behind something" and the figure repaints itself on open ground,
+-- occluded or not. One quad has no self-overlap, which is the very reason
+-- the shadow pass uses this same mesh, and it cannot double-blend into a
+-- mottled patch either. A silhouette is an outline, so the outline is
+-- exactly the right mesh for it.
+local function drawGhost(p)
+  local def = p.sprite.def
+  local frame, mirror = frameFor(def, p.facing, p.phase, p.flip)
+  local mesh = SpriteBillboards.shadowQuad(def, frame)
+  if not mesh then return end
+  local tex = p.sprite:resolveImage()
+  if p.colors and not def.trueColor then
+    tex = TerrainAtlas.forSprite(def.image, p.colors) or tex
+  end
+  local y = p.gh + (p.lift or 0)
+  Voxel3D.draw(mesh, tex, billboardMatrix(p.px, p.py, y, mirror),
+               billboardPull())
+end
 
 -- Render the world. `state` is the OverworldState; `vw`/`vh` the world view
 -- size in world pixels; `w`/`h` the pixel size of the canvas to render
@@ -334,9 +372,15 @@ end
 -- map. pose() returns the VISUAL y (ledge hops arc it, surfing bobs it);
 -- the difference from the entity's base y becomes vertical LIFT in 3D, so
 -- a hop rises off the ground instead of sliding north.
+-- Returns the pose list and, separately, the PLAYER's entry in it (nil
+-- during a Fly animation, which draws the player itself and is skipped
+-- below). Only that one entry gets the see-through treatment: NPCs and the
+-- ghosts standing on a neighbour map are left to honest occlusion, because
+-- it is only your own character you cannot afford to lose behind a roof.
 local function posesOf(state, spriteColors)
   local colors = spriteColors(state.map)
   local posed = {}
+  local me = nil
   for _, g in ipairs(state.ghosts or {}) do
     local sprite, vx, vy, facing, phase, flip = g.npc:pose()
     posed[#posed + 1] = {
@@ -355,9 +399,10 @@ local function posesOf(state, spriteColors)
         gh = groundAt(state.map, e.cellX, e.cellY),
         lift = e.py - vy, colors = colors,
       }
+      if e == state.player then me = posed[#posed] end
     end
   end
-  return posed
+  return posed, me
 end
 
 -- A stamp of everything the sun pass depends on. Nothing in it moving
@@ -451,7 +496,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
     return modeColors(paletteFor, map)
   end
 
-  local posed = posesOf(state, spriteColors)
+  local posed, me = posesOf(state, spriteColors)
   castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh, atlasFor)
 
   if not Voxel3D.beginScene(w, h, cx, cy, vw, vh, skyFor(state.map)) then
@@ -478,6 +523,19 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
                  p.lift)
     end
     Voxel3D.endShadows()
+  end
+
+  -- The player's silhouette goes down BEFORE the characters, so the only
+  -- thing it can meet in the depth buffer is the WORLD -- terrain, buildings,
+  -- trees. Drawn after the solid pass it would meet the player's own card
+  -- instead, and every fragment of a figure sits behind the one that just
+  -- wrote it, so the silhouette would paint over the player at all times.
+  -- Every character then draws on top as usual, which leaves the silhouette
+  -- showing in exactly one situation: where the world hides them.
+  if me then
+    Voxel3D.beginGhost()
+    drawGhost(me)
+    Voxel3D.endGhost()
   end
 
   -- characters, normally depth-tested: the camera-ward pull inside

@@ -1,5 +1,62 @@
 # Changelog
 
+## 1.0.3
+
+### Added
+
+- **The player shows through whatever hides them.** Occlusion in this mode is
+  the real thing -- walk north of Red's house and the roof is genuinely in
+  front of you -- but a player who cannot see their own character has lost
+  track of where they are standing, which the flat game never allowed. The
+  figure now draws a second time as a translucent silhouette wherever the
+  world is in front of it.
+
+  No code anywhere asks whether the player is occluded: the depth buffer
+  already knows, and the test is the question. The silhouette is drawn with
+  the depth compare INVERTED -- `greater` where the scene uses `lequal` --
+  so it appears exactly where the ordinary draw would have lost, and nothing
+  at all is drawn when nothing is in the way. LOVE hands the compare straight
+  to `glDepthFunc`, so the two are true complements with no seam between
+  them.
+
+  It goes down BEFORE the characters, so the only thing it can meet in the
+  depth buffer is the world -- terrain, buildings, trees. Drawn after the
+  solid pass it would meet the player's own card instead, and every fragment
+  of a figure sits behind the one that just wrote it, so it would paint over
+  the player permanently. Characters then draw on top as usual.
+
+  It uses the FLAT card (`SpriteBillboards.shadowQuad`), not the relief slab
+  the solid pass draws. The slab carries front and back faces and the mode
+  culls neither, so with the test inverted its own back faces -- a few voxels
+  deeper than the front ones that just won -- read as "behind something", and
+  the figure repaints itself on open ground whether or not anything is in
+  front of it. One quad has no self-overlap, which is exactly why the shadow
+  pass already uses this mesh, and it cannot double-blend into a mottled
+  patch either. A silhouette is an outline, so the outline is the right mesh.
+
+  Depth writes are off: the pass is behind the scenery by definition, and
+  writing would file the hidden figure in front of the building hiding it,
+  which the grass pass at the end of the frame reads. The card carries the
+  same transform and the same camera-ward pull as the solid draw (both now
+  come from one shared `billboardMatrix`/`billboardPull`, so they cannot
+  drift), which is what keeps the leaning-over-a-near-wall case out of it:
+  pull already won that fight for the solid draw, so a character merely
+  standing close to a wall does not shimmer a silhouette over it.
+
+  It is drawn as ONE flat translucent grey, not as a dimmed copy of the
+  sprite. Tinting through the vertex colour could only MULTIPLY the sprite's
+  own pixels, which darkens each one by its own amount and keeps all the
+  character's internal detail -- a murky picture of Red rather than a shape.
+  So the fragment shader carries a `ghost` / `ghostColor` pair and replaces
+  the colour outright, last in the chain so neither the sun nor a voxel seam
+  can mottle it. Staying translucent is what keeps it reading as "behind
+  that wall" rather than as a hole punched through it.
+
+  `Voxel3D.GHOST_COLOR` and `GHOST_ALPHA` (0.5) are the knobs. Only the
+  player gets this -- NPCs and the ghosts standing on a neighbouring map are
+  left to honest occlusion, because it is only your own character you cannot
+  afford to lose behind a roof.
+
 ## 1.0.2
 
 ### Fixed
