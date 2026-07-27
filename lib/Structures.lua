@@ -205,6 +205,14 @@ function Structures.forMap(map)
   -- the fold then shows the door art standing at ground level in the
   -- building's front face. Door graphics only (the tileset's doorTiles);
   -- interior stair/mat warps stay flat.
+  --
+  -- A PROFILE PIN WINS over the fold. The fold is detection, and rule 1
+  -- of the resolution order is that an authored tile bypasses detection
+  -- -- but this used to overwrite shapeAt unconditionally, so a pin on
+  -- any tile the tileset also lists in doorTiles was dead on arrival.
+  -- Celadon Mansion is the case that found it: all four of its
+  -- staircases are door tiles, so `stair_e` / `stair_down_w` pins there
+  -- silently did nothing and the flights stayed painted on the floor.
   for cy = math.floor(y0 / 2), math.floor(y1 / 2) do
     for cx = math.floor(x0 / 2), math.floor(x1 / 2) do
       if map.doorTiles[map:cellTile(cx, cy)] then
@@ -214,11 +222,14 @@ function Structures.forMap(map)
           for dy = 0, 1 do
             for dx = 0, 1 do
               local dk = keyOf(cx * 2 + dx, cy * 2 + dy)
-              shapeAt[dk] = shapes.classes.wall
-              -- remembered for buildVolume: a folded doorway column
-              -- answers to its REGION for height and top, not to its
-              -- own drawn extent (see the door adoption there)
-              S.doorFold[dk] = true
+              local ds = shapeAt[dk]
+              if not (ds and ds.authored) then
+                shapeAt[dk] = shapes.classes.wall
+                -- remembered for buildVolume: a folded doorway column
+                -- answers to its REGION for height and top, not to its
+                -- own drawn extent (see the door adoption there)
+                S.doorFold[dk] = true
+              end
             end
           end
         end

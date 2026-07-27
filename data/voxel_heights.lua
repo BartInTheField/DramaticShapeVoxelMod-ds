@@ -166,20 +166,257 @@ return {
     -- floor tile ($11), which is also Bruno's floor.
     -- (The round boulder drawn beside some statues, $07/$08/$17/$18,
     -- is NOT pinned: it also tiles wall-to-wall as Pewter's rock rows,
-    -- which are scenery for the detector, not a lone prop.)
+    -- which are scenery for the detector, not a lone prop.  Probed:
+    -- the repeat-aware scenery path already gives every one of them a
+    -- single 16px course in Pewter's and Bruno's rock walls alike, so
+    -- a pin would only restate the derived answer.)
+    --
+    -- The rest of the tileset is the ten rooms' own furniture: the six
+    -- badge gyms it serves (Pewter, Cerulean, Vermilion, Celadon,
+    -- Fuchsia, Viridian) plus Bruno's and Lorelei's rooms, the
+    -- Champion's room and the Hall of Fame.  (Saffron's and Cinnabar's
+    -- gyms are FACILITY, Agatha's room is CEMETERY and Lance's is DOJO,
+    -- so none of them takes a pin from here.)  Same failure as every
+    -- other interior: the detector reads the black interior walls as
+    -- volumes measured off the whole drawn run, so Vermilion's side
+    -- walls and Viridian's north-south maze arms came out as 48px fins
+    -- with their black fill VOIDED flat between them, and the Hall of
+    -- Fame's recording machine merged into the wall band as a 32px slab
+    -- whose feet had been flattened away by the walkable-cell rule.
     GYM = {
-      wall = { 34, 35, 50, 51 },
-      prop = { 2, 56, 18, 19, 11, 12, 27, 28 },
+      -- The wall band is ONE 16px face, whatever the artist drew into
+      -- it.  The plinths (34/35/50/51 -- 50 is the $32 water-fallback
+      -- trap and would recess into a pond lip); the room's own band
+      -- ($05 white course, $10 trim, $06 the doorway's dark head); the
+      -- BLACK interior walls every gym is partitioned with -- $0F the
+      -- fill (near-black, so the void rule flattens it unless it is
+      -- AUTHORED, which is the whole reason it is listed), $24/$26/$27
+      -- the top edge and its corners, $25/$35 the sides, $42/$3E the
+      -- west and east end caps of a horizontal arm and $10 again as its
+      -- lit south face.  Then the things drawn built INTO those walls,
+      -- exactly like the Center's healing consoles: Vermilion's target
+      -- band ($44-$47 with $05 between, over the $54/$56/$57 stripe),
+      -- the barred gate ($20/$21/$30/$31 -- Lorelei's north door, and
+      -- the barrier VermilionGymScript paints in until both switches
+      -- are thrown), and Vermilion's corner switchboard ($29/$2A over
+      -- $0D/$0E and $1D/$1E), which is drawn 32px tall and so reads as
+      -- two stacked courses of the same band.
+      wall = { 34, 35, 50, 51,
+               5, 6, 16,
+               15, 36, 37, 38, 39, 53, 62, 66,
+               68, 69, 70, 71, 84, 86, 87,
+               32, 33, 48, 49,
+               13, 14, 29, 30, 41, 42 },
+      -- Fuchsia's invisible maze walls ($1F) are deliberately NOT here.
+      -- The artist drew them as the floor with its stripes broken: on
+      -- the GB they are invisible, and the puzzle IS walking into them.
+      -- Raising them to a course would read better as a room and give
+      -- the player something to bump into -- and would also hand them
+      -- the solution, turning a maze into a corridor.  A shape is
+      -- purely presentational and this file's job is to reproduce what
+      -- was drawn, so the drawn answer wins: left to the derived path,
+      -- $1F stays the floor it is painted as and the gym plays exactly
+      -- as the flat game does.
+      -- Cerulean's pools are the ONE place the $14 water-fallback trap
+      -- is right: $14 really is the gym's water, so it is left to fall
+      -- through to the engine's water set and recess.  Its north coping
+      -- ($04, the grated lip) is drawn in the TOP half of a water cell,
+      -- so the cell rule dragged it down to the water line with it;
+      -- pinned flat it stays the poolside at floor level and the water
+      -- shows a real lip.  The pool's south lip ($01) needs nothing --
+      -- it is always the top half of a walkable FLOOR cell, so rule 3
+      -- already lays it flat.  Lorelei's room uses the same pair for
+      -- the paved plaza that stands out of her water.
+      ground = { 4 },
+      -- Celadon's hedge: a round shrub, one per cell ($2C/$2D over
+      -- $2E/$2F), 35 of them planted wall to wall.  Round drawings get
+      -- the cylinder archetype -- one voxel ball per 16x16 cell carved
+      -- from the darkest-pixel outline -- the same treatment the
+      -- overworld's tree canopies take, and per-CELL, so a hedge row
+      -- becomes a row of bushes instead of one boxed monolith.
+      cylinder = { 44, 45, 46, 47 },
+      -- The statues, the cans, and Celadon's three little trees
+      -- ($40/$41 canopy over $50/$51 trunk).  A trunk is not round, so
+      -- the tree cannot be a ball like the shrubs beside it -- it takes
+      -- the thin standee pool every interior plant takes, which is also
+      -- a pool apart from the cylinders it touches.
+      prop = { 2, 56, 18, 19, 11, 12, 27, 28,
+               64, 65, 80, 81 },
+      -- The Hall of Fame's recording machine, the one piece of real
+      -- furniture in the tileset.  It is drawn 32px wide and THREE tile
+      -- rows tall against the north band, and the detector made a mess
+      -- of it twice over: the top two rows merged into the wall band as
+      -- one 32px slab, and the base row -- whose cell is walkable,
+      -- because the Hall's floor tile ($19) is its own bottom-left --
+      -- was flattened into the floor, so the machine stood on nothing.
+      -- Split at the drawn seam: the plinth row ($58/$59/$5A) is a
+      -- half-cell counter, and the console above it ($5B-$5E over
+      -- $36/$37/$55/$5F) is a standing per-pixel billboard that rides
+      -- the plinth's top face through the authored-box support rule.
+      -- 8 + 16 is exactly the 24px the machine is drawn.
+      counter = { 88, 89, 90 },
+      billboard = { 91, 92, 93, 94, 54, 55, 85, 95 },
+      -- the ground painted under each pinned prop, by the prop tile's
+      -- own id: statues and cans stand on the gyms' main floor ($11),
+      -- Celadon's trees on the garden's light dither ($2B) rather than
+      -- on whatever their neighbours vote.
+      -- (Celadon's flowerbed tile $03 is deliberately absent: the
+      -- tileset ANIMATES it by frame rewrite, so TileShape derives the
+      -- `flower` pin for it already -- flat ground plus a standing
+      -- 1px cutout -- and listing it here would take that away.  The
+      -- floors need nothing either.  $11/$16/$2B and Viridian's arrow
+      -- and dot markings $3C/$3D/$3F/$4C/$4D are in the walkable list
+      -- outright; the paved slabs the Hall of Fame is floored with and
+      -- Lorelei's plaza is built of ($09/$0A over $19/$1A) get there
+      -- through the CELL: only $19 is listed, but it is the cell's
+      -- bottom-left, so rule 3 lays all four of them flat together.
+      -- Cerulean uses the very same slab as its poolside deck, which is
+      -- why that gym's perimeter is a deck and not a wall -- the room's
+      -- only wall band is the one drawn course along its north edge.)
       prop_ground = { [2] = 17, [56] = 17, [18] = 17, [19] = 17,
-                      [11] = 17, [12] = 17, [27] = 17, [28] = 17 },
+                      [11] = 17, [12] = 17, [27] = 17, [28] = 17,
+                      [64] = 43, [65] = 43, [80] = 43, [81] = 43 },
     },
 
-    -- ledge pairs from data.field.tilePairs
+    -- The caves: one blockset serves nineteen maps -- Mt Moon's three
+    -- floors, Rock Tunnel's two, Seafoam Islands' five, Victory Road's
+    -- three, Cerulean Cave's three, and Diglett's Cave with its two
+    -- route-side stubs.  A Gen 1 cave is drawn as TWO floor levels: a
+    -- dark lower floor ($20 rough, $21 bright checker, $2A fine checker)
+    -- and LIT shelves ($05) raised above it.  data.field.tilePairs
+    -- forbids stepping between the two ($20/$21/$2A/$41 <-> $05), which
+    -- is what the shipped `ledge` pin on $05 records: the lit floor is a
+    -- step up off the dark floor, reached only by the drawn ramps.
+    -- Everything else in here is rock, and in a dungeon the rock IS the
+    -- room -- so every rock tile is pinned to ONE 16px course.
+    --
+    -- What the detector made of it: the rock EDGES towered.  A shelf's
+    -- side is drawn as a cap over a run of face tiles over a corner
+    -- pair -- $04 / $31 x5 / $28 / $10 down one column -- and the volume
+    -- builder's repeat scan anchors on the column's FRONT tile, which
+    -- here is a one-off corner that never recurs above it.  Neither the
+    -- repeat read nor the trim rule (two identical rows directly above
+    -- the front) fires, so the column keeps its whole extent and caps at
+    -- MAX_ROWS: a 48px fin out of the 16px band beside it, while the
+    -- column one tile west -- ending on $28 with two $31 above -- reads
+    -- 16.  Probed before pinning: MT_MOON_B2F tiles (5,4)-(5,11) and
+    -- (17,8)-(17,15) at 48 with 16 either side; VICTORY_ROAD_2F
+    -- (25,26)-(25,31); SEAFOAM_ISLANDS_B4F (22,0)-(22,7),
+    -- (13,12)-(13,19) and (12,13)-(12,19).  The same reading turns a
+    -- column of four DIFFERENT rock tiles into 32px -- VICTORY_ROAD_1F
+    -- (28,20)-(29,23) and (30,20)-(31,23), $02/$12 over $0C/$1C, next
+    -- to identical rock at 16.  An authored tile never reaches the
+    -- volume builder, so pinning the rock is the whole fix: there is no
+    -- run left to misread.
     CAVERN = {
-      ledge = { 5 },
+      -- The rock, one 16px course.  Reading across the blockset:
+      -- $02/$03 over $12/$13 is the speckled rock mass and $0C/$0D over
+      -- $1C/$1D the boulder-cluster mass, both solid wall-to-wall
+      -- fills; $10/$11 is the cobble course facing the south side of
+      -- every lit shelf, $31 its west face and $17 its east; $04/$07/
+      -- $28 are the caps and $25/$26 the inner corners where two faces
+      -- meet.  $0E/$0F over $1E/$1F is the barred rock shelf that
+      -- stands alone on the dark floor (MT_MOON_1F, ROCK_TUNNEL_1F and
+      -- twice in SEAFOAM_ISLANDS_B4F): one cell of face-on drawing, so
+      -- one 16px face -- never a standee, its black surround touches
+      -- all four rims and would segment into a solid slab.
+      --
+      -- $14 is the bright rubble mass that fills Cerulean Cave and the
+      -- lower Seafoam floors, and it is the $14 WATER-FALLBACK TRAP:
+      -- unpinned it hits the engine's stale-cache water set, and every
+      -- cell it floors RECESSED -- probed `14w-2` over whole blocks of
+      -- SEAFOAM_ISLANDS_B4F and CERULEAN_CAVE, a cavern of ponds.
+      wall = { 2, 3, 18, 19,       -- $02/$03 over $12/$13, speckled mass
+               12, 13, 28, 29,     -- $0C/$0D over $1C/$1D, boulder mass
+               16, 17,             -- $10/$11, the shelf's south cobbles
+               49, 23,             -- $31 west face, $17 east face
+               4, 7, 40,           -- $04 NW cap, $07 NE cap, $28 SW cap
+               37, 38,             -- $25/$26, the inner corners
+               20,                 -- $14 rubble mass -- the water trap
+               14, 15, 30, 31 },   -- $0E/$0F over $1E/$1F, barred shelf
+      -- the lit floor and the shading row along its north rim: one 6px
+      -- shelf.  $05 is the shipped pin (the tilePairs step).  $29 is the
+      -- SAME surface -- the artist's shadow row where the shelf runs up
+      -- against the rock above it -- but it sits in walkable cells, so
+      -- unpinned it resolved to flat ground and cut a 6px trench along
+      -- the north edge of every lit room (`29g00` with `05l06` one tile
+      -- south, all the way across MT_MOON_B2F).
+      ledge = { 5, 41 },
+      -- the cave ponds: $06/$27 over $24/$01, the tileset's
+      -- TILEANIM_WATER cell -- Mt Moon B2F's lake, Victory Road's
+      -- pools, the Seafoam channels you Surf.  The engine's water set
+      -- does not name them (it carries the stale $14/$32/$48 ids
+      -- instead), so unpinned they fell to the wall fallback and the
+      -- volume builder read the alternating $06/$24 rows as a drawing
+      -- eight rows tall: `27w48`/`01w48`, a 48px wall of water standing
+      -- down the middle of MT_MOON_B2F.
+      water = { 6, 39, 36, 1 },
+      -- Victory Road's boulder switches ($2B/$2C over $2D/$2E, the four
+      -- plates on 1F, 2F and 3F).  Round art, but NOT a round object:
+      -- the Strength boulders themselves are overworld SPRITES, and
+      -- this is the plate they get pushed onto -- drawn from straight
+      -- above as a black ring, a white highlight rim and a grey disc.
+      -- `cylinder` was tried here first, because a circle is what the
+      -- overworld's round canopies take, and it came out wrong: the
+      -- plate's own dithered background carries stray black pixels the
+      -- darkest-outline flood cannot reach, so they joined the mask,
+      -- inflated the top and bottom row spans to the full 16, and the
+      -- hull rendered as a clutch of white shards standing where the
+      -- plate should be (VICTORY_ROAD_1F cell 17,13).  `relief` is the
+      -- reading anything drawn from above wants: the disc stays flat
+      -- and the pixels inside its black ring lift a few voxels, so it
+      -- reads as a plate -- and the cell is walkable, so you step on it.
+      relief = { 43, 44, 45, 46 },
+      -- the flat things, pinned so nothing can raise them: both ladder
+      -- graphics ($08/$09 over $18/$19, $0A/$0B over $1A/$1B), drawn
+      -- from ABOVE and carrying the tileset's warp tiles; the ramp
+      -- treads that walk you off a lit shelf down to the dark floor
+      -- ($15/$16, four steps seen from above); and the drop holes of
+      -- Seafoam and Victory Road ($2F rim over $22).  All of them
+      -- already resolved to ground through their walkable cells -- the
+      -- pins keep that true whatever cell a block puts them in, and
+      -- keep the hole's lit rim out of the wall fallback.
+      ground = { 8, 9, 24, 25,     -- $08/$09 over $18/$19, ladder
+                 10, 11, 26, 27,   -- $0A/$0B over $1A/$1B, ladder
+                 21, 22,           -- $15/$16, the ramp treads
+                 47, 34 },         -- $2F over $22, the drop hole
+      -- Left to the derived defaults on purpose.  The dark lower floor
+      -- ($20, $21, $2A) is in the tileset's walkable list and resolves
+      -- to flat ground at level 0 -- the level the tilePairs step above
+      -- is measured FROM -- so pinning it would only restate the
+      -- default.  $3C is solid black and the void rule flattens it
+      -- (MT_MOON_B1F's unlit north band probes `3Cv00`); pinning it
+      -- would BREAK that, since the void rule skips authored tiles.
     },
+    -- Viridian Forest.  Nearly everything drawn here is ROUND, and the
+    -- detector was boxing all of it: the big trees came out as ragged
+    -- mixed-height volumes (their sparse canopy-edge tiles read 0px,
+    -- their bodies 32px), the stump rows merged into 16px crate walls
+    -- wearing folded stump art, and the trail sign was a broken pile --
+    -- its $32 tile is the water-fallback trap and recessed into a pond
+    -- lip in the middle of the woods.
     FOREST = {
+      -- the hop-down edge, from data.field.tilePairs (CAVERN's entry
+      -- above carries the same note for its own pair)
       ledge = { 46 },
+      -- the big trees -- the ball ($05/$06/$15/$16/$25/$26), its rim
+      -- wisps ($04/$07/$17/$23/$24/$27) and its feet ($35/$36) -- and
+      -- the stumps ($02/$03/$12/$13): one voxel hull per 16x16 cell,
+      -- cut from the cell's own art, the treatment the overworld border
+      -- forest already wears.  A tree spans 2x2 cells, so its four
+      -- quarter-hulls tile into one big lumpy canopy.  Every tile of
+      -- the drawing is listed: the cell-rounding is per TILE, and a rim
+      -- tile left out keeps its detector reading -- which is exactly
+      -- the ragged 0/8/16/32px box collar the trees wore
+      cylinder = { 2, 3, 4, 5, 6, 7, 18, 19, 21, 22, 23,
+                   35, 36, 37, 38, 39, 53, 54 },
+      -- the white sparkle filler inside the tree masses: flat, not an
+      -- invisible zero-height box
+      ground = { 0 },
+      -- the trail signs: the standing thin-slab treatment every town
+      -- sign gets ($32 pinned is also what lifts it out of the water
+      -- trap)
+      signpost = { 33, 34, 49, 50 },
     },
 
     -- Oak's Lab (the tileset also serves the Fighting Dojo and Lance's
@@ -388,6 +625,1159 @@ return {
       -- are the bottle rows the clerk's booth also wears as its top
       -- display; 68/69/71 and 84/85/87 the goods rows below
       bookcase = { 64, 65, 67, 68, 69, 71, 80, 81, 83, 84, 85, 87 },
+    },
+
+    -- The route gates and their upstairs lounges, the four Underground
+    -- Path entrance huts, the Safari Zone gate and its four rest houses
+    -- -- twenty-five maps on one tileset.  (Viridian Forest's two gates
+    -- draw the very same art from a SEPARATE id, FOREST_GATE below, and
+    -- pins do not carry between ids.)  Before this entry every one of
+    -- them was a swimming pool: 50/51 -- the dark panel the artist reuses
+    -- as the wall's base course AND as every counter's front -- is one of
+    -- the three ids (20/50/72, the $14/$32/$48 of the stale cache) that
+    -- the engine's water set claims in every tileset, so the whole wall
+    -- perimeter and every counter front recessed into a moat.  The other
+    -- two are placed here as well: 20 is the exit doormat, 72 the top
+    -- course of Route 2's wall.  What survived the water was towered
+    -- instead -- the counters raised to a 16px slab, the cabinets boxed,
+    -- the 2F window read as a 16-to-40px skyline, and the tables and
+    -- binoculars flattened into the floor because their cells are
+    -- walkable.
+    GATE = {
+      -- The wall band stays ONE 16px face.  Three wall drawings share
+      -- it: the route gates' panelled course (32/33 over 50/51), the
+      -- Underground Path huts' and Route 22's plain stripes (0), and
+      -- Route 2's speckled plaster (72 over its dark skirting 74).  0
+      -- and 74 need no height correction but are pinned anyway, so the
+      -- detector cannot swallow the corner plants into the band and
+      -- tower them with it.  The gate 2F's big window is the same band
+      -- two cells deep (58 glass, 45 its dither, 61 the diagonal glare,
+      -- 62 the black mullions).  The door panes (41/43, the leaf drawn
+      -- above the walkable threshold) are wall too, so a doorway reads
+      -- as a recess in the band instead of a picture of a door lying on
+      -- the floor -- the Center's warp-tile treatment, and pins are
+      -- look-only so the cell stays walkable.
+      --
+      -- 50/51 is the one compromise in this entry.  The same two tiles
+      -- draw the wall's base course and every counter's front, and a pin
+      -- cannot tell the two uses apart.  Pinned `counter` (8) the
+      -- counters come out perfect and the wall band castellates: it
+      -- stacks 32/33 over 50/51 for up to sixteen tile rows down the
+      -- east and west sides, so a 16px ridge and an 8px trench alternate
+      -- every 8px of depth and the room ends up built out of crates.
+      -- Pinned `wall` the band is one clean face everywhere and the
+      -- price is that a counter's FRONT row stands 16 instead of 8 --
+      -- which is cheap, because the mesher's authored-top rule still
+      -- lays the drawn counter surface (7/8/9) on that block's top face
+      -- and folds the drawn front panel up its face.  It reads as a
+      -- full-height service counter, not as a slab.  The wall is the
+      -- room's frame and it wins.  (FOREST_GATE never places 32/33, so
+      -- there the counter keeps its half cell.)
+      wall = { 0, 32, 33, 41, 43, 45, 50, 51, 58, 61, 62, 72, 74 },
+      -- the counter, half a cell high: its north rim and end caps (7/8),
+      -- the long run between them (9), and the top surface a counter
+      -- drawn running north-south wears (23/24).  8px is one clean band,
+      -- so the surface stays on top and the guard leans on it rather
+      -- than standing behind a wall stub.  The counters that run wall to
+      -- wall (Route 12's pair) are pure 8px; the ones that end in the
+      -- open carry the 16px front row above.
+      counter = { 7, 8, 9, 23, 24 },
+      -- the tall glass-fronted cabinets: three shelf ranks (34/35)
+      -- folded up a 24px box whose top face adopts the drawn top rim
+      -- (7/8, pinned `counter` directly above it) through the mesher's
+      -- authored-fold rule -- the HOUSE / Red's-house bookcase
+      -- treatment.  Deliberately not `bookcase`: that collapses the
+      -- drawing to one cell of depth, which would leave the wall cell
+      -- behind each cabinet as bare floor, and its cap rule refuses a
+      -- row pinned anything but `table`, so the cabinets would lose
+      -- their tops as well.
+      desk = { 34, 35 },
+      -- standing per-pixel props with body, black-outline segmented: the
+      -- little tables of the 2F lounges and the Safari rest houses (2/3
+      -- the top, 18/19 the legs) and the 2F observation binoculars (36
+      -- eyepieces, 52 barrels, 57 pedestal).  Both are drawn face-on
+      -- with air between their legs and a clean white floor margin, so
+      -- the standee segments whole -- and both were invisible before,
+      -- flattened by the walkable-cell rule.  They stand on the floor:
+      -- the window band is drawn ABOVE them, and the support rule only
+      -- lifts a prop drawn above a box.
+      billboard = { 2, 3, 18, 19, 36, 52, 57 },
+      -- the plants, in the THIN pool like every other interior plant:
+      -- the potted palm that stands in every hut and rest-house corner
+      -- (5/6 crown, 21/22 fronds, 37/38 over 53/54 the pot), and Route
+      -- 22's wall plant (14/15 crown, 30/31 pot), which stands on the
+      -- 16px planter its base course (50/51) makes.
+      prop = { 5, 6, 14, 15, 21, 22, 30, 31, 37, 38, 53, 54 },
+      -- the exit doormat (4 over 20): drawn from straight above, so it
+      -- has to lie flat -- and 20 is the $14 water-fallback trap, which
+      -- sank every gate's own doorway into a pond lip.
+      ground = { 4, 20 },
+      -- the flight up to a gate's 2F: real steps climbing east, the way
+      -- the drawn treads rise to the right.  Pixel for pixel the same
+      -- staircase as Red's house 1F, on the same four tile ids.
+      stair_e = { 12, 13, 28, 29 },
+      -- the flight down -- to 1F from a gate 2F, into the tunnel from an
+      -- Underground Path hut: a sunken stairwell descending westward,
+      -- high at the east lip where the player enters.  Again the same
+      -- drawing and the same ids as Red's room upstairs.
+      stair_down_w = { 10, 11, 26, 27 },
+      -- Left to the derived default on purpose: the two floor checkers
+      -- (1/17) and every threshold -- the door mats (55/56/94) and the
+      -- tile under the door panels (42/59) -- sit in walkable cells, so
+      -- the cell rule already lays them flat; and tile 16 is solid
+      -- black, which the void rule flattens into exactly the darkness
+      -- that should sit above Route 16's north wall.
+    },
+
+    -- Viridian Forest's north and south gates.  Tile for tile they are
+    -- the same drawing as ROUTE_2_GATE, but they are their own tileset
+    -- id, so they need their own copy of the pins -- and they get the
+    -- one thing GATE cannot have.  These two maps never place the
+    -- panelled wall course (32/33), so nothing else claims 50/51 and the
+    -- counter can be the half cell it is drawn as.  Before this entry
+    -- the room was a pond with an island: 72 ($48) sank the north wall's
+    -- top course, 50 ($32) sank all four counter fronts, and 20 ($14)
+    -- sank the exit doormat -- the three stale-cache water ids, all
+    -- three placed in one small room.
+    FOREST_GATE = {
+      -- the wall band, one 16px face: the speckled plaster course (72)
+      -- over its dark skirting (74), plus the door pane (41/43) drawn
+      -- above the walkable threshold, so the doorway reads as a recess
+      -- in the band rather than a door lying flat on the floor (pins are
+      -- look-only; the cell stays walkable).  72 is the $48
+      -- water-fallback trap and took the whole north wall down with it.
+      wall = { 41, 43, 72, 74 },
+      -- the four counters, half a cell high: end caps (7/8), the top
+      -- surface running north-south (23/24), and the front panel (50/51)
+      -- standing up as one clean 8px band with the surface riding the
+      -- top face.  50 is the $32 water-fallback trap -- unpinned, every
+      -- counter's front cell was a pond notch.
+      counter = { 7, 8, 23, 24, 50, 51 },
+      -- the potted palms down both side walls, three to a side, in the
+      -- THIN standee pool like every other interior plant: 5/6 crown,
+      -- 21/22 fronds, 37/38 over 53/54 the pot.  They stack with no gap
+      -- between them, and each still segments as its own plant.
+      prop = { 5, 6, 21, 22, 37, 38, 53, 54 },
+      -- the exit doormat (4 over 20), drawn from straight above so it
+      -- lies flat; 20 is the $14 water-fallback trap.
+      ground = { 4, 20 },
+      -- Left to the derived default on purpose: the two floor checkers
+      -- (1/17) and the tile under the door panes (42/59) sit in walkable
+      -- cells, so the cell rule already lays them flat.
+    },
+
+    -- Celadon's department store and the rooms that share its blockset:
+    -- CELADON_MART_1F..5F and the ROOF, the two 2x2 lift cabins
+    -- (CELADON_MART_ELEVATOR, SILPH_CO_ELEVATOR), ROCKET_HIDEOUT_ELEVATOR,
+    -- the GAME_CORNER with its PRIZE_ROOM, and CELADON_DINER -- twelve
+    -- maps off one atlas.  Everything the store owns was wrong: the
+    -- U-shaped sales counters read their whole north-south arm as one
+    -- drawing and towered to 48px (dragging the wall band they touch up
+    -- with them), the merchandise racks fused sideways into 32px
+    -- monoliths FOUR tiles deep -- the Poke Mart's failure exactly --
+    -- the diner and roof stools sit in walkable cells and so flattened
+    -- into the floor entirely, and three separate tiles fell into the
+    -- engine's stale water set and sank into ponds indoors.
+    LOBBY = {
+      -- The two exit cells of every map (the sliding-door threshold, 4
+      -- over 20).  20 is $14, which the stale-cache fallback counts as
+      -- water in EVERY tileset, and rule 2 judges the whole CELL by it:
+      -- both tiles of the doorway recessed into a pond lip just inside
+      -- the shop door.  It is a flat mat, and the lift cabins use the
+      -- same pair for their car door.
+      ground = { 4, 20 },
+      -- The wall band stays ONE 16px face.  The blank course (1) and the
+      -- skirting course below it (33) are the band itself; everything
+      -- else here is drawn BUILT INTO it at 16px, so wall height is the
+      -- drawn height and each reads as a fitting jutting from the band
+      -- rather than a tower:
+      --   6/22    the framed notice beside the stairwell, every floor
+      --   2/3/18/19   the pair of pay phones on 1F
+      --   46/47   the floor-directory plaque (it also sits at the east
+      --           end of 1F's counter top, where 16px reads as a sign
+      --           board standing on the counter -- the one placement
+      --           that is not wall, and the least bad of the two)
+      --   14/15/30/31 the TV set: on 3F's wall band it stands over the
+      --           display case below it, and on 3F's goods counter the
+      --           same 16px box reads as a floor-standing display unit
+      --   62/63   the lift call-button panel in both 2x2 cabins
+      --   72/73/88/89 the framed picture (72 is $48, a water-set id, so
+      --           unpinned its top half sank)
+      --   68/84   the roof's perimeter safety railing, drawn 16px tall
+      --   75/76/77/78/79 the roof parapet and the Rocket lift's cabin
+      --           walls (79 also rings the roof map as its border block);
+      --           the Game Corner reuses 75/76/77/78 as the dark south
+      --           end of its machine banks, where 16px reads as the
+      --           bank's end cabinet
+      --   91      the dithered wall course above the Prize Room counter
+      --           and the roof stairhead
+      --   92/93   the Rocket lift's horizontal cabin frame
+      wall = { 1, 2, 3, 6, 14, 15, 18, 19, 22, 30, 31, 33, 46, 47,
+               62, 63, 68, 72, 73, 75, 76, 77, 78, 79, 84, 88, 89,
+               91, 92, 93 },
+      -- Every service counter in the group, half a cell high like the
+      -- Center's and the Mart's.  One 8px band means the drawn front row
+      -- stands up and everything above it rides the TOP face in drawn
+      -- order -- which is what a counter arm running north-south IS: the
+      -- rows above the front are its top surface seen from above, not
+      -- height.  Unpinned the arms measured their full 7-row run and
+      -- towered to 48px, taking the wall band they touch with them.
+      --   38/39/41    the top surface and its end caps
+      --   21/48/49    the south front panel and its end caps
+      --   54/57       the arms' left and right side edges
+      --   36/37/52/53 the goods laid out on 3F's counter (a boxed set
+      --               and a Poke Ball) -- they ride the top face, drawn
+      --               once, the way the nurse's tray does
+      --   9/25/70/71/85/86/87  the round tables of the diner and the
+      --               roof terrace, drawn from above with a pedestal
+      --               row at the south: the same half-cell treatment
+      --               puts the tabletop on top and the pedestal on the
+      --               front.  (Their four INTERIOR tiles are $37, which
+      --               is also the checkerboard floor and the Prize
+      --               Room's upper wall -- see the note below.)
+      counter = { 9, 21, 25, 36, 37, 38, 39, 41, 48, 49, 52, 53, 54,
+                  57, 70, 71, 85, 86, 87 },
+      -- Free-standing merchandise racks and glass cases: TALL drawings,
+      -- not deep ones.  The four-row rack (42-45 / 58-61 / 64-67 /
+      -- 80-83) stands two racks abreast on floors 2F-5F and along the
+      -- Game Corner's north wall, and the detector boxed each pair into
+      -- ONE 32px slab four tiles deep -- the Poke Mart's exact failure.
+      -- A bookcase rank collapses onto a one-cell-deep box at the full
+      -- drawn height instead, and the back rows become hidden floor, so
+      -- racks standing side by side stay separate objects with an aisle
+      -- behind them.
+      -- 34/35/50/51 is the glass display case / vending machine, which
+      -- the same rule fits at BOTH its drawn sizes: 16px where it wears
+      -- the 1F phones or the 3F TV above it, 24px where a counter cap
+      -- (38/41) tops it on the roof, the Prize Room and the Game
+      -- Corner.  50 is $32, a water-set id, so every one of these cases
+      -- stood in a pond before it was pinned.
+      bookcase = { 34, 35, 42, 43, 44, 45, 50, 51, 58, 59, 60, 61,
+                   64, 65, 66, 67, 80, 81, 82, 83 },
+      -- The stools: the diner's chairs, the roof terrace's, the six
+      -- rows in front of the Game Corner's machine banks and the four
+      -- on 1F.  Their cell's bottom-left tile is 23 ($17), which IS on
+      -- the tileset's walkable list, so rule 3 resolved every one of
+      -- them to flat ground and they vanished into the floor
+      -- completely.  A pin is the only thing that overrides that.  The
+      -- drawing carries a full black outline with the floor dither
+      -- showing at all four corners, so the standee segments cleanly --
+      -- and `stool` keeps its own pool, apart from anything it touches.
+      stool = { 7, 8, 23, 24 },
+      -- Deliberately NOT pinned:
+      --   $37 (55) is three different things -- the light half of the
+      --     checkerboard floor, the interior of the round tables, and
+      --     the plain upper wall of the Prize Room and the roof
+      --     stairhead.  The cell rules already answer all three
+      --     correctly (the floor's cells are walkable through their
+      --     $45 bottom-left tile; the wall's are not), and pinning it
+      --     to any one class breaks the other two.  The cost is the
+      --     four $37 tiles inside each round table, which stay a
+      --     detected 16px box in the middle of the 8px top -- read as
+      --     a centrepiece.  Fixing it properly needs the PaletteFX
+      --     alias ($37 -> $5a on the roof and the diner) carried into
+      --     the shape lookup, which is engine work.
+      --   $10 (16) is pure black and the void rule already flattens it
+      --     to the interior darkness above the Game Corner's wall.
+      --   The stair openings (10/11/26/27, 40/56) and the lift doors
+      --     (12/13/28/29) all sit in WALKABLE cells and fold into the
+      --     facade on their own, which is what the doorway fold is for.
+      --   $20/$45 (32/69) are the two floors and are walkable.
+    },
+
+    -- Pewter's museum, both floors (the tileset shares the gates' atlas
+    -- image but is its own id).  The exhibits were the worst case in the
+    -- whole building: 50 is $32, a water-set id, and it is the base row
+    -- of EVERY display case, so rule 2 judged each case's bottom cell
+    -- water and sank the fossil vitrines, the space shuttle and the
+    -- glass cabinets into ponds.  72 is $48 and is the wall band's upper
+    -- course, so the north wall recessed too -- leaving its lower course
+    -- alone as an 8px stub.  On top of that the benches sat in walkable
+    -- cells and flattened away, the corner plants towered to 32px, and
+    -- both staircases (also walkable) were flat floor.
+    MUSEUM = {
+      -- the two street doors on 1F: the same $14 mat trap as the
+      -- department store's, flat
+      ground = { 4, 20 },
+      -- the wall band as one 16px face: the dithered upper course (72,
+      -- the $48 water-set id) over the skirting course (74), and the
+      -- two framed paintings hung in it (78/79)
+      wall = { 72, 74, 78, 79 },
+      -- The low partitions that divide both floors -- the tileset's own
+      -- counterTiles name 23 ($17) -- drawn exactly like the department
+      -- store's counter arms: a light top surface seen from above with
+      -- dark side edges.  Half a cell, so they read as barriers you see
+      -- over rather than interior walls.  Their north caps and their
+      -- south base rows belong to the case group below, at the same 8px.
+      counter = { 23, 24 },
+      -- Every vitrine in the museum, as tall drawings one cell deep:
+      --   7/8/34/35   the run of eight glass cabinets along 1F's north
+      --               wall (7/8 is the cabinet's top surface, so the
+      --               rank wears it as its top face -- which is why it
+      --               is here and not in `counter` with the partitions
+      --               whose north cap it also draws)
+      --   9/50/51     the low case at 1F's centre (9 the top surface,
+      --               50/51 the base panels) and the base row under the
+      --               partition ends
+      --   25/39/40/44/46/48/49/58/60/63/70/71/83  the fossil vitrine,
+      --               four drawn rows inside one black frame: the dark
+      --               top surface, the ammonite specimens on their
+      --               light bed, the placard, and the base.  Two on 1F,
+      --               one on 2F.  Collapsed to one cell of depth it
+      --               stands as a 32px case instead of a 16px lid
+      --               floating over a pond.
+      --   64-69/80-91 the space-shuttle vitrine on 2F, the same drawing
+      --               shape three cells wide.
+      -- 50/51 is $32/$33 -- the water-set id that sank all of them.
+      bookcase = { 7, 8, 9, 25, 34, 35, 39, 40, 44, 46, 48, 49, 50,
+                   51, 58, 60, 63, 64, 65, 66, 67, 68, 69, 70, 71,
+                   80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91 },
+      -- the visitors' benches on 1F: their cell's bottom-left tile is
+      -- 18 ($12), which is on the walkable list, so they resolved to
+      -- flat ground and disappeared.  Seat-height standees in their own
+      -- pool, like the department store's stools
+      stool = { 2, 3, 18, 19 },
+      -- the corner potted plants (crown 5/6/21/22, pot 37/38/53/54):
+      -- the THIN standee pool, like every other interior plant in this
+      -- profile.  Unpinned they were a 32px two-cell tower.
+      prop = { 5, 6, 21, 22, 37, 38, 53, 54 },
+      -- the Old Amber in its rounded case, drawn face-on with a clean
+      -- black outline and a light margin at every corner: the standee
+      -- with body, segmented so the backing floods away and the amber
+      -- inside the outline stays
+      billboard = { 76, 77, 92, 93 },
+      -- 1F's staircase UP to 2F: a real rising flight climbing east,
+      -- the way the treads are drawn (low at the west, high at the
+      -- east).  Its cell is walkable, so without the pin it was flat
+      -- floor with the stair art painted on it.
+      stair_e = { 12, 13, 28, 29 },
+      -- 2F's staircase DOWN to 1F: the same flight from above, so it
+      -- descends westward -- the player steps on at the east lip.  Same
+      -- tile ids Red's bedroom uses for its stairwell, which is the
+      -- convention across Gen 1's interior blocksets.
+      stair_down_w = { 10, 11, 26, 27 },
+      -- Deliberately NOT pinned: 1 and 17 ($01/$11), the two halves of
+      -- the checkerboard floor.  Every floor cell's bottom-left tile is
+      -- $01, which is walkable, so the cell rule already makes the whole
+      -- cell flat ground.
+    },
+
+    -- Cinnabar Lab and its three side rooms (trade, metronome, fossil),
+    -- the Fuchsia Warden's house, the Fuchsia meeting room and the Safari
+    -- Zone's secret house -- seven maps on one tileset.  Every indoor
+    -- failure mode shows up here at once: the detector raised the machine
+    -- banks as 32px monoliths TWO cells deep, boxed the free-standing
+    -- shelf racks the same way (and CAPPED the metronome room's racks at
+    -- 16px because their book rows repeat, so a 32px shelf came out a
+    -- 4-tile-deep 16px slab), cut every lab bench into a patchwork of
+    -- 8/16/32px stubs, flattened the chairs into floor, merged the
+    -- meeting room's long partition with the corner plants into a 48px
+    -- tower -- and dropped six tile ids into the engine's stale-cache
+    -- water set, so the bench tops ($04/$05/$14/$15), the table's monitor
+    -- ($48) and the Warden's round specimens ($32) recessed into pond
+    -- lips inside the building.  Oak's Lab (the DOJO entry) is the
+    -- reference: same rooms, same answers.
+    LAB = {
+      -- the wall band stays one 16px face.  Blank courses ($22), the
+      -- pillar/corner that turns Cinnabar Lab's L ($23), the framed
+      -- Pokeball picture (16/17/32/33), the metronome room's row of
+      -- wall brackets (48/49 -- drawn INTO a band that is two cells
+      -- deep there, so both cell rows stay one 16px face), the vent
+      -- panel over Cinnabar Lab's three doorways (24/25), and the low
+      -- dark base course with its end caps (42/43) that the meeting
+      -- room's partition and the Warden's machine both stand on.
+      -- The Warden's big machine (87/88/89 top, 28/71/29 the dial row,
+      -- 36/37 the grille row, over 24/25 and the 42-34-34-43 base) is
+      -- ALSO wall: it is drawn 32px tall and free-standing, so a
+      -- `bookcase` would be the honest shape -- but its grille tiles
+      -- 24/25 are the very tiles Cinnabar Lab hangs in its wall band
+      -- above the doors, and its base row is the shared $22 band, so no
+      -- per-tile pin can make it 32px without either stubbing the Lab's
+      -- wall panel or splitting the machine into columns of different
+      -- heights.  One clean 16px console beats both.
+      wall = { 16, 17, 24, 25, 28, 29, 32, 33, 34, 35, 36, 37,
+               42, 43, 48, 49, 71, 87, 88, 89 },
+      -- the equipment banks and the shelf racks: TALL drawings, not deep
+      -- ones.  Each rank collapses onto a ONE-CELL-DEEP box at its full
+      -- drawn height and its back rows become hidden floor -- the
+      -- Dojo/Mart treatment, and the only thing that stops the fossil
+      -- room's and the secret house's machine walls from being 32px
+      -- blocks two cells thick.  69/70 + 85/86 are the cabinet tops,
+      -- 10/11 the dial faces, 74/75 + 90/91 the narrow filler columns,
+      -- 26/27 the plinth with its feet, 59 the black end pilaster;
+      -- 40/41 are the metronome room's and the meeting room's shelf
+      -- ranks.  Where the drawing's own top row is the shared table
+      -- trim (64/66, pinned `table` below) the bookcase builder adopts
+      -- it as the rank's CAP -- one more band of height and the art the
+      -- top face wears -- so those units come out 32px too.
+      bookcase = { 10, 11, 26, 27, 40, 41, 59, 69, 70, 74, 75, 85, 86,
+                   90, 91 },
+      -- the lab furniture, at table height.  The benches in the fossil
+      -- and metronome rooms (2/3 the specimen tray, 4/5 + 20/21 the
+      -- microscope, 18/19 the tray's rack row) and the big lab tables
+      -- (64/65/66 top edge, 80/81/82 body, 83/58/84 the front rail and
+      -- its legs).  72/73 -- the monitor and the ball lying on the
+      -- table -- ride the table's authored height rather than standing
+      -- as separate cutouts, exactly as Oak's starter balls do; pinning
+      -- them also stops the display frame's black corner brackets from
+      -- auto-extracting into standing prisms.  Four of these ids
+      -- ($04/$05/$14/$15) plus $48 are the tileset's water-fallback
+      -- traps: unpinned they sink into a pond lip in the middle of the
+      -- room.  65 doubles as the meeting room's long partition top,
+      -- which therefore reads as a 12px shelf behind its 16px base
+      -- band instead of joining the 48px tower it used to make.
+      table = { 2, 3, 4, 5, 18, 19, 20, 21, 58, 64, 65, 66, 72, 73,
+                80, 81, 82, 83, 84 },
+      -- seats, the 8px standee pool, all of them in WALKABLE cells and
+      -- therefore flat floor until pinned: the four chairs round the
+      -- trade room's table and the meeting room's spare (14/15/30/31,
+      -- a whole cell each) and the little stool tucked under every lab
+      -- bench (6/7 its top edge, 22/23 its seat and legs).  6/7 also
+      -- carry the bench's apron along their top edge -- the standee
+      -- wears a thin dark cap for it, which is cheaper than dropping
+      -- the stool to a half-cell drawing with no floor margin.
+      stool = { 6, 7, 14, 15, 22, 23, 30, 31 },
+      -- the tall corner plants: two cells of drawing (44/45 + 60/61 the
+      -- frond crown, 46/47 + 62/63 the stem and pot), mostly silhouette,
+      -- so the THIN standee pool -- as in every other interior.  The
+      -- detector had them at 0/8/16/24/32px depending on which corner
+      -- they stood in, and in the meeting room it fused them into the
+      -- partition and towered the pair to 48px.
+      prop = { 44, 45, 46, 47, 60, 61, 62, 63 },
+      -- the five round specimens in the Warden's house: one 16x16 cell
+      -- each, drawn ROUND with a dithered shell and a lit underside.
+      -- Neither a box nor a flat cutout reads them; the round archetype
+      -- carves a voxel ball per cell from the drawing's darkest-pixel
+      -- outline, which is what they are.  50 is a water-fallback trap,
+      -- so unpinned the row sat in five pond lips.
+      cylinder = { 50, 51, 67, 68 },
+      -- Deliberately NOT pinned: the checker floor (1/38) and the fossil
+      -- room's striped carpet (12/13) are walkable cells and already
+      -- flat; the doormat (39/55) likewise; the three doorways
+      -- (76/77 over 52/53) are walkable and the engine folds them into
+      -- the facade; Cinnabar Lab's black surround (54) is authored void
+      -- by the void rule; and the bench aprons 8/9 stay flat floor,
+      -- which is where the artist drew them -- inside the walkable cell
+      -- in front of the bench.
+    },
+
+    -- Celadon Mansion's three floors and its roof, plus the Celadon
+    -- chief's house -- five maps on one tileset.  The mansion maps are
+    -- half interior and half OUTSIDE: the east third of every floor is
+    -- the open-air stair landing, so the entry has to keep an outdoor
+    -- strip flat while it furnishes the rooms.  The detector towered the
+    -- display cabinets, boxed the potted palms into 32px 4-tile-deep
+    -- monoliths, raised the 2F larder cabinet as a 48px tower taller than
+    -- the walls, gave the same wall band three different heights
+    -- (8/16/48) on one map -- and sank the whole cabinet bank AND both
+    -- front-door mats into pond lips, because nine tile ids here
+    -- ($04/$14/$22/$23/$32/$33/$38/$48/$57) sit in the engine's
+    -- stale-cache water set.
+    MANSION = {
+      -- one 16px face for every wall course, indoors and out: the rooms'
+      -- north band (80), the interior partition (30) with its white top
+      -- rim (76/77), the doorway lintel over the front door (22/23), the
+      -- east exterior wall the landing runs along (74/75) with its
+      -- junction pieces (72/73 -- 72 is a water trap -- and 88/89), the
+      -- band's feet and corners (90/91/92/93), and the roof's own rim
+      -- and corner blocks (78/79).  The roof parapet railing (15 over
+      -- 31, with end caps 42/43 and 33/49) is drawn a full 16px tall, so
+      -- it stays in the same band rather than dropping to `fence`: on an
+      -- open roof a knee-high rail reads as a kerb.  48 and 6/7 are the
+      -- rooftop shed's base course.
+      wall = { 6, 7, 15, 22, 23, 30, 31, 33, 42, 43, 48, 49, 72, 73,
+               74, 75, 76, 77, 78, 79, 80, 88, 89, 90, 91, 92, 93 },
+      -- the display cabinets along the north wall of 1F and the chief's
+      -- house: TALL drawings, not deep ones, so each rank collapses onto
+      -- a one-cell-deep box at its drawn height.  34/35 are the shelf
+      -- row of the short cabinets, 40/21 + 56/87 the two rows of the
+      -- tall ones (the pair with the trophy in the glass), 50/51 the
+      -- plinth.  Their top row is 38/41, pinned `table` below because
+      -- the mansion's big tables wear the same trim -- the bookcase
+      -- builder adopts it as the rank's CAP, which lands the short
+      -- cabinets at 24px and the tall ones at 32px, exactly their drawn
+      -- heights.  45/46 + 61/62 + 63/47 is 2F's larder cabinet, four
+      -- drawn rows standing free of any wall: 32px and one cell deep
+      -- instead of the 48px tower the detector built.
+      -- Six of these ids are water-fallback traps ($22/$23/$32/$33/$38
+      -- /$57) -- the whole cabinet bank was a pond.
+      bookcase = { 21, 34, 35, 40, 45, 46, 47, 50, 51, 56, 61, 62, 63,
+                   87 },
+      -- table height.  The long tables in 1F and the chief's house
+      -- (38/39/41 top edge, 54/55/57 body, 60/58/59 the front rail with
+      -- its two legs) and the writing desks on 2F and 3F (36/37/52/53
+      -- the back edge with the papers and the ball on it, 64/65/66/67
+      -- the body).  The desks' aprons (2/3/85/86 over 18/19) are drawn
+      -- into the WALKABLE cell in front and stay flat floor, which is
+      -- how the artist placed them.
+      -- Known compromise: the rooftop shed on CELADON_MANSION_ROOF is
+      -- drawn with the table's own top and body tiles (38/39/41 over
+      -- five rows of 54/55/57) with a door punched in its base, so it
+      -- comes out a 12px block rather than a shed.  Nothing towers there
+      -- any more -- the detector had its east columns at 48px -- and no
+      -- per-tile pin can give one drawing two heights.
+      table = { 36, 37, 38, 39, 41, 52, 53, 54, 55, 57, 58, 59, 60,
+                64, 65, 66, 67 },
+      -- the stool at the 2F/3F desk: a whole cell of drawing (2/3 over
+      -- 18/19) sitting in a WALKABLE cell, so flat floor until pinned.
+      -- The 8px standee pool, seat height, as in Red's rooms.
+      stool = { 2, 3, 18, 19 },
+      -- the potted palms: two cells of drawing (68/69 crown, 8/9 fronds,
+      -- 70/71 stem, 24/25 pot), mostly silhouette, so the THIN standee
+      -- pool -- the same numbers the generic HOUSE entry uses, and the
+      -- same answer every interior plant gets.  The detector had them as
+      -- 32px boxes four tiles deep.
+      prop = { 8, 9, 24, 25, 68, 69, 70, 71 },
+      -- the front-door mats of 1F and the chief's house.  Their bottom
+      -- tile is $14, which the engine's stale-cache fallback counts as
+      -- water in every tileset, so the mat -- and the whole cell with it
+      -- -- recessed into a pond lip just inside the door.  It is a flat
+      -- rug on the floor.
+      ground = { 4, 20 },
+      -- Deliberately NOT pinned: the interior checker floor (17), the
+      -- landing's open-air ground (1), the black surround (16, authored
+      -- void), the back and rooftop doors (81-84, walkable and folded
+      -- into their facade), the desk aprons (85/86), and the landing
+      -- edge (5).
+      -- CANNOT be pinned, engine-side: the four staircases (12/13/28/29
+      -- the rising flight, 10/11/26/27 the sunken one) are in this
+      -- tileset's doorTiles, and Structures' door fold OVERWRITES the
+      -- resolved shape of any door cell whose north neighbour is upright
+      -- -- without checking `authored` -- so a stair_e / stair_down_w pin
+      -- is silently discarded.  The indoor flights therefore read as
+      -- doorways folded into the north wall band, which is at least what
+      -- they are (you walk into them from the room).  The roof's two
+      -- flights, which stand clear of any wall, come out as a shallow
+      -- 8px lip -- a stairwell mouth, near enough -- and pinning them
+      -- `wall` would be worse: it would plug the openings with a 16px
+      -- block in the middle of the roof.  See the report.
+    },
+
+    -- Silph Co's 11th floor (the president's office), Bill's house and
+    -- the Pokemon Fan Club -- three rooms that share one tileset and
+    -- almost no furniture.  The detector raised Silph's side walls as
+    -- 48px towers (the drawn band is three cell rows deep, so it
+    -- measured the whole column), split the Fan Club's wall band across
+    -- 0/8/16px AND a pond lip, boxed Bill's two transporter drums into
+    -- 48px slabs five tiles deep, and left every chair flat because they
+    -- sit in walkable cells.  Six ids here ($14/$1F/$32/$34/$40/$48) sit
+    -- in the engine's stale-cache water set -- including $1F, the main
+    -- FLOOR tile, which sank wherever it shared a cell with $48.
+    INTERIOR = {
+      -- the wall band, one 16px face throughout: the rooms' face-on
+      -- courses (52 upper, 68 lower; 16 in Bill's house and Silph's
+      -- outer band), the courses seen from above along the south and the
+      -- partitions (87 top, 88 bottom), the side walls (89/90), the end
+      -- caps and junction blocks (45/46), the framed Pokemon portraits
+      -- hung in the band (19/20 over 35/36), and the padded bench built
+      -- into the Fan Club's north wall (49/50/51 -- its lower half,
+      -- 65/66/67, is drawn into the walkable cell in front and stays
+      -- flat, the way the artist drew it).
+      -- 93/94 are Silph's CARD KEY door: the block only exists while the
+      -- door is locked (data.field.cardKey swaps it out), so it never
+      -- appears in maps.lua -- but the probe sees it, and unpinned it
+      -- came out 0px/8px in the middle of a 16px wall.
+      -- Bill's pipework belongs here too: the stubs either side of each
+      -- drum (32/48, 37/53) and the run between them (38/54), all drawn
+      -- 16px tall against the band.
+      wall = { 16, 19, 20, 32, 35, 36, 37, 38, 45, 46, 48, 49, 50, 51,
+               52, 53, 54, 68, 87, 88, 89, 90, 93, 94 },
+      -- Bill's two transporter drums: a TALL drawing (four rows of
+      -- cylinder plus a base course), not a deep one.  The bookcase
+      -- collapse gives each drum one cell of depth at its full 32px
+      -- height instead of the 48px, five-tile-deep slab the detector
+      -- built, and its top face wears the drum's own lid.  7/8/9/10 is
+      -- the lid, 23/24/25/26 and 39/40/41/42 the barrel, 55/56/57/58 the
+      -- footing.
+      bookcase = { 7, 8, 9, 10, 23, 24, 25, 26, 39, 40, 41, 42,
+                   55, 56, 57, 58 },
+      -- the big octagonal table of the Fan Club and Silph's boardroom,
+      -- half a cell high -- and half a cell ON PURPOSE.  A `counter` is
+      -- ONE band: exactly the drawing's bottom row (79/63/64/81/82, the
+      -- table's front bevel) stands up as the front, and every row above
+      -- it rides the top face IN DRAWN ORDER.  For a table drawn in plan
+      -- that is the only class that reproduces the plan: the octagon's
+      -- bevelled corners (72/73 north, 77/78 the flanks, 63/81 and
+      -- 79/82 south) land where they are drawn instead of being smeared
+      -- by a taller box, which wears its NORTH row's art across the
+      -- whole top face.
+      -- The chairman's seat is drawn INTO the table -- 17/18 the sitter,
+      -- 33/34 the chair back, 91/92 the seat -- across three tile rows,
+      -- and this is the Pokemon Center couch problem exactly: folding
+      -- two rows upright makes the box two tiles deep and a folded box
+      -- repeats its north row across the whole top, so every upright
+      -- arrangement draws the sitter's head two or three times.  Riding
+      -- the counter's top face draws him once, in the right place, at
+      -- the right depth.  Standing him as a cutout is not an option
+      -- either: the drawing has no floor margin -- it is surrounded on
+      -- all four sides by the tabletop's own mid grey -- so the mask
+      -- would drain from every edge.
+      -- 91/92 double as the wall band's base blocks where a side wall
+      -- meets the south course in Silph; those six tiles therefore sit
+      -- 8px instead of 16px.  It is a notch at the foot of a wall the
+      -- player never faces, and the alternative is a 16px stub standing
+      -- in the middle of the boardroom table.
+      -- 40 and 48 are water-fallback traps: unpinned, the table's whole
+      -- north-west cell was a pond, and it dragged the floor tile $1F
+      -- sharing that cell down with it.
+      counter = { 17, 18, 33, 34, 63, 64, 72, 73, 74, 77, 78, 79,
+                  81, 82, 91, 92 },
+      -- Bill's desk and the Silph president's, at table height: 11-14
+      -- the surface with the terminal and the ball on it, 27-30 the
+      -- front edge.  Their aprons (43/44 + 91/92 on the row below) are
+      -- drawn into the WALKABLE cell in front; 43/44 belong to the stool
+      -- there, not to the desk.
+      table = { 11, 12, 13, 14, 27, 28, 29, 30 },
+      -- the seats: Bill's desk stool (43/44 over 59/60) and the Fan
+      -- Club's four members' chairs (61/62 over 59/60), a whole cell
+      -- each.  All of them sit in WALKABLE cells, so they were flat
+      -- floor until pinned; the 8px standee pool puts them at seat
+      -- height, which is also where a character standing on the cell
+      -- ends up.
+      stool = { 43, 44, 59, 60, 61, 62 },
+      -- flat, and pinned flat on purpose.  31 is the rooms' floor tile
+      -- and needs no pin for its 980 walkable placements -- but the
+      -- water test runs per CELL on the engine's own stale set, BEFORE
+      -- any neighbouring pin can help, so the floor tiles sharing the
+      -- Fan Club's and Silph's north-west table cell with $48 sank into
+      -- the pond with it.  A pin is the only rule that outranks it.
+      -- 1/2 are the curve of Bill's drums where they meet the floor,
+      -- drawn below the pinned barrel and flat where they lie.
+      ground = { 1, 2, 31 },
+      -- Deliberately NOT pinned: the doormats (70/71) and Silph's warp
+      -- pads, stairwells and elevator mouth (3/4, 5/6/21/22, 83-86) are
+      -- walkable and already flat; 47 is the black surround outside the
+      -- building's footprint and the void rule authors it; 69 is the
+      -- shadow course under Bill's drums and 75/76 the octagon's front
+      -- apron, both drawn into walkable cells and both correct flat.
+    },
+
+    -- The Cable Club rooms and the Bike Shop (one tileset, three maps).
+    -- COLOSSEUM and TRADE_CENTER are the same 5x4 room with a different
+    -- machine in the middle and a different board on the wall; BIKE_SHOP
+    -- reuses the same wall, floor and counter for a showroom full of
+    -- bicycles.  Between them the three maps place every tile.
+    --
+    -- What was wrong: the Bike Shop's bicycles came out at 0 and 8 --
+    -- each bike sliced in half at ankle height with its top row missing,
+    -- and the leftmost rack fused into the wall and towered to 32.  The
+    -- shop's whole L-shaped counter stood at wall height, a 16px slab
+    -- you could not see over.  Both Cable Club rooms lost their stools
+    -- (a walkable cell, so they flattened to floor) and their machine
+    -- came out 0/8/16 in the same object.  And the Game Boy link poster
+    -- above the door has $32 in its bottom-left corner, so the poster
+    -- had a pond in it -- the shore-set trap, and TRADE_CENTER's link
+    -- table carries the other one, $48.
+    CLUB = {
+      -- The wall band stays ONE 16px face.  6 is the striped panel,
+      -- 52 the fluted pillar that breaks it every three cells (its
+      -- rounded foot, 53, stands one row lower on the floor and is
+      -- walkable, so it stays flat ground in front of the band).
+      -- Drawn INTO the band and therefore wall as well: the two
+      -- bicycles hung on the Bike Shop's wall (1/2/3 over 17/18/19,
+      -- exactly two tile rows = exactly the band's height), the Cable
+      -- Club's link poster (48/49/50/51 -- 50 is $32, the shore trap
+      -- that had it recessing to -2), and the Trade Center's pair of
+      -- lit notice boards (63/68/68/69 over 66/67/67/70).
+      wall = { 1, 2, 3, 6, 17, 18, 19, 48, 49, 50, 51, 52, 63, 66, 67,
+               68, 69, 70 },
+      -- Counters, half a cell high -- the house rule for anything you
+      -- lean on.  The Bike Shop's L: the till run's top (7/8, the
+      -- tileset's own counterTiles) with its inside corner (54), east
+      -- arm (16) and end cap (5), all over the front panel 23/24.  8px
+      -- is one clean band, so the drawn front stands up and the counter
+      -- top stays a top; at 12 or 16 it reads as a wall stub.
+      -- 71/72/73/74 is the TRADE_CENTER link table, which shares that
+      -- same 23/24 front: its surface is drawn from ABOVE (two Game
+      -- Boys lying on it, cables between), so it belongs riding the top
+      -- face, not standing up.  72 is $48, the second shore trap.
+      counter = { 5, 7, 8, 16, 23, 24, 54, 71, 72, 73, 74 },
+      -- The Colosseum's battle machine: a console drawn face-on, four
+      -- tiles wide and three rows tall, grilled side towers (59/62 and
+      -- 55/58), a dark screen bay (60/61, 56/57) and the two white
+      -- horns that crown it (64/65).  24px is its drawn height, so
+      -- `desk` folds the whole drawing upright as one machine instead
+      -- of the 0/8/16 rubble the detector left.
+      desk = { 55, 56, 57, 58, 59, 60, 61, 62, 64, 65 },
+      -- The two stools that flank each Cable Club machine: seat 42/43
+      -- over base 38/39, in every one of the four placements across
+      -- both rooms and nowhere else in the tileset.  Their cells are
+      -- walkable, so without a pin they were floor; at seat height a
+      -- character standing on one sits on it.
+      stool = { 38, 39, 42, 43 },
+      -- The showroom bicycles -- six of them standing on the Bike Shop
+      -- floor, in two columns, each drawn 3 tiles by 2 side-on.  The
+      -- THIN standee pool, not `bookcase`: a bike is nearly all air
+      -- (two wheel rings and a frame), and collapsing a rack of them
+      -- onto a one-cell-deep box at full height would trade six
+      -- bicycles for one blank 32px panel wearing a bicycle print.  As
+      -- cutouts they segment cleanly -- the drawing has floor margin on
+      -- three sides and its own black outline seals the wheels -- and
+      -- the standee builder's connected-component split gives each bike
+      -- its own feet in its own cell even where a lower bike's
+      -- handlebar stem touches the wheel of the one drawn above it.
+      -- 11/12/14 the saddle and bar row, 27/28/9 the frame and wheels.
+      prop = { 9, 11, 12, 14, 27, 28 },
+      -- The crate and the standing pump beside the shop's south wall
+      -- (29/13 over 21/22), twice.  A separate pool from the bicycles
+      -- on purpose, and the thicker one: a crate is a deliberate object
+      -- with a body, where a bike is a silhouette.
+      billboard = { 13, 21, 22, 29 },
+      -- The Bike Shop floor's second checker phase.  It is NOT in the
+      -- tileset's walkable list, so the cells it floors resolve by rule
+      -- 4 and it rose as a wall stub -- or, worse, got swept into the
+      -- bicycle beside it and dragged to 8px.  It is floor; it is flat.
+      ground = { 30 },
+      -- Left to the derived default on purpose:
+      --   $0F $1F    the main floor checker -> walkable, ground
+      --   $0A $1A    the dark slab under the Bike Shop's exit warp -> a
+      --              threshold mat, walkable, flat
+      --   $35        the pillar's rounded foot -> its cell is walkable
+      --              (you walk in front of the pillar), so it lies flat
+      --              against the 16px band, which is what a plinth does
+      --   $26-$29 $2C-$2F  the octagon painted on both Cable Club
+      --              floors.  Ground markings seen from above, and every
+      --              cell they sit in is walkable, so rule 3 already
+      --              keeps them perfectly flat.  ($26/$27 are shared
+      --              with the stool bases above and pinned there; they
+      --              appear nowhere else in either room.)
+    },
+
+    -- The S.S. Anne, inside: both cabin decks and their corridors, the
+    -- bow, the kitchen, the captain's room -- and two Kanto houses
+    -- (Cerulean's badge man, Fuchsia's Good Rod fisher) that borrow the
+    -- liner's furniture set.  Twelve maps, and SS_ANNE_CAPTAINS_ROOM plus
+    -- SS_ANNE_KITCHEN between them place every tile the group uses.
+    --
+    -- Everything was wrong here, in every one of the ways indoors goes
+    -- wrong.  The wall-touching cabin table and the BED were merged into
+    -- the wall and towered to 32px, so a bunk read as a bank of lockers
+    -- wearing a porthole on top.  The corridor wall band measured 24px
+    -- instead of 16.  In the two houses the band came out at height 0 --
+    -- the drawing runs off the top of the map, so the detector had no run
+    -- to measure and the room had no walls at all.  Every stool, chair and
+    -- staircase sat in a WALKABLE cell and flattened to floor, so the
+    -- captain's room had no stairs, no chairs and no seat.  And the
+    -- barrels' top-left tile is $48, which the engine's stale-cache shore
+    -- set counts as water in every tileset but SHIP_PORT: each barrel had
+    -- a pond dug into its lid.
+    SHIP = {
+      -- The wall band stays ONE 16px face.  Blank courses (16), the
+      -- lower trim (18/19), the portholes (2/3), and the band's corner
+      -- pieces where a corridor meets it (32/33 white, 48/49 trim,
+      -- 34/50 the black outer corner).  $32 (50) is the shore-set trap:
+      -- unpinned it recesses into a pond lip in the middle of a
+      -- bulkhead, and it drags the whole 16x16 cell down with it,
+      -- because rule 2 judges a cell by its bottom-left tile.
+      --
+      -- The black rim is wall too, not void: 17 is the band's cap seen
+      -- from above (so the fold tops the bulkhead with it), 21/22 the
+      -- vertical faces that run down both sides of every corridor, 51
+      -- the ship's south bulkhead, and 5/6/37/38 the four corners of the
+      -- notch each cabin doorway is cut into.  Left to the detector
+      -- these came out 8, 16, 24 and 48 in the same room.  Only $01 --
+      -- pure black, the space OUTSIDE the hull -- is left alone: the
+      -- void rule flattens it, which is what darkness should do.
+      --
+      -- 14/15/30/31 are the cabin door drawn INTO the band (its cell is
+      -- walkable, since the player steps on it to warp, so unpinned the
+      -- door punched a flat hole through the wall).  84/85 are the
+      -- captain's chair BACK, drawn into the band above his seat -- so
+      -- the chair reads as a high-backed swivel chair jutting from the
+      -- wall instead of a separate tower.  45/61 are the bow deck's
+      -- rope rail and 46/47/62/63 its stepped bulwark: the same 16px
+      -- course, so the open deck is fenced at one height.
+      wall = { 2, 3, 5, 6, 14, 15, 16, 17, 18, 19, 21, 22, 30, 31, 32,
+               33, 34, 37, 38, 45, 46, 47, 48, 49, 50, 51, 61, 62, 63,
+               84, 85 },
+      -- Every table in the group, at 12px: the kitchen's three banquet
+      -- tables (twelve tile rows deep), the counter run along the
+      -- kitchen's south wall, the captain's desk, and the writing table
+      -- in the two houses.  Corners 9/12, north edge 10, side edges
+      -- 25/28, the surface 44, the plain apron 11 and the drawer front
+      -- 59/60.  One 8px band folds up, so the drawn apron stands as the
+      -- front and every row above rides the top face in drawn order --
+      -- which is how the tableware stays tableware: the plate (26), the
+      -- covered platter (64/65/80/81), the kitchen stove's burner grid
+      -- (53) and the captain's open book (68/69) are all drawn FROM
+      -- ABOVE, so they belong lying on the top face, not standing up as
+      -- cutouts.  59/60 doubles as the chest of drawers at the foot of
+      -- every cabin bunk; 12px puts it a hand above the mattress, which
+      -- is where a bedside chest belongs.
+      table = { 9, 10, 11, 12, 25, 26, 28, 44, 53, 59, 60, 64, 65, 68,
+                69, 80, 81 },
+      -- The cabin bunk: a mattress drawn from above, so its art stays on
+      -- the TOP face and it lies low.  70/71 the pillow, 86/87 the
+      -- mattress.  (Its drawer end is in `table` above.)
+      bed = { 70, 71, 86, 87 },
+      -- Seats, in the standee pool: the round stool that appears in
+      -- every cabin, the badge house and the captain's room (7/8 seat
+      -- over 23/24 legs), and the captain's own chair (66/67 seat over
+      -- the same 23/24 base, its back pinned into the wall above).
+      -- Seat height 8 keeps a character standing on the stool's
+      -- (walkable) cell sitting at seat height rather than floating.
+      -- The drawings have real floor margin on all four sides, so the
+      -- black-outline flood eats the checker around them and leaves the
+      -- seat whole.
+      stool = { 7, 8, 23, 24, 66, 67 },
+      -- The captain's storage rack: three shelf ranks (54 left, 43
+      -- right) drawn four tile rows tall against the wall.  TALL, not
+      -- deep -- the bookcase builder collapses it onto one cell of depth
+      -- at its drawn height, and adopts the row above (9/12, pinned
+      -- `table` as the tabletop corners they also are) as its cap.
+      -- Boxed by the detector it was a 16px stub with the wall beside it
+      -- towered to 24.
+      bookcase = { 43, 54 },
+      -- The galley barrels -- three down the kitchen's east wall, one in
+      -- the captain's room, one in each house.  A per-pixel cutout in
+      -- the THIN pool, the treatment Lt. Surge's trash cans get: 72/73
+      -- the lid, 88/89 the banded body.  72 is $48, the shore-set trap
+      -- that had each barrel resolving to water at -2.
+      prop = { 72, 73, 88, 89 },
+      -- The stairs, both flights, in every map that has them (1F, 2F,
+      -- 3F, B1F and the captain's room).  Same two drawings the whole
+      -- game uses, and the warp table says which is which: 41/42/57/58
+      -- is the light flight that always leads UP a deck, climbing east
+      -- the way its treads step; 39/40/55/56 is the dark stairwell that
+      -- always leads DOWN, sinking westward.  Both cells are walkable,
+      -- so unpinned both were flat floor and the decks did not connect.
+      stair_e = { 41, 42, 57, 58 },
+      stair_down_w = { 39, 40, 55, 56 },
+      -- Left to the derived default on purpose:
+      --   $01        pure black outside the hull -> void, flat darkness
+      --   $04 $23    deck planking and grating   -> walkable, ground
+      --   $0D $1D    cabin floor checker         -> walkable, ground
+      --   $4A        cabin door threshold        -> walkable, ground
+      --   $24 $34    the dark slab under the exit warp in the cabins and
+      --              the two houses: a threshold mat with no wall around
+      --              it, walkable, and flat is the honest reading
+      --   $14        the SEA around SS_ANNE_BOW.  It is the one tile id
+      --              the stale-cache water set names in every tileset,
+      --              and here that guess is simply RIGHT -- the bow deck
+      --              really does stand in open water, so it is the one
+      --              trap tile in this group that must NOT be pinned.
+    },
+
+    -- Vermilion Dock: the quay, the boarding gangway, and the S.S. Anne
+    -- herself moored alongside.  One map, and it is the only place in
+    -- the game where a whole VESSEL is drawn as map art rather than as a
+    -- building sprite.
+    --
+    -- The detector read the liner as a volume and raised her 48px --
+    -- three cells, taller than she is long is wide -- with her columns
+    -- stepping 48/40/24/0 across the hull, so the drawing was folded
+    -- UPRIGHT and smeared up a lumpy monolith.  Both ends of the hull
+    -- fell to 0 instead, and the port bow ($40/$41/$51) sat in a cell
+    -- whose bottom-left tile is open water, so rule 2 sank it to -2 and
+    -- the ship had a hole in her nose.
+    --
+    -- (This tileset is the one place the engine does NOT count $32 and
+    -- $48 as shore -- Map.lua's NO_SHORE_TILESETS -- because $32 IS the
+    -- gangway here.  So the usual shore trap does not apply, and $14 is
+    -- honest open water.  Nothing in this entry is dodging a water
+    -- fallback; the whole entry is about the ship.)
+    SHIP_PORT = {
+      -- The hull, every tile of her, as a `roof`: a box wearing its art
+      -- on the TOP face.  That is what the drawing IS -- the liner seen
+      -- from above and slightly astern, funnels and boats and deck rail
+      -- on the top rows, hull plating on the bottom two -- so folding it
+      -- upright was always going to smear.  28px of freeboard reads as a
+      -- liner beside a quay at 0 and water at -2 without towering, and
+      -- the side bands crop from each edge tile's own art, so the flank
+      -- the player faces wears the hull plating that is drawn there.
+      -- Rows north to south: bow rail and boat deck (0/2-7/9/11-15),
+      -- superstructure (16-31), midships (32-47), waterline strake
+      -- (48-53 and 61-63 in the stern), hull plating (64-69, 77-79) and
+      -- the boot topping (81-85, 90-93).
+      roof = { 0, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 14, 15,
+               16, 17, 18, 19, 21, 22, 23, 24, 25, 28, 29, 30, 31,
+               32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 44, 45, 46, 47,
+               48, 51, 52, 53, 54, 55, 56, 57, 61, 62,
+               64, 65, 66, 67, 68, 69, 77, 78, 79,
+               81, 82, 83, 85, 90, 91, 93 },
+      -- The quayside crates, a 2x2-tile box each (86/87 lid, 1/80
+      -- body), stacked two cells deep in all four corners of the dock,
+      -- and the pallet stacks flanking the gangway head (49).  A crate
+      -- IS a 16px cube: one course, art folded up the face it shows.
+      -- Unpinned the corner stacks fused into one taller volume.
+      wall = { 1, 49, 80, 86, 87 },
+      -- The delivery van parked on the north quay: drawn face-on, four
+      -- tiles by two, with clear pavement all round it -- so it takes
+      -- the standing per-pixel cutout with a body (10 voxels), not a
+      -- rectangular block that would swallow the air above its cab.
+      -- 72/73/74/75 the cab and box, 88/89/60/76 the wheels and skirt.
+      billboard = { 60, 72, 73, 74, 75, 76, 88, 89 },
+      -- Left to the derived default on purpose:
+      --   $0A        the quay's paving -> walkable, ground
+      --   $32 $3B    the gangway planks -> walkable, ground, so the walk
+      --              from the quay to the warp stays flush at 0 and
+      --              meets the hull's flank rather than climbing it
+      --   $14        open water -> the tileset's own water, -2
+      --   $3A        the shaded strip along the quay's foot.  Its cell's
+      --              bottom-left tile is water, so rule 2 puts it at
+      --              water level -- which is correct: it is the dock's
+      --              shadow lying ON the water, and the 2px lip between
+      --              it and the paving is exactly the shoreline the
+      --              water class exists to draw.
+    },
+
+    -- The facilities: twenty-one maps off one 96-tile atlas -- Silph Co's
+    -- ten office floors, the four Rocket Hideout basements, the four
+    -- Pokemon Mansion floors, the Power Plant, and the Cinnabar and
+    -- Saffron gyms.  One pin therefore has to read right in a laboratory,
+    -- an open-plan office, a burnt mansion and a gym at once; where a
+    -- graphic genuinely means two things the note says which reading won.
+    -- The failures are the usual indoor ones, louder: the detector raised
+    -- whole wall COLUMNS to 48px, stood the lab consoles up as 32px
+    -- cabinets towering over the very band they are drawn INTO, fused
+    -- vertical runs of computer terminals into 48px monoliths, boxed the
+    -- potted-plant rows into one slab wearing leaves on its top face, and
+    -- left both staircases lying flat on the floor.  Silph Co's lobby
+    -- island is tile $14 -- the engine's stale-cache water id -- and sank
+    -- into a pond in the middle of the foyer.
+    FACILITY = {
+      -- The wall band stays ONE 16px face: the dark courses (42/58
+      -- horizontal, 43/44 vertical, 45/46 the top corners, 59/60 the
+      -- bottom caps) and Silph Co's own pale striped band (87/89).  A
+      -- north-south run of 43/44 is one continuous drawing, so unpinned
+      -- the detector measured the whole column and raised it to 48.
+      --
+      -- Everything DRAWN BUILT INTO that band is `wall` too, the
+      -- Center's-healing-console rule, so it reads as equipment jutting
+      -- from the band rather than a separate tower:
+      --   74/75 the machine's two dials over 76/77 its footed base -- one
+      --     graphic serving the Cinnabar Gym's quiz consoles, Silph Co's
+      --     and the Power Plant's equipment banks and the Mansion's lab
+      --     rigs.  Drawn three rows tall under a one-row wall cap, which
+      --     is why the detector called it 32
+      --   9/10 screen over 25/26 base: the computer terminal.  It is
+      --     ALSO the free-standing maze wall of Rocket Hideout B2F/B3F
+      --     and the terminal rows of the Power Plant hall, and 16 -- its
+      --     drawn height -- is right in every one of them
+      --   64/80 the Mansion 2F balustrade seen face-on, 65/81 its
+      --     north-south run.  65 repeats down a whole column, so it
+      --     towered exactly like the wall did
+      --   86/88 the lift doors of Silph Co: a walkable warp cell, but a
+      --     pin is look-only, so the doors stand in the wall band
+      --     instead of lying flat as a mat (the Center does the same
+      --     with its window/warp tile)
+      --   8/24 and 36/37 the shutters the card-key doors and the
+      --     Cinnabar Gym quiz gates stamp CLOSED at runtime
+      --     (field.cardKeyDoors' blocks $54/$5F/$2D).  They are in no
+      --     map's block list, so nothing but this line covers them; the
+      --     detector read them as an 8px stub lying in the doorway
+      wall = { 8, 9, 10, 24, 25, 26, 36, 37, 42, 43, 44, 45, 46,
+               58, 59, 60, 64, 65, 74, 75, 76, 77, 80, 81, 86,
+               87, 88, 89 },
+
+      -- The tall display cabinet of the Mansion and Silph 3F/8F/9F: cap
+      -- row 40/41 over two ranks of 56/57, one cell wide and drawn FOUR
+      -- rows tall.  A tall drawing, not a deep one, so it takes the
+      -- Mart's shelf-rack treatment and collapses onto a one-cell-deep
+      -- box at its full 32px -- as `wall` it flattened into a bench two
+      -- cells deep, which is the shape of its footprint, not the shape
+      -- of the thing.  Its base course is the computer terminal's own
+      -- 25/26, listed under `wall` above and therefore shared: that
+      -- stays a 16px block, and reads as the cabinet's plinth.
+      bookcase = { 40, 41, 56, 57 },
+
+      -- The grey slab family -- every desk, bench, worktop and service
+      -- counter in the tileset is cut from these seven pieces: 13/14 the
+      -- top corners, 2 the top edge between them, 29/30 the body's side
+      -- edges, 53 its fill, 68/69 the legs, 18 the counter's front panel
+      -- (the tileset's own counterTiles).
+      --
+      -- `counter` -- 8px, half a cell -- not `table` or `desk`, because
+      -- the drawing is a TOP surface seen from above with one row of
+      -- front elevation at its south end: one clean band folds exactly
+      -- that bottom row (68/69 legs, or 18) up as the front and rides
+      -- every row above it on the top face in drawn order, which is what
+      -- a seven-cell Silph Co bench actually looks like.  At 12 or 16
+      -- the same drawing reads as a wall stub, the failure the Center's
+      -- counters are pinned against.
+      --
+      -- 13/14 and 29/30 double as the CAP and body of the wall consoles
+      -- (blocks $60/$62/$64/$66/$7F).  The benches win the tie on count
+      -- -- 142 block placements across 18 maps against the consoles' 105
+      -- across 14 -- and the compromise costs the consoles nothing: the
+      -- capped rows sit NORTH of the 16px dial face, so an 8px ledge
+      -- behind a 16px machine is occluded from every southward camera.
+      counter = { 2, 13, 14, 18, 29, 30, 53, 68, 69 },
+
+      -- Plants, the thin standee pool, as in every other interior.  Two
+      -- drawings: the tall potted palm of Silph Co, the Hideout and the
+      -- Mansion (crown 5/6/21/22 over pot 7/15/23/31, a 1x2-cell
+      -- object), and the gym planter of Cinnabar, Saffron and the
+      -- Mansion (crown 39/47, bowl 55/63, box 61/62).  Unpinned the
+      -- detector fused a six-plant row into one box wearing the leaf
+      -- dither as a lid.  The crown's checker highlights share the
+      -- floor's shades so the mask drains some of them -- the same
+      -- accepted trade as the Center's bush.
+      prop = { 5, 6, 7, 15, 21, 22, 23, 31, 39, 47, 55, 61, 62, 63 },
+
+      -- Both flights UP, both climbing EAST.  3/4/19/78 is the one-cell
+      -- open staircase of the Mansion (1F->2F, 2F->3F) and the Hideout
+      -- (B1F->Game Corner): white treads whose risers step up toward the
+      -- upper right.  90/91 over 67/52 is Silph Co's own stairwell, set
+      -- into the north wall band on every floor -- courses of tread whose
+      -- east ends step back one notch at a time.  BOTH cells are
+      -- WALKABLE (19 and 67 are the tileset's warp tiles), so unpinned
+      -- they resolved to flat ground and the steps were painted on the
+      -- floor.  Silph's drawing is the one genuinely ambiguous flight in
+      -- the tileset -- read as a west rise it builds a ramp that leaves a
+      -- gap against the east jamb, so east it is, which also makes one
+      -- consistent story out of every up-stair in the group.
+      stair_e = { 3, 4, 19, 78, 52, 67, 90, 91 },
+      -- The staircase DOWN (11/12/27/28): three treads in a black
+      -- stairwell, shortening and darkening west to east, so the flight
+      -- descends EAST into the dark.  One graphic again, for every
+      -- down-stair in the group.  (Where the Mansion 3F variant hangs
+      -- directly under the wall band, block $73, the engine's door fold
+      -- claims the cell first -- 27 is one of the tileset's doorTiles --
+      -- and stands the art up in the band as a doorway.  That reads
+      -- fine, and the fold runs after this profile, so it is not
+      -- something a pin can or should undo.)
+      stair_down_e = { 11, 12, 27, 28 },
+
+      -- The rubble drifts of the Mansion and the Power Plant (83/84 over
+      -- 54/38): two black-outlined boulders per cell on a plain grey
+      -- ground, tiling wall-to-wall across whole rooms.  Drawn ROUND, so
+      -- they take the overworld canopy's archetype -- one voxel hull per
+      -- 16x16 cell carved from the darkest-pixel outline -- which is the
+      -- only class that keeps a repeating field as separate lumps: a
+      -- standee pool would cluster a whole drift into one giant flat
+      -- cutout, and the volume path gave 16px slabs with 48px towers
+      -- wherever a drift touched a wall.
+      cylinder = { 38, 54, 83, 84 },
+
+      -- Silph Co 1F's lobby island (tile $14), the cross-shaped dither
+      -- the reception terminals ring.  $14 is one of the three ids the
+      -- engine's stale-cache water set claims in EVERY tileset, and it
+      -- is not on this tileset's walkable list, so it fell straight to
+      -- `water` and opened a pond in the middle of the foyer.  It is a
+      -- floor-level mat drawn from above: flat.
+      ground = { 20 },
+
+      -- Left to the derived defaults on purpose, having been checked:
+      --   51, the Hideout's black fill, is all-black art, so the void
+      --     rule already flattens it -- which is what a room's interior
+      --     darkness should be
+      --   32/33/48/49 -- the four quarter-tiles the Hideout's spinner
+      --     arrows and the Saffron/Silph warp diamonds are assembled
+      --     from -- and 94, the Hideout's floor panel, are on the
+      --     tileset's walkable list and come out flat ground unaided
+      --   1 (the checker floor), 17 (the Mansion's upper-floor boards)
+      --     and 66/82 (the entrance carpet) likewise
+      --   the other two stale-cache water ids, $32 and $48, are never
+      --     placed by any of the twenty-one maps, so only $14 above
+      --     needed the guard
+    },
+
+    -- Pokemon Tower's seven floors and Agatha's room (one tileset).
+    -- Every floor is the same octagonal chamber: a ring of wall panels
+    -- ($09/$0A over $19/$1A) cut out of a mid-grey mass ($11), with a
+    -- field of gravestones inside it, and Agatha's room is that chamber
+    -- shrunk.  The ring and the mass the detector already reads as one
+    -- 16px course (probed) -- they are listed anyway so the answer is
+    -- authored rather than inferred from a repeat count, and so the
+    -- panels can never fuse into the gravestones that touch them.
+    -- What the detector got WRONG was everything else: the headstones
+    -- came out as 8px stubs with their arched tops dropped, both
+    -- stairwells were flattened by the walkable-cell rule, and the
+    -- potted palms lost their crowns to a 16px box.
+    -- (Nothing here needs pinning against the void rule: the tileset's
+    -- one all-black tile is $47, and no map in the group places it.)
+    CEMETERY = {
+      -- One 16px course: the chamber's wall ring ($09/$0A over
+      -- $19/$1A), the grey mass beyond it ($11) so the room reads as a
+      -- chamber cut into solid stock rather than a fence standing on a
+      -- plain, the roped-off corner of 1F ($02 over $12 running
+      -- east-west, seen face-on; $1D/$1E running north-south, seen from
+      -- above -- 8 rows of it, which the volume path would have towered
+      -- to 64px), and Agatha's north band ($20 over $30).
+      wall = { 9, 10, 25, 26,
+               17,
+               2, 18, 29, 30,
+               32, 48 },
+      -- The gravestones ($05/$06 over $15/$16): a headstone drawn
+      -- face-on, one per cell, 314 of them across the seven floors and
+      -- Agatha's room.  The volume path measured the drawing as its
+      -- bottom row alone and left an 8px stub -- the plinth without the
+      -- stone.  `post` is the per-CELL standee pool: each cell is
+      -- extracted on its own as a per-pixel cutout 6 voxels deep, so
+      -- the arched top comes back and a 4x2 block of graves stands as
+      -- eight separate stones instead of one 32px sheet with the back
+      -- row floating above the front (which is what one shared
+      -- billboard cluster would have made of them).  The stone's white
+      -- side margins let the background flood in; its own white checker
+      -- band is sealed by the black arch and survives.
+      post = { 5, 6, 21, 22 },
+      -- The flight UP to the next floor ($03/$04 over $13/$14): real
+      -- rising steps, climbing east the way the risers are drawn (short
+      -- at the west, tall at the east -- the same drawing idiom as Red's
+      -- house).  Its collision tile is $13, which IS in the tileset's
+      -- walkable list, so rule 3 had laid the whole flight flat; and its
+      -- south-east tile is $14, the water-fallback trap id -- harmless
+      -- only because the cell's own bottom-left is $13, and pinned here
+      -- so it can never matter.
+      stair_e = { 3, 4, 19, 20 },
+      -- The flight DOWN ($0B/$0C over $1B/$1C): a sunken stairwell.
+      -- The drawn step edges are high and lit at the WEST and fall away
+      -- dark to the east, so the flight descends eastward -- the mirror
+      -- of Red's bedroom stair.  Walkable ($1B) and flattened for the
+      -- same reason as the flight up.
+      stair_down_e = { 11, 12, 27, 28 },
+      -- The potted palm that flanks Mr. Fuji's shrine on 7F and stands
+      -- in Agatha's room ($27/$2F crown, $37/$3F fronds, $3D/$3E
+      -- planter): a plant, so the THIN standee pool, like every other
+      -- interior plant.  It is drawn 24px tall across THREE tile rows,
+      -- which is why the box path dropped its crown row entirely and
+      -- kept a 16px planter; a standee takes the whole drawing at its
+      -- real height.  It backs onto the wall ring, and a separate pool
+      -- keeps it from being absorbed into it.
+      prop = { 39, 47, 55, 63, 61, 62 },
+      -- (Nothing else needs an entry.  The tower's floor ($01) and 5F's
+      -- healing pad ($22) are walkable, so rule 3 lays them flat where
+      -- they are drawn; the mass, ring, graves, stairs and palm above
+      -- are every other tile the eight maps place.)
+    },
+
+    -- The two Underground Paths (Route 5<->6 north-south, Route 7<->8
+    -- west-east): one blockset, two maps, and the plainest geometry in
+    -- the game -- a tiled corridor cut out of black.  Most of it was
+    -- already right, because the black it is cut from ($10) is solid
+    -- black and the void rule flattens it (`10v00` over every border
+    -- block), and the lattice floor ($0B/$0C) with the diagonal shadow
+    -- strip along its west wall ($15/$18) are walkable and lie flat.
+    -- Two things were not.
+    --
+    -- The SOUTH rim.  The corridor's near wall is drawn as a single 8px
+    -- light line ($02) with black under it, so the volume builder
+    -- measured a one-row drawing and raised half a course -- an 8px
+    -- kerb (`02w08` along the whole bottom row of
+    -- UNDERGROUND_PATH_WEST_EAST) facing a proper 16px far wall
+    -- (`06w16`/`09w16`).  Pinned, the corridor closes with one band all
+    -- round.  The east and west rim lines ($16/$17) already read 16 --
+    -- their columns repeat -- and join the same authored course so the
+    -- whole enclosure is one decision.
+    --
+    -- The STAIRS.  $03/$04 over $13/$14 is a real flight drawn in
+    -- profile, treads climbing to the upper right, and it is the warp
+    -- back up to the surface at both ends of both corridors.  Its cell
+    -- is walkable, so it resolved to flat ground and the staircase was
+    -- a painting (`03g00 04g00 / 13g00 14g00`).  stair_e builds the
+    -- flight the drawing shows, rising east.  $14 is also the $14
+    -- WATER-FALLBACK id: the walkable cell was hiding the trap here
+    -- rather than dodging it, and the pin settles it either way.
+    UNDERGROUND = {
+      wall = { 6, 9,               -- $06 over $09, the far wall band
+               2,                  -- $02, the near wall's light line
+               22, 23 },           -- $16/$17, the east and west rims
+      stair_e = { 3, 4, 19, 20 },  -- $03/$04 over $13/$14
+      -- The blockset also carries the wall's unplaced corner variants
+      -- ($05/$08 north-west, $07/$0A north-east, $11 south-west, $12
+      -- south-east).  Neither map places them; they belong with the
+      -- wall band above if one ever does.
     },
   },
 

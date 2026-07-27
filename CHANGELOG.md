@@ -1,5 +1,73 @@
 # Changelog
 
+## 1.0.5
+
+### Added
+
+- **Every remaining interior is furnished.** The profile covered ten
+  tilesets; it now covers twenty-three -- 1,190 pinned tiles across
+  `GATE`, `FOREST_GATE`, `LOBBY`, `MUSEUM`, `LAB`, `MANSION`,
+  `INTERIOR`, `CLUB`, `SHIP`, `SHIP_PORT`, `FACILITY`, `CEMETERY` and
+  `UNDERGROUND`, plus full entries for `CAVERN` and `GYM` which had only
+  stubs. Roughly 130 maps, surveyed against the standard the finished
+  interiors already set: one 16px wall band carrying whatever is drawn
+  built into it, half-cell counters so the drawn front folds up and the
+  top stays on top, `bookcase` collapse for free-standing shelves,
+  thin-pool standees for plants, and small objects riding the furniture
+  they are drawn above.
+
+  What the detector was doing before, by way of what changed:
+
+  - **Rooms with no walls.** Three tile ids (`$14`, `$32`, `$48`) are
+    claimed by the engine's water set in EVERY tileset, and collision is
+    per CELL, so one of them in a cell's bottom-left corner sank the
+    whole cell. `$32` draws both the route gates' wall base course and
+    every counter front, so all 25 gate maps were a checkered floor in a
+    moat; the same trap put ponds through two thirds of Seafoam B4F,
+    under every museum vitrine, along the S.S. Anne's wall corners and
+    across Silph Co 1F's lobby island. The set is wider than three ids
+    in practice -- `LAB`, `MANSION` and `INTERIOR` each hit six to nine
+    -- because the test is per cell, so an innocent tile sharing a cell
+    with a trapped one sinks with it and has to be pinned too.
+  - **Towers and fused monoliths.** Counters raised to 48px dragging
+    their wall band with them, merchandise racks fused sideways into
+    32px blocks four tiles deep, cave shelf edges standing as 48px fins
+    beside a 16px band, the Vermilion liner folded upright into a lumpy
+    48px slab.
+  - **Furniture that was not there at all.** Anything whose cell is
+    walkable resolved to flat ground: 59 department-store stools, every
+    gate lounge table and pair of binoculars, both museum staircases,
+    the gym-lounge chairs, and -- via the void rule -- the black
+    partition walls every gym is divided by, which left their white rim
+    columns standing as hollow 48px fins.
+  - **314 gravestones** in Pokemon Tower were 8px stubs, because the
+    volume path measured only their bottom row and dropped the arch.
+
+  Notable readings: the S.S. Anne's hull is `roof` (a drawing seen from
+  above, so the art belongs on the top face); the Warden's specimens and
+  Celadon Gym's shrubs are `cylinder` voxel balls, the first indoor use
+  of that class; the Fan Club's octagonal boardroom table is `counter`
+  rather than `table`, because only a counter rides its upper rows onto
+  the top face in drawn order -- which is what draws the seated chairman
+  exactly once, the Pokemon Center couch case verbatim.
+
+  Fuchsia Gym's invisible maze is deliberately left flat. Raising it
+  would read better as a room, and would also hand the player the
+  solution; a shape is purely presentational, so the drawn answer wins
+  and the gym plays as the flat game does.
+
+### Fixed
+
+- **A profile pin now outranks the door fold.** `Structures.forMap`
+  folds a door cell into its facade so the doorway does not punch a hole
+  in the wall -- but it overwrote the resolved shape unconditionally,
+  including for AUTHORED tiles, which contradicts rule 1 of the
+  documented resolution order. Any pin on a tile its tileset also lists
+  in `doorTiles` was dead on arrival: all four Celadon Mansion
+  staircases and Pokemon Mansion 3F's descent are door tiles, so
+  `stair_*` pins there silently did nothing and the flights stayed
+  painted flat on the floor. The fold now skips authored tiles.
+
 ## 1.0.4
 
 ### Added
