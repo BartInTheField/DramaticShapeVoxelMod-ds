@@ -753,8 +753,19 @@ return {
       -- box.  Its own pool, so the counter can never absorb it.  The art
       -- has a clean light margin on three sides and a black outline all
       -- round, so the shade flood drains the work surface away and leaves
-      -- the machine whole (verified pixel by pixel before shooting).
-      billboard = { 14, 15, 30, 31 },
+      -- the machine whole.
+      --
+      -- `console`, not `billboard`, for the two vertical black rules the
+      -- COUNTER draws down the outer edges of those same tiles (columns
+      -- 0 and 15 of the pair, full height).  They are the counter's own
+      -- edging, not the register, but black always survives the shade
+      -- flood, so the billboard pool extruded them too and the machine
+      -- stood flanked by a pair of tall black slabs.  A white column
+      -- separates them from the register body, so they are their own
+      -- connected components -- and `console` carries the same
+      -- one-object contract `cutout` has, which keeps the largest
+      -- drawing and drops them, at ten voxels of body rather than one.
+      console = { 14, 15, 30, 31 },
       -- the free-standing shelf racks: TALL drawings, not deep ones --
       -- each rank collapses onto a one-cell-deep shelf at its drawn
       -- height (the Dojo/Red's-house treatment). 64/65/67 and 80/81/83

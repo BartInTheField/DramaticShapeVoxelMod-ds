@@ -81,6 +81,7 @@ local FALLBACK_HEIGHTS = {
   desk = 24,
   prop = 16,
   cutout = 16,
+  console = 16,
   relief = 3,
   bookcase = 32,
   stair_e = 16,
@@ -150,6 +151,11 @@ local ART = {
   desk = "upright",
   prop = "billboard",
   cutout = "billboard",
+  -- a machine standing on furniture: the billboard treatment with
+  -- body, plus the one-object contract `cutout` has -- the drawing is
+  -- ringed by the furniture it sits on, and those edges must not be
+  -- extruded along with it (see Structures' component filter)
+  console = "billboard",
   relief = "relief",
   -- free-standing shelves: the drawing is TALL, not deep -- Structures
   -- collapses each drawn rank onto a one-cell-deep box at full height
