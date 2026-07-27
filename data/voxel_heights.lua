@@ -2140,6 +2140,85 @@ return {
   -- placement.
   buildings = {
     OVERWORLD = {
+      -- assets/docs/buildings/B30: the POKEMON TOWER -- the one drawing
+      -- in the catalogue that STRADDLES A MAP BOUNDARY.  Twelve of its
+      -- twenty rows stand in ROUTE_10's last rows (the 64px purple roof
+      -- band plus two window courses); the other eight -- five more
+      -- courses and the base with the door -- are on LAVENDER_TOWN,
+      -- where the tower begins at tile row 0.  Modelled per map it came
+      -- out as two buildings, one per half.
+      --
+      -- `topRows` composites ROUTE_10's twelve rows ABOVE the matched
+      -- grid, so the model is built from the COMPLETE twenty-row drawing
+      -- -- 96px of facade under the real 64px roof -- while placement
+      -- still matches only the eight Lavender rows.  Its `claimOnly`
+      -- twin below claims the ROUTE_10 rows and stamps nothing, so the
+      -- roof half does not also stand as its own building.
+      --
+      -- BOTH COME FIRST IN THIS LIST ON PURPOSE.  The tower's upper
+      -- twelve rows are `gabled_block_6x6` tile for tile -- the artist
+      -- drew the top of the tower as an ordinary six-cell block -- so
+      -- that template matches at ROUTE_10 (24,132) too.  Placement is
+      -- first-claim-wins (see Buildings.build), so claiming here before
+      -- the generic block reaches it is what keeps the second tower from
+      -- being stamped behind this one.
+      --
+      -- The 13-id last row is kept from the first attempt: the bare
+      -- 12-wide body grid is B14's lower two-thirds tile for tile, and
+      -- the extra id stops this template stamping inside
+      -- `flat_block_6x6`'s three placements (`matches` walks a row to
+      -- its own length, while `read` composites only #tiles[1] columns,
+      -- so a 13th id constrains placement without entering the drawing).
+      {
+        id = "pokemon_tower",
+        topRows = {
+          {  5,  6, 83, 83, 83, 83, 83, 83, 83, 83,  8,  9 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 22, 23, 23, 23, 23, 23, 23, 23, 23, 24, 25 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 22, 23, 23, 23, 23, 23, 23, 23, 23, 24, 25 },
+          { 37, 38, 34, 34, 34, 34, 34, 34, 34, 34, 40, 41 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+        },
+        tiles = {
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+          { 78, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 79, 17 },
+        },
+        roofRows = 64, roofBack = 8, roofFront = 8, roofCycle = { 8, 31 },
+        slab = 4, frontEave = 4, ledge = nil,
+      },
+      -- the tower's roof half, where it actually stands on ROUTE_10:
+      -- claimed flat so the drawing does not ALSO fold up as a building
+      -- behind the modelled tower (see topRows above)
+      {
+        id = "pokemon_tower_top",
+        claimOnly = true,
+        tiles = {
+          {  5,  6, 83, 83, 83, 83, 83, 83, 83, 83,  8,  9 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 22, 23, 23, 23, 23, 23, 23, 23, 23, 24, 25 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 22, 23, 23, 23, 23, 23, 23, 23, 23, 24, 25 },
+          { 37, 38, 34, 34, 34, 34, 34, 34, 34, 34, 40, 41 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+        },
+      },
       -- assets/docs/buildings/B07: the two-storey gabled house.  Coursed cap over
       -- a gable wall, an awning with its double black underline, then the
       -- ground floor with the door.  7 placements, Red's and Blue's among
@@ -2730,75 +2809,6 @@ return {
         },
         roofRows = 64, roofBack = 8, roofFront = 8, roofCycle = { 8, 31 },
         slab = 4, frontEave = 4, ledge = nil, seal = "s",
-      },
-      -- assets/docs/buildings/B30: the POKEMON TOWER.  The one drawing
-      -- in the catalogue that STRADDLES A MAP BOUNDARY: its purple roof
-      -- band and top two window courses stand in ROUTE_10's last eight
-      -- tile rows, and only the lower eight rows -- six more courses and
-      -- the base with the door -- are on LAVENDER_TOWN, where the
-      -- building begins at tile row 0.  Modelled per map it came out as
-      -- two half-buildings: Lavender's half wearing a fabricated flat
-      -- cap (art row 0 stretched into a yellow slab), Route 10's half a
-      -- low volume of roof drawing folded at ground level behind it.
-      --
-      -- `topRows` is the fix, built for this template: the eight
-      -- ROUTE_10 rows are composited ABOVE the matched grid, so the
-      -- model is the COMPLETE 16-row drawing -- 96px of facade under a
-      -- real 32px roof band -- while placement still matches only the
-      -- Lavender rows.  Its twin `pokemon_tower_top` below claims the
-      -- Route 10 rows and stamps nothing, so the roof half no longer
-      -- also stands as its own building behind the tower.
-      --
-      -- The old silhouette problem is gone with the roof back: the band
-      -- closes the drawing's north outline the way it does on every
-      -- sibling, so no `seal` is needed.  The 13-id last row survives
-      -- from the first attempt: the bare 12-wide grid is B14's lower
-      -- two-thirds tile for tile, and the extra id keeps this template
-      -- from stamping inside flat_block_6x6's three placements
-      -- (`matches` walks a row to its own length; `read` composites
-      -- only #tiles[1] columns, so the 13th id constrains placement
-      -- without entering the drawing).
-      {
-        id = "pokemon_tower",
-        topRows = {
-          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
-          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
-          { 21, 22, 23, 23, 23, 23, 23, 23, 23, 23, 24, 25 },
-          { 37, 38, 34, 34, 34, 34, 34, 34, 34, 34, 40, 41 },
-          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
-          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
-          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
-          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
-        },
-        tiles = {
-          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
-          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
-          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
-          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
-          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
-          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
-          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
-          { 78, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 79, 17 },
-        },
-        roofRows = 32, roofBack = 7, roofFront = 8, roofCycle = { 5, 12 },
-        slab = 4, frontEave = 4, ledge = nil,
-      },
-      -- the tower's roof half, where it actually stands on ROUTE_10:
-      -- claimed flat so the drawing does not ALSO fold up as a second
-      -- building behind the modelled tower (see topRows above)
-      {
-        id = "pokemon_tower_top",
-        claimOnly = true,
-        tiles = {
-          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
-          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
-          { 21, 22, 23, 23, 23, 23, 23, 23, 23, 23, 24, 25 },
-          { 37, 38, 34, 34, 34, 34, 34, 34, 34, 34, 40, 41 },
-          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
-          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
-          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
-          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
-        },
       },
     },
 

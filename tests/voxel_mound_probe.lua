@@ -30,7 +30,8 @@ return function(game)
   Pipelines.setLevel("tiltshift", 0)
   U.teleport(game, mapId, tonumber(sx), tonumber(sy), facing)
   U.wait(20)
-  Pipelines.setLevel("voxel", 3)
+  Pipelines.setLevel("voxel",
+    math.floor(tonumber(os.getenv("MOUND_LEVEL")) or 3))
   U.wait(30)
 
   local V = game.mods.exports["DRAMATIC_SHAPE"]

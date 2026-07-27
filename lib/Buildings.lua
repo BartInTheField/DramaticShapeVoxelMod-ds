@@ -627,7 +627,27 @@ function Buildings.build(S, map, data, perRow)
       for ty = 0, th - bh do
         Budget.tick()
         for tx = 0, tw - bw do
-          if S.tileAt[keyOf(tx, ty)] == first and matches(S, t, tx, ty) then
+          -- A placement never stamps into cells another template already
+          -- claimed. Templates are matched independently, and one
+          -- drawing can satisfy two grids: the Pokemon Tower's upper
+          -- twelve rows on ROUTE_10 are a standard 6-cell block tile for
+          -- tile, so `gabled_block_6x6` matched there and stood a whole
+          -- second building behind the tower. First claim wins, so the
+          -- list order below is the priority order -- the tower's own
+          -- templates come first precisely so they take those cells.
+          local free = S.tileAt[keyOf(tx, ty)] == first
+          if free then
+            for r = 0, bh - 1 do
+              for c = 0, bw - 1 do
+                if S.skip[keyOf(tx + c, ty + r)] then
+                  free = false
+                  break
+                end
+              end
+              if not free then break end
+            end
+          end
+          if free and matches(S, t, tx, ty) then
             if not built then
               local key = tileset.id .. ":" .. index
               if not models[key] then
