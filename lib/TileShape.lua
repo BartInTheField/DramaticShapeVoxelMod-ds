@@ -202,6 +202,48 @@ local function authoredGroups(tilesetId, heights)
   return out
 end
 
+-- Conditional pins: tile id -> list of { above = {tile ids}, class }.
+--
+-- A pin is per TILE ID, and one graphic can mean two things. The route
+-- gates' $32/$33 is the case that forced this: the artist reuses it for
+-- the wall's dark base course AND for every service counter's front, and
+-- it is the bottom row of its cell either way. Pinned `wall` the counter
+-- stands a full 16px; pinned `counter` the wall bank corrugates 16/8 for
+-- sixteen rows. Neither is right, and no per-tile pin can be, because
+-- forMap resolves an id to ONE shape.
+--
+-- What separates the two uses is what is drawn ABOVE: the wall's upper
+-- course over a wall base, the counter's top over a counter front. So a
+-- profile entry may carry `when_above = { [tile] = { { above = {...},
+-- class = "..." } } }`, evaluated per POSITION in TileShape.at, where
+-- the map and coordinates are in hand. First match wins; no match keeps
+-- the tile's ordinary pin.
+local function authoredConditions(tilesetId, heights)
+  local s = load()
+  local entry = s and s.tilesets and s.tilesets[tilesetId]
+  local spec = entry and entry.when_above
+  if type(spec) ~= "table" then return nil end
+  local out, any = {}, false
+  for tile, rules in pairs(spec) do
+    if type(tile) == "number" and type(rules) == "table" then
+      local list = {}
+      for _, rule in ipairs(rules) do
+        if type(rule) == "table" and heights[rule.class]
+           and type(rule.above) == "table" then
+          local set = {}
+          for _, t in ipairs(rule.above) do set[t] = true end
+          list[#list + 1] = { above = set, class = rule.class }
+        end
+      end
+      if #list > 0 then
+        out[tile] = list
+        any = true
+      end
+    end
+  end
+  return any and out or nil
+end
+
 local function shapeFor(class, heights, authored)
   return { class = class, h = heights[class] or 0,
            art = ART[class] or "upright",
@@ -251,7 +293,7 @@ function TileShape.forMap(map)
     end
   end
 
-  local shapes = { classes = {} }
+  local shapes = { classes = {}, cond = authoredConditions(id, heights) }
   for class in pairs(FALLBACK_HEIGHTS) do
     shapes.classes[class] = shapeFor(class, heights)
   end
@@ -284,6 +326,19 @@ end
 -- map:tileAt(tx, ty), passed in because every caller already has it.
 function TileShape.at(map, shapes, tile, tx, ty)
   local s = shapes[tile]
+  -- conditional pins first: they are authored answers that need the
+  -- POSITION to resolve, so they outrank both the flat pin on the same
+  -- tile and the cell rules below (see authoredConditions)
+  local rules = shapes.cond and shapes.cond[tile]
+  if rules then
+    local above = map:tileAt(tx, ty - 1)
+    for _, rule in ipairs(rules) do
+      if above and rule.above[above] then
+        shapes.classes[rule.class].authored = true
+        return shapes.classes[rule.class]
+      end
+    end
+  end
   if not s or s.authored then return s end
   local cx = math.floor(tx / 2)
   local cy = math.floor(ty / 2)

@@ -1,5 +1,94 @@
 # Changelog
 
+## 1.0.6
+
+### Added
+
+- **Conditional pins.** A profile entry may now carry `when_above`:
+  tile id -> rules keyed on the tile drawn directly north of it,
+  resolved per POSITION in `TileShape.at`. A pin is per tile id and one
+  graphic can mean two things -- the route gates' `$32` is both the
+  wall's dark base course and every service counter's front, and it is
+  the bottom row of its cell either way. Pinned `wall` the counters
+  stood a full 16px; pinned `counter` the deep wall banks corrugated
+  16/8 for sixteen rows and the room read as crates. What separates the
+  two uses is what sits on top, so that is what the rule reads. The
+  gates now have half-height counters AND level walls.
+
+- **The Pokemon Tower has an exterior.** It is the one catalogued
+  building drawing the map edge cuts off (no roof band is on the map at
+  all), and it had no `buildings` entry, so it fell to the volume path
+  -- which tops a run by repeating its first two rows, laying window
+  courses flat across the plateau. Sealing the silhouette on the north
+  alone closes it (88% fill, one piece, against 37% and 126 pieces
+  unsealed), and one row of roof band spent on the drawing's top margin
+  costs no window course. It stands as a real tower, panes recessed,
+  door on the ground.
+
+- **The Indigo Plateau statues stand up**, built exactly like the gym
+  statues: plinth a solid 16px block, figure a per-pixel cutout riding
+  it. On the avenue the statues stack with no gap, so the flood joined
+  six of them into one 24-row region and the volume builder raised
+  ridges of boxes with the statue art folded on the front. The same
+  bird is drawn at the foot of every badge-check pillar, so those are
+  crowned too.
+
+### Fixed
+
+- **Tall grass: one clump per tile.** Each 8x8 tile is a whole clump,
+  but the template split every tile AGAIN into its top and bottom four
+  art rows and stood those at two different depths -- so any blade
+  running down a tile was cut in half, into two 4px stubs 4px apart.
+  One tile is now one full-height standing slab at its own depth; a
+  cell's 2x2 tiles still stand independently, so the player walks
+  between the north and south rows.
+
+- **Ledge lines are continuous.** `$34` is the cliff slope's foot and
+  also the pillar between hop-down segments; pinned `wall` with the
+  rest of the slope chain (the Diglett's Cave fix) it stood those
+  pillars 16px beside a 6px lip. At ledge height the run reads as one
+  lip, and the mound is unchanged -- its foot row reads as the talus it
+  is drawn as.
+
+- **A prop only stands on furniture when its own cell is blocked.**
+  "Is something drawn above me" is not "am I standing on it": a chair
+  drawn against the north side of a table is above the table's trim row
+  too, and was being lifted onto the tabletop, with its claimed cells
+  re-tiled as tabletop so the table marched two rows north. Three
+  chairs in Cinnabar's trade room and Fuchsia's meeting room, and the
+  Celadon diner's stools. The world already knows the difference: a
+  thing that sits ON furniture occupies a blocked cell, a seat you walk
+  up to is in a walkable one.
+
+- **Caves: nothing below sea level, and the water is water.** Two tiles
+  were identified backwards in the first pass. `$14` -- the tile the
+  engine animates, that `Map.WATER_TILES` names and that Surf runs on
+  -- was pinned `wall`, so Cerulean Cave's lake and the Seafoam sea
+  stood up as rock slabs. And the pale dithered rock fill was pinned
+  `water`, cutting 612 tiles of two-cell-wide trench through four maps.
+  Both corrected; a sweep of all 19 cave maps now reports zero tiles
+  below the datum. The elevation scheme is documented in the entry and
+  derived from the game's own `tilePairs`: dark floor, water and drop
+  holes at 0, the lit shelf a 6px step above, rock at 16.
+
+- **Cave ladders climb.** Which ladder graphic goes up and which goes
+  down is unanimous in the warp table -- 37 cells of one always warp
+  down, 40 of the other always up -- so they are real stepped flights
+  now, not painted plates.
+
+- **Poke Mart's register stands on the counter.** The pin was on the
+  wrong tile: `$08` is the counter's own top band, not the register, so
+  the standee flood ate everything but two black lines. The register is
+  the keypad-and-receipt drawing one row up.
+
+- **Celadon's televisions**, which were solid 16px boxes wearing the TV
+  art on one face, and the **Pokemon Tower reception desk** and the
+  **gate counters**, which stood at wall height, are all their drawn
+  heights now. The **Fan Club and Silph boardroom statues** were read
+  as seated chairmen and painted onto the tabletop; they are cutouts
+  standing on their pedestals, and the tables are cut to a true
+  octagonal footprint.
+
 ## 1.0.5
 
 ### Added

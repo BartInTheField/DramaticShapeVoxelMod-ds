@@ -1919,10 +1919,24 @@ function Structures.buildObject(S, map, region, cluster,
   -- the box's top with its feet on the box's north row, and the claimed
   -- tiles keep rendering as that box (wearing its plain art) instead of
   -- punching a floor-level hole through it.
+  --
+  -- Only when the prop's OWN CELL IS BLOCKED, though.  "Is something
+  -- drawn above me?" is not the same question as "am I standing on it":
+  -- a chair drawn against the north side of a table is above the table's
+  -- trim row too, and it was being lifted onto the tabletop -- three
+  -- chairs standing on the furniture in Cinnabar's trade room and
+  -- Fuchsia's meeting room, with the claimed cells re-tiled as tabletop
+  -- so the table marched two rows north with them.  The world already
+  -- knows which is which: a thing that sits ON furniture occupies a
+  -- blocked cell (you cannot walk through the gym statue, Red's plant,
+  -- the PC), while a seat you walk up to is in a walkable one.
   local baseY, support = 0, nil
   if force then
     local bs = S.shapeAt[keyOf(cluster.minX, cluster.maxY + 1)]
-    if bs and bs.authored and bs.art == "upright" and (bs.h or 0) > 0 then
+    local blocked = not map:isWalkableCell(math.floor(cluster.minX / 2),
+                                           math.floor(cluster.maxY / 2))
+    if blocked and bs and bs.authored and bs.art == "upright"
+       and (bs.h or 0) > 0 then
       baseY, support = bs.h, bs
     end
   end
