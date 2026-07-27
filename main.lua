@@ -344,9 +344,13 @@ end)
 -- tree that is no longer there.  The 2D tile renderer invalidates its own
 -- caches off the same edit.
 
+-- refresh, not invalidate: the stale mesh keeps drawing while the
+-- replacement builds in the background, so a one-block edit (Cut, a
+-- door stamp, the tree regrowing on re-entry) repopulates in place
+-- instead of blinking the whole scene down to the flat 2D path
 mod.events:on("world.block_replaced", function(payload)
   local mapId = payload and (payload.mapId or (payload.map and payload.map.id))
-  if mapId then ChunkMesher.invalidate(mapId) end
+  if mapId then ChunkMesher.refresh(mapId) end
 end)
 
 -- A reloaded map is rebuilt from scratch (warps that re-enter the same map,
@@ -372,7 +376,7 @@ mod.events:on("map.reloaded", function(payload)
   if mapId then ChunkMesher.invalidate(mapId) end
 end)
 
-mod.exports.version = "1.0.3"
+mod.exports.version = "1.0.4"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
 -- camera without reaching into this mod's file layout
 mod.exports.lib = V

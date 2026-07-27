@@ -1,5 +1,109 @@
 # Changelog
 
+## 1.0.4
+
+### Added
+
+- **Flowers stand up, and keep swaying.** The animated meadow tile
+  ($03, the one tile the overworld animates by frame rewrite) now
+  renders as a billboard one voxel deep: the drawing's darkest tones
+  plus everything they enclose are cut out per pixel, and the ground
+  beneath is synthesized from the commonest flat neighbour, exactly
+  like the ground under a detected prop.
+
+  The interesting part is that the cutout still animates. A mesh is
+  static, so the geometry spans the UNION of the mask over the base art
+  and all three animation frames, and the animation lives entirely in
+  the texture: TerrainAtlas already rewrites the flower's slot in the
+  private animated atlas each step, and for this tile it now writes
+  only the current frame's mask opaque with everything else keyed to
+  alpha 0 -- which the voxel shader discards, and the shadow pass with
+  it. The standing silhouette trims itself frame by frame in texture
+  space, off the same engine clock as the flat path, without a vertex
+  moving. The class is derived, not authored: any frames-animated tile
+  resolves to the new `flower` class with no profile entry, the same
+  way tall grass derives from `grassTile` (hand-authoring still wins).
+
+- **The cuttable bush is a standing cutout.** The four tiles Cut
+  deletes ($2D/$2E/$3D/$3E -- across the whole tileset they appear only
+  in the five cut-tree blocks) are pinned to the thin `prop` pool: a
+  per-pixel standee 5 voxels deep, black-outline segmented with its
+  enclosed pixels kept, the drawn grass dither flooding away. It
+  stands on plain grass ($2C) -- the very tile Cut leaves behind per
+  field.cutTreeSwaps -- via the profile's new `prop_ground` key, which
+  names the tile painted under a pinned prop instead of whatever flat
+  tile its neighbours vote in.
+
+- **Gym statues: a solid plinth, a standing bird.** The statue pair
+  flanking every badge gym's aisle (and Bruno's room) is one cell of
+  figure over one cell of plinth. The plinth ($22/$23/$32/$33) is
+  pinned `wall`: a solid 16px block. The figure ($02/$38/$12/$13) is
+  pinned `prop`: a 5-voxel cutout that stands ON the plinth through the
+  authored-box support rule, its checkered background flooded away and
+  the pixels its outline encloses kept.
+
+  The whole statue keeps ONE cell of footprint. The support rule used
+  to extend the box under the claimed cell (the monitor-on-desk path),
+  which marched the plinth a second block backwards; a figure whose
+  support is a FULL-HEIGHT block now collapses instead -- the drawn
+  figure cell becomes synthesized floor, since the block below already
+  carries the whole base. Furniture supports keep the extension: their
+  drawn cell is the furniture's own upper rows, and floor there would
+  amputate the desk. The round boulder drawn beside some statues is
+  deliberately NOT pinned -- it also tiles wall-to-wall as Pewter's
+  rock rows, which are scenery for the detector.
+
+- **Lt. Surge's trash cans stand up.** The can ($0B/$0C/$1B/$1C, the
+  lone graphic of blocks 38/39) takes the same treatment as the
+  cuttable bush: a 5-voxel `prop` cutout, black-outline segmented with
+  its enclosed pixels kept, standing on the gyms' main floor tile
+  ($11) via `prop_ground`.
+
+### Fixed
+
+- **Cut trees now vanish in voxel mode -- and grow back.** The
+  engine's Cut path swapped the block with a raw `setBlock` + renderer
+  rebuild, never emitting `world.block_replaced` -- so this mod's
+  listener (which rebuilds the map's mesh exactly for this) never
+  heard about it, and the diorama kept showing the tree. The engine
+  now routes Cut through `replaceBlock`
+  (src/world/OverworldController.lua), whose whole purpose -- per its
+  own comment, "Victory Road barriers, Cut trees" -- is that same swap
+  plus the event. The regrowth path had the same hole one door away:
+  cut trees are restored block by block when the map is re-entered,
+  and the card-key doors are stamped closed on floor load, both
+  through the same silent `setBlock` -- with the mesh cache staying
+  warm across a round trip (that is what prevLive is for), the world
+  kept showing the stump you left. Both paths now announce each block.
+
+- **A block edit no longer blinks the world down to 2D.** The
+  listener used to drop the edited map's mesh outright, and mesh
+  builds are asynchronous -- so cutting a tree (or stepping out of a
+  door onto a map whose trees just regrew) flashed the flat 2D world
+  for the frames the rebuild took. `ChunkMesher.refresh` rebuilds in
+  place instead: the stale mesh keeps drawing, the replacement cooks
+  in the background, and each slot swaps as its build lands -- the
+  tree pops out (or back in) with the scene never leaving 3D.
+
+- **Flowers cull the player correctly from every angle.** The flower
+  billboards were baked into the terrain mesh, which draws without
+  the characters' camera-ward pull -- so a walker standing among
+  flowers won the depth test against ALL of them, including the
+  flower south of their feet that should overdraw them. The flower
+  quads now ride their own mesh, drawn after the characters with
+  exactly the characters' pull (the tall-grass trick): the flower in
+  front of a walker occludes their feet, the one behind them hides,
+  at every camera angle. Unlike grass the flower mesh still casts
+  shadows -- it is a handful of cutouts per meadow, not thousands of
+  tufts.
+
+- The `voxel_anim_probe` driver crashed on engine builds without the
+  optional `TileRenderer.animFrame` seam, and again on tilesets whose
+  animation list carries a "toggle" entry (spinner rooms), which claims
+  a tile LIST rather than one slot. It now reads the clock through the
+  mod's own fallback chain and skips toggle entries in the placement
+  census.
+
 ## 1.0.3
 
 ### Added

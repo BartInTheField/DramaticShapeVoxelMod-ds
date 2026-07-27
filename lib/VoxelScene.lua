@@ -460,6 +460,14 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
     ShadowMap.draw(nbMesh[i], atlasFor(nb.map),
                    Mat4.translate(nb.ox, 0, nb.oy))
   end
+  -- flower billboards live outside the terrain mesh (they draw after the
+  -- characters, pulled -- see render), but the sun still sees them: a
+  -- handful of cutouts per meadow, unlike the grass left out below
+  ShadowMap.draw(ChunkMesher.flowers(state.map), atlasFor(state.map), nil)
+  for _, nb in ipairs(state.neighbors or {}) do
+    ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
+                   Mat4.translate(nb.ox, 0, nb.oy))
+  end
   for _, p in ipairs(posed) do
     local def = p.sprite.def
     local frame, mirror = frameFor(def, p.facing, p.phase, p.flip)
@@ -558,6 +566,23 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   for _, nb in ipairs(state.neighbors or {}) do
     Voxel3D.draw(ChunkMesher.grass(nb.map), atlasFor(nb.map),
                  Mat4.translate(nb.ox, 0, nb.oy), pull)
+  end
+  -- flower billboards: pulled like the characters and the grass, MINUS
+  -- the depth of 8 world pixels along the view (8 sin a -- the camera
+  -- looks along (0, -cos a, -sin a), so that is exactly one tile row of
+  -- northness). A pure depth handicap with zero screen drift: every
+  -- flower is judged as if it stood one tile row further north. The
+  -- character card's feet plane sits at its cell's MIDDLE (py + 8), so
+  -- a flower on the walker's own cell (z +4 or +12 across the cell)
+  -- lands behind the card and the player obscures the patch they stand
+  -- ON, while the nearest flower of the cell south (+20) stays in front
+  -- and keeps overdrawing their feet.
+  local fpull = math.max(0, pull - 8 * math.sin(math.max(Voxel.angle, 0.05)))
+  Voxel3D.draw(ChunkMesher.flowers(state.map), atlasFor(state.map), nil,
+               fpull)
+  for _, nb in ipairs(state.neighbors or {}) do
+    Voxel3D.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
+                 Mat4.translate(nb.ox, 0, nb.oy), fpull)
   end
 
   return Voxel3D.endScene()

@@ -65,6 +65,11 @@
 --                           monitor on its desk).  prop is a second pool
 --                           so two touching cutouts stay separate
 --
+-- A tileset entry may also carry `prop_ground` (not a class): a map of
+-- prop tile id -> ground tile id naming the tile painted under that
+-- pinned prop, overriding the flat-neighbour vote -- the cuttable bush
+-- stands on the grass Cut leaves behind, whatever borders it.
+--
 -- Whole BUILDINGS are not tile pins -- one drawing packs a roof seen from
 -- above, a facade seen face-on and sloped ends as diagonal silhouettes,
 -- and no single class covers that.  They live in the `buildings` list at
@@ -124,6 +129,40 @@ return {
       -- fence-textured tower. `post` extracts each cell alone, so these
       -- render as the same thin posts, marching north
       post = { 14, 85 },
+      -- the cuttable bush ($2D/$2E/$3D/$3E, the four tiles Cut deletes
+      -- -- across the whole tileset they appear only in the five
+      -- cut-tree blocks): a standing per-pixel cutout 5 voxels deep,
+      -- black-outline segmented with the pixels the outline encloses
+      -- kept, its drawn grass dither flooding away as background
+      prop = { 45, 46, 61, 62 },
+      -- the ground painted under those pinned props, by the prop tile's
+      -- own id: the bush stands on plain grass ($2C) -- the very tile
+      -- Cut leaves behind (field.cutTreeSwaps' after-blocks) -- rather
+      -- than whatever flat tile its neighbours vote
+      prop_ground = { [45] = 44, [46] = 44, [61] = 44, [62] = 44 },
+    },
+
+    -- The badge gyms and Bruno's room (one tileset): the bird statues
+    -- that flank every gym's aisles, and Lt. Surge's trash cans.  A
+    -- statue is one cell of figure ($02/$38/$12/$13) drawn over one
+    -- cell of plinth ($22/$23/$32/$33); the trash can is one cell
+    -- ($0B/$0C/$1B/$1C, blocks 38/39 only).  Across the whole blockset
+    -- none of these tiles appears anywhere else.  The plinth stays a
+    -- SOLID 16px block; the figure stands ON it as a per-pixel cutout
+    -- 5 voxels deep (the thin `prop` pool), collapsing to the plinth's
+    -- single cell of footprint (Structures' wall-support rule); the
+    -- can is the same 5-voxel cutout at floor level.  Both are
+    -- black-outline segmented -- backgrounds flood away, the pixels
+    -- the outline encloses stay.  Everything stands on the gyms' main
+    -- floor tile ($11), which is also Bruno's floor.
+    -- (The round boulder drawn beside some statues, $07/$08/$17/$18,
+    -- is NOT pinned: it also tiles wall-to-wall as Pewter's rock rows,
+    -- which are scenery for the detector, not a lone prop.)
+    GYM = {
+      wall = { 34, 35, 50, 51 },
+      prop = { 2, 56, 18, 19, 11, 12, 27, 28 },
+      prop_ground = { [2] = 17, [56] = 17, [18] = 17, [19] = 17,
+                      [11] = 17, [12] = 17, [27] = 17, [28] = 17 },
     },
 
     -- ledge pairs from data.field.tilePairs

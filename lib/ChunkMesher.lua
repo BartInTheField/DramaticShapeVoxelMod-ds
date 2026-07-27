@@ -704,15 +704,10 @@ function ChunkMesher.build(map, bodyOnly, masks)
   return sink.finish()
 end
 
--- The tall-grass rows as their own mesh: VoxelScene draws it AFTER the
--- characters so the southern row of a grass cell still overdraws a
--- walker's feet (characters stamp over terrain, Gen 1 style, so ordinary
--- terrain could never do this).
-local function buildGrassMesh(map)
-  local S = Structures.forMap(map)
-  if #S.grassQuads == 0 then return nil end
+local function quadsMesh(quads)
+  if #quads == 0 then return nil end
   local verts, indices, n = {}, {}, 0
-  for _, q in ipairs(S.grassQuads) do
+  for _, q in ipairs(quads) do
     for i = 1, 4 do
       local c = q[i]
       local uv = q.uv and q.uv[i] or { q.u, q.v }
@@ -722,6 +717,33 @@ local function buildGrassMesh(map)
     n = n + 1
   end
   return Voxel3D.newMesh(verts, indices)
+end
+
+-- The tall-grass rows as their own mesh: VoxelScene draws it AFTER the
+-- characters so the southern row of a grass cell still overdraws a
+-- walker's feet (characters stamp over terrain, Gen 1 style, so ordinary
+-- terrain could never do this).
+local function buildGrassMesh(map)
+  return quadsMesh(Structures.forMap(map).grassQuads)
+end
+
+-- The flower billboards as their own mesh, for the same reason as the
+-- grass one: it draws AFTER the characters WITH the same camera-ward
+-- pull, so a flower south of a walker occludes their feet and one north
+-- of them hides behind them. Baked into the terrain mesh they lost that
+-- depth fight against the pulled character card whenever the player
+-- stood among flowers. Unlike grass this mesh still CASTS shadows (the
+-- sun pass draws it): a handful of flowers per meadow, not thousands of
+-- tufts.
+local function buildFlowerMesh(map)
+  return quadsMesh(Structures.forMap(map).flowerQuads)
+end
+
+-- Replace a cached slot, releasing whatever mesh it held.
+local function swapSlot(c, slot, mesh)
+  local old = c[slot]
+  if old and old ~= mesh and old.release then pcall(old.release, old) end
+  c[slot] = mesh
 end
 
 -- ------------------------------------------------------------- the cache
@@ -736,11 +758,12 @@ local function entry(id)
 end
 
 local function releaseEntry(c)
-  for _, slot in ipairs({ "full", "body", "grass" }) do
+  for _, slot in ipairs({ "full", "body", "grass", "flowers" }) do
     local mesh = c[slot]
     if mesh and mesh.release then pcall(mesh.release, mesh) end
     c[slot] = nil
   end
+  c.stale = nil
 end
 
 -- ---------------------------------------------------------- async builds
@@ -778,26 +801,48 @@ end
 local function runJob(job)
   local map = job.map
   local c = entry(job.id)
-  if c.grass == nil then
+  if c.grass == nil or c.flowers == nil or (c.stale and c.stale.aux) then
     local okG, grass = pcall(buildGrassMesh, map)
-    if (gen[job.id] or 0) ~= job.gen then return end
-    c.grass = (okG and grass) or false
+    local okF, flowers = pcall(buildFlowerMesh, map)
+    if (gen[job.id] or 0) ~= job.gen then
+      if okG and grass and grass.release then pcall(grass.release, grass) end
+      if okF and flowers and flowers.release then
+        pcall(flowers.release, flowers)
+      end
+      return
+    end
+    swapSlot(c, "grass", (okG and grass) or false)
+    swapSlot(c, "flowers", (okF and flowers) or false)
+    if c.stale then c.stale.aux = nil end
   end
   local sink = newSink()
   runGeometry(map, job.slot == "body", job.masks, sink)
   local mesh = sink.finish()
-  if (gen[job.id] or 0) ~= job.gen then return end
-  c[job.slot] = mesh or false
+  if (gen[job.id] or 0) ~= job.gen then
+    if mesh and mesh.release then pcall(mesh.release, mesh) end
+    return
+  end
+  swapSlot(c, job.slot, mesh or false)
+  if c.stale then
+    c.stale[job.slot] = nil
+    if not (c.stale.full or c.stale.body or c.stale.aux) then
+      c.stale = nil
+    end
+  end
 end
 
 -- Queue a build unless the slot is already cached or queued. Returns the
 -- cached mesh when there is one (false-cached misses return nil).
 -- `urgent` marks the current map's meshes: pump() gives those a bigger
--- slice and runs them before neighbour jobs.
+-- slice and runs them before neighbour jobs. A slot refresh() marked
+-- stale queues its rebuild AND keeps handing back the old mesh, so a
+-- one-block edit never drops the scene to the flat 2D path while the
+-- replacement cooks.
 function ChunkMesher.request(map, bodyOnly, masks, urgent)
   local slot = bodyOnly and "body" or "full"
   local c = cache[map.id]
-  if c and c[slot] ~= nil then return c[slot] or nil end
+  local stale = c and c.stale and (c.stale[slot] or c.stale.aux)
+  if c and c[slot] ~= nil and not stale then return c[slot] or nil end
   local key = jobKey(map.id, slot)
   local job = jobIndex[key]
   if not job then
@@ -808,7 +853,7 @@ function ChunkMesher.request(map, bodyOnly, masks, urgent)
   elseif urgent then
     job.urgent = true
   end
-  return nil
+  return (c and c[slot]) or nil
 end
 
 function ChunkMesher.pending()
@@ -871,17 +916,26 @@ end
 function ChunkMesher.get(map, bodyOnly, masks)
   local slot = bodyOnly and "body" or "full"
   local c = entry(map.id)
-  if c.grass == nil then
+  if c.grass == nil or c.flowers == nil or (c.stale and c.stale.aux) then
     local okG, grass = pcall(buildGrassMesh, map)
-    c.grass = (okG and grass) or false
+    local okF, flowers = pcall(buildFlowerMesh, map)
+    swapSlot(c, "grass", (okG and grass) or false)
+    swapSlot(c, "flowers", (okF and flowers) or false)
+    if c.stale then c.stale.aux = nil end
   end
-  if c[slot] == nil then
+  if c[slot] == nil or (c.stale and c.stale[slot]) then
     local ok, mesh = pcall(ChunkMesher.build, map, bodyOnly, masks)
     if not ok then
       print("[warn] voxel mesh build failed for " .. tostring(map.id)
             .. ": " .. tostring(mesh))
     end
-    c[slot] = (ok and mesh) or false
+    swapSlot(c, slot, (ok and mesh) or false)
+    if c.stale then
+      c.stale[slot] = nil
+      if not (c.stale.full or c.stale.body or c.stale.aux) then
+        c.stale = nil
+      end
+    end
     local key = jobKey(map.id, slot)
     local job = jobIndex[key]
     if job then finishJob(job, true) end
@@ -899,6 +953,39 @@ end
 function ChunkMesher.grass(map)
   local c = cache[map.id]
   return c and c.grass or nil
+end
+
+function ChunkMesher.flowers(map)
+  local c = cache[map.id]
+  return c and c.flowers or nil
+end
+
+-- Rebuild a map's meshes IN PLACE: the stale meshes keep drawing while
+-- replacements cook, and each slot swaps as its build lands. This is
+-- the block-edit path (a cut tree, a door stamp) -- invalidate() drops
+-- the mesh outright, and until the async rebuild landed the scene fell
+-- to the flat 2D path, a whole-world blink for a one-block edit.
+function ChunkMesher.refresh(mapId)
+  if not mapId then return ChunkMesher.invalidate() end
+  local c = cache[mapId]
+  -- nothing drawable cached: the plain drop costs nothing visible
+  if not (c and (c.full or c.body)) then
+    return ChunkMesher.invalidate(mapId)
+  end
+  Structures.invalidate(mapId)
+  gen[mapId] = (gen[mapId] or 0) + 1
+  for i = #jobs, 1, -1 do
+    local job = jobs[i]
+    if job.id == mapId then
+      jobIndex[jobKey(job.id, job.slot)] = nil
+      table.remove(jobs, i)
+    end
+  end
+  -- false-cached slots count as stale too: a retry after a failed build
+  -- is exactly a rebuild
+  c.stale = { aux = true,
+              full = (c.full ~= nil) or nil,
+              body = (c.body ~= nil) or nil }
 end
 
 -- Evict everything outside `live` (a set of map ids): far maps' meshes

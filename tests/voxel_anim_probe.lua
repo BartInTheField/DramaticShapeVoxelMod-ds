@@ -94,6 +94,8 @@ return function(game)
     if S then
       local def = ow.map.def
       for _, spec in ipairs(specs) do
+        if not spec.tile then goto continue end   -- "toggle" specs claim
+                                                  -- tile LISTS, not one slot
         local flat, prop, run, first = 0, 0, 0, nil
         for ty = 0, def.height * 4 - 1 do
           for tx = 0, def.width * 4 - 1 do
@@ -112,6 +114,7 @@ return function(game)
                .. " %d inside a prop%s"):format(spec.tile, flat, run, prop,
           first and (" -- first at cell " .. math.floor(first[1] / 2)
                      .. "," .. math.floor(first[2] / 2)) or ""))
+        ::continue::
       end
     end
   end

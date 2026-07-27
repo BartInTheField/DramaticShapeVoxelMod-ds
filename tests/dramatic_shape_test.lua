@@ -535,8 +535,10 @@ local ChunkMesher = run.loader.exports.DRAMATIC_SHAPE.lib.require("ChunkMesher")
 local Runtime = require("src.mods.Runtime")
 
 local realInvalidate = ChunkMesher.invalidate
-local dropped = {}
+local realRefresh = ChunkMesher.refresh
+local dropped, refreshed = {}, {}
 ChunkMesher.invalidate = function(id) dropped[#dropped + 1] = id or "<every map>" end
+ChunkMesher.refresh = function(id) refreshed[#refreshed + 1] = id or "<every map>" end
 
 Runtime.emit("map.reloaded", { mapId = "PALLET_TOWN", reason = "colors" })
 T.eq(#dropped, 0,
@@ -551,11 +553,16 @@ T.eq(dropped[1], "PALLET_TOWN", "and drops exactly the map that reloaded")
 Runtime.emit("map.reloaded", { mapId = "VIRIDIAN_CITY" })
 T.eq(#dropped, 2, "a reload with no stated reason is treated as a real one")
 
--- and the edits that genuinely change geometry are untouched by any of this
+-- a block edit (Cut, a door stamp, the tree regrowing on re-entry) is a
+-- REFRESH, not a drop: the stale mesh keeps drawing while the rebuild
+-- cooks, so the scene never blinks down to the flat 2D path
 Runtime.emit("world.block_replaced", { mapId = "PALLET_TOWN" })
-T.eq(#dropped, 3, "a replaced block still drops the mesh it changed")
+T.eq(#dropped, 2, "a replaced block does not drop the mesh outright")
+T.eq(#refreshed, 1, "it refreshes the mesh in place instead")
+T.eq(refreshed[1], "PALLET_TOWN", "and refreshes exactly the edited map")
 
 ChunkMesher.invalidate = realInvalidate
+ChunkMesher.refresh = realRefresh
 
 -- ------- the non-colour palette modes must not come through as SGB
 --

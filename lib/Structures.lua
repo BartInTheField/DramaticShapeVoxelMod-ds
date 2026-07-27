@@ -193,7 +193,7 @@ function Structures.forMap(map)
   -- terrain.)
   S = { shapeAt = shapeAt, tileAt = tileAt, outdoor = Map.isOutdoor(def),
         runs = {}, skip = {}, ground = {}, objectQuads = {},
-        grassQuads = {}, roundStamps = {} }
+        grassQuads = {}, flowerQuads = {}, roundStamps = {} }
   Buildings.build(S, map, pixels(tileset), perRow)
 
   -- Fold doors into their buildings. A door cell is WALKABLE (the player
@@ -416,6 +416,27 @@ function Structures.forMap(map)
 
     -- ---- flowers: the animated meadow tile stands as a 1px cutout ----
     Structures.buildFlowers(S, map, tw, th, x0, x1, y0, y1, data)
+  end
+
+  -- ---- authored ground under pinned props ----
+  -- The profile can name the tile a pinned prop stands on (a tileset
+  -- entry's prop_ground: prop tile id -> ground tile id), overriding
+  -- the neighbour vote. The cuttable bush stands on the plain grass
+  -- Cut itself leaves behind, not on whatever path its neighbours
+  -- happen to vote in.
+  do
+    local okP, prof = pcall(V.data, "voxel_heights")
+    local entry = okP and type(prof) == "table" and prof.tilesets
+                  and prof.tilesets[tileset.id]
+    local pg = entry and entry.prop_ground
+    if type(pg) == "table" then
+      for k, skipped in pairs(S.skip) do
+        if skipped then
+          local g = pg[S.tileAt[k]]
+          if g then S.ground[k] = g end
+        end
+      end
+    end
   end
 
   -- unresolved claimed ground (a hull with no art match, headless
@@ -1847,7 +1868,17 @@ function Structures.buildObject(S, map, region, cluster,
   end
   for _, c in ipairs(cluster.tiles) do
     local k = keyOf(c[1], c[2])
-    if support then
+    if support and support.class == "wall" then
+      -- a figure drawn above a FULL-HEIGHT block (the gym statue on its
+      -- plinth) is a statue on a pillar with ONE cell of footprint: the
+      -- block below already carries the whole base, so the drawn cell
+      -- becomes synthesized floor rather than a second block marching
+      -- the base backwards. Furniture supports (a monitor on its desk)
+      -- keep the box-extension below -- their drawn cell is the
+      -- furniture's own upper rows, and floor there would amputate it.
+      S.skip[k] = true
+      S.ground[k] = best
+    elseif support then
       -- the claimed tile keeps rendering as the box the prop stands on,
       -- wearing the art its own ROW would have without the drawing (the
       -- trim row stays trim); only when the whole row is the prop does
@@ -2130,7 +2161,11 @@ end
 
 function Structures.buildFlowers(S, map, tw, th, x0, x1, y0, y1, data)
   local templates = {}
-  local quads = S.objectQuads
+  -- flowerQuads, not objectQuads: flowers sit on WALKABLE cells, so
+  -- their mesh draws after the characters with the character pull
+  -- (ChunkMesher's flower mesh) -- terrain-baked they lose the depth
+  -- fight against the pulled card whenever the player stands among them
+  local quads = S.flowerQuads
   for ty = y0, y1 do
     for tx = x0, x1 do
       Budget.tick()
