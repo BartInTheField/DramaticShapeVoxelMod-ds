@@ -192,8 +192,8 @@ function Structures.forMap(map)
   -- still overdraws a walker's feet even though characters stamp over
   -- terrain.)
   S = { shapeAt = shapeAt, tileAt = tileAt, outdoor = Map.isOutdoor(def),
-        runs = {}, skip = {}, ground = {}, objectQuads = {},
-        grassQuads = {}, roundStamps = {} }
+        runs = {}, skip = {}, ground = {}, doorFold = {}, objectQuads = {},
+        grassQuads = {}, flowerQuads = {}, roundStamps = {} }
   Buildings.build(S, map, pixels(tileset), perRow)
 
   -- Fold doors into their buildings. A door cell is WALKABLE (the player
@@ -205,6 +205,14 @@ function Structures.forMap(map)
   -- the fold then shows the door art standing at ground level in the
   -- building's front face. Door graphics only (the tileset's doorTiles);
   -- interior stair/mat warps stay flat.
+  --
+  -- A PROFILE PIN WINS over the fold. The fold is detection, and rule 1
+  -- of the resolution order is that an authored tile bypasses detection
+  -- -- but this used to overwrite shapeAt unconditionally, so a pin on
+  -- any tile the tileset also lists in doorTiles was dead on arrival.
+  -- Celadon Mansion is the case that found it: all four of its
+  -- staircases are door tiles, so `stair_e` / `stair_down_w` pins there
+  -- silently did nothing and the flights stayed painted on the floor.
   for cy = math.floor(y0 / 2), math.floor(y1 / 2) do
     for cx = math.floor(x0 / 2), math.floor(x1 / 2) do
       if map.doorTiles[map:cellTile(cx, cy)] then
@@ -213,7 +221,15 @@ function Structures.forMap(map)
         if ns and ns.art == "upright" then
           for dy = 0, 1 do
             for dx = 0, 1 do
-              shapeAt[keyOf(cx * 2 + dx, cy * 2 + dy)] = shapes.classes.wall
+              local dk = keyOf(cx * 2 + dx, cy * 2 + dy)
+              local ds = shapeAt[dk]
+              if not (ds and ds.authored) then
+                shapeAt[dk] = shapes.classes.wall
+                -- remembered for buildVolume: a folded doorway column
+                -- answers to its REGION for height and top, not to its
+                -- own drawn extent (see the door adoption there)
+                S.doorFold[dk] = true
+              end
             end
           end
         end
@@ -413,6 +429,30 @@ function Structures.forMap(map)
     -- renderer never draws a neighbour's ring, and standing scenery past a
     -- map's edge would poke into the map next door ----
     Structures.buildGrass(S, map, 0, tw - 1, 0, th - 1, data)
+
+    -- ---- flowers: the animated meadow tile stands as a 1px cutout ----
+    Structures.buildFlowers(S, map, tw, th, x0, x1, y0, y1, data)
+  end
+
+  -- ---- authored ground under pinned props ----
+  -- The profile can name the tile a pinned prop stands on (a tileset
+  -- entry's prop_ground: prop tile id -> ground tile id), overriding
+  -- the neighbour vote. The cuttable bush stands on the plain grass
+  -- Cut itself leaves behind, not on whatever path its neighbours
+  -- happen to vote in.
+  do
+    local okP, prof = pcall(V.data, "voxel_heights")
+    local entry = okP and type(prof) == "table" and prof.tilesets
+                  and prof.tilesets[tileset.id]
+    local pg = entry and entry.prop_ground
+    if type(pg) == "table" then
+      for k, skipped in pairs(S.skip) do
+        if skipped then
+          local g = pg[S.tileAt[k]]
+          if g then S.ground[k] = g end
+        end
+      end
+    end
   end
 
   -- unresolved claimed ground (a hull with no art match, headless
@@ -479,15 +519,17 @@ end
 local ROUND_SHADE = { front = 1.0, back = 0.68, side = 0.78,
                       top = 1.0, bottom = 0.55 }
 
-local function roundTemplate(S, map, data, cx, cy, groundTiles)
+local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows)
+  N = N or 16                  -- art canvas: 16 = one cell, 32 = 2x2 cells
+  local N2 = N / 2
   local perRow = map.tileset.tilesPerRow or 16
   local atlasW = map.tileset.imageWidth or 128
   local atlasH = map.tileset.imageHeight or 48
 
-  -- cell-space art access (16x16, row 0 = top)
+  -- cell-space art access (NxN, row 0 = top), anchored at cell (cx, cy)
   local function tileOf(px, py)
-    return S.tileAt[keyOf(cx * 2 + (px >= 8 and 1 or 0),
-                          cy * 2 + (py >= 8 and 1 or 0))]
+    return S.tileAt[keyOf(cx * 2 + math.floor(px / 8),
+                          cy * 2 + math.floor(py / 8))]
   end
   local function texel(px, py)
     local tile = tileOf(px, py)
@@ -495,18 +537,18 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
            math.floor(tile / perRow) * 8 + py % 8
   end
 
-  -- shade class of every cell pixel, indexed py * 16 + px
+  -- shade class of every canvas pixel, indexed py * N + px
   local cls = {}
-  for py = 0, 15 do
-    for px = 0, 15 do
+  for py = 0, N - 1 do
+    for px = 0, N - 1 do
       local ax, ay = texel(px, py)
       local r, g, b, a = data:getPixel(ax, ay)
-      cls[py * 16 + px] = a == 0 and "off"
-                          or Structures.shadeClass(math.min(r, g, b))
+      cls[py * N + px] = a == 0 and "off"
+                         or Structures.shadeClass(math.min(r, g, b))
     end
   end
 
-  -- 4-connected flood from the cell border through `passable` classes
+  -- 4-connected flood from the canvas border through `passable` classes
   local function floodOutside(passable)
     local out, stack = {}, {}
     local function seed(i)
@@ -515,16 +557,16 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
         stack[#stack + 1] = i
       end
     end
-    for i = 0, 15 do
-      seed(i); seed(240 + i); seed(i * 16); seed(i * 16 + 15)
+    for i = 0, N - 1 do
+      seed(i); seed(N * (N - 1) + i); seed(i * N); seed(i * N + N - 1)
     end
     while #stack > 0 do
       local i = table.remove(stack)
-      local px = i % 16
+      local px = i % N
       if px > 0 then seed(i - 1) end
-      if px < 15 then seed(i + 1) end
-      if i >= 16 then seed(i - 16) end
-      if i < 240 then seed(i + 16) end
+      if px < N - 1 then seed(i + 1) end
+      if i >= N then seed(i - N) end
+      if i < N * (N - 1) then seed(i + N) end
     end
     return out
   end
@@ -533,22 +575,47 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
   local out = floodOutside({ off = true, dark = true,
                              light = true, white = true })
   local mask, enclosed = {}, 0
-  for i = 0, 255 do
+  for i = 0, N * N - 1 do
     if not out[i] then
       mask[i] = true
       if cls[i] ~= "black" then enclosed = enclosed + 1 end
     end
   end
-  if enclosed < 32 then
+  if enclosed < N * N / 8 then
     out = floodOutside({ off = true, light = true, white = true })
     mask = {}
-    for i = 0, 255 do
+    for i = 0, N * N - 1 do
       if not out[i] and cls[i] ~= "off" then mask[i] = true end
     end
   end
   local any = nil
-  for i = 0, 255 do any = any or mask[i] end
+  for i = 0, N * N - 1 do any = any or mask[i] end
   if not any then return {} end
+
+  -- a CAPPED hull (the stump): the top capRows rows of the mask are the
+  -- drawn cut face -- a surface seen at an angle, not body. Strip them
+  -- from the mask and remember their art span; the top-face quads below
+  -- project that ellipse across the round cap.
+  local capY0, capY1 = nil, nil
+  if capRows and capRows > 0 then
+    local top = nil
+    for iy = 0, N - 1 do
+      for ix = 0, N - 1 do
+        if mask[iy * N + ix] then top = iy break end
+      end
+      if top then break end
+    end
+    if top then
+      capY0 = top
+      capY1 = math.min(top + capRows - 1, N - 2)
+      for iy = capY0, capY1 do
+        for ix = 0, N - 1 do mask[iy * N + ix] = nil end
+      end
+      any = nil
+      for i = 0, N * N - 1 do any = any or mask[i] end
+      if not any then return {} end
+    end
+  end
 
   -- the ground the ball stands on: the drawing's own background names
   -- it. Score every flat ground tile the map places against the cell's
@@ -564,9 +631,9 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
       local ox = (t % perRow) * 8
       local oy = math.floor(t / perRow) * 8
       local score, n = 0, 0
-      for py = 0, 15 do
-        for px = 0, 15 do
-          local i = py * 16 + px
+      for py = 0, N - 1 do
+        for px = 0, N - 1 do
+          local i = py * N + px
           local c = cls[i]
           if not mask[i] and (c == "light" or c == "white") then
             local ax, ay = texel(px, py)
@@ -589,10 +656,10 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
   local z0, z1, src = {}, {}, {}
   local loRow, hiRow = {}, {}
   local yBot = nil
-  for iy = 0, 15 do
+  for iy = 0, N - 1 do
     local lo, hi = nil, nil
-    for ix = 0, 15 do
-      if mask[iy * 16 + ix] then
+    for ix = 0, N - 1 do
+      if mask[iy * N + ix] then
         lo = lo or ix
         hi = ix
       end
@@ -603,7 +670,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
       local c = (lo + hi + 1) / 2
       local hw = (hi - lo + 1) / 2
       for ix = lo, hi do
-        local i = iy * 16 + ix
+        local i = iy * N + ix
         if mask[i] then
           local dx = ix + 0.5 - c
           local n = 1
@@ -611,7 +678,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
             n = math.max(1, math.floor(2 * math.sqrt(hw * hw - dx * dx)
                                        + 0.5))
           end
-          z0[i] = math.floor(8 - n / 2 + 0.5)
+          z0[i] = math.floor(N2 - n / 2 + 0.5)
           z1[i] = z0[i] + n
           src[i] = iy
         end
@@ -621,28 +688,46 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
 
   -- foot: rows under the mask repeat the bottom row's discs, wearing the
   -- bottom row's (outline-dark) pixels
-  for iy = yBot + 1, 15 do
+  for iy = yBot + 1, N - 1 do
     loRow[iy], hiRow[iy] = loRow[yBot], hiRow[yBot]
     for ix = loRow[yBot], hiRow[yBot] do
-      local b = yBot * 16 + ix
+      local b = yBot * N + ix
       if z0[b] then
-        local i = iy * 16 + ix
+        local i = iy * N + ix
         z0[i], z1[i], src[i] = z0[b], z1[b], yBot
       end
     end
   end
 
+  -- the round cap's top row and z extent, for the stump's ring
+  -- projection below
+  local capTopRow, capZ0, capZ1 = nil, nil, nil
+  if capY0 then
+    for iy = 0, N - 1 do
+      if loRow[iy] then capTopRow = iy break end
+    end
+    if capTopRow then
+      for ix = loRow[capTopRow], hiRow[capTopRow] do
+        local i = capTopRow * N + ix
+        if z0[i] then
+          capZ0 = math.min(capZ0 or z0[i], z0[i])
+          capZ1 = math.max(capZ1 or z1[i], z1[i])
+        end
+      end
+    end
+  end
+
   local function solidAt(ix, iy, iz)
-    if ix < 0 or ix > 15 or iy < 0 or iy > 15 then return false end
-    local i = iy * 16 + ix
+    if ix < 0 or ix > N - 1 or iy < 0 or iy > N - 1 then return false end
+    local i = iy * N + ix
     return z0[i] ~= nil and iz >= z0[i] and iz < z1[i]
   end
 
   -- cap interiors sample the canopy a couple of rows below the rim,
   -- skipping outline-dark pixels
   local function deepTexel(ix, iy)
-    for iy2 = iy + 2, math.min(15, iy + 4) do
-      local i = iy2 * 16 + ix
+    for iy2 = iy + 2, math.min(N - 1, iy + 4) do
+      local i = iy2 * N + ix
       if mask[i] and cls[i] ~= "black" then return texel(ix, iy2) end
     end
     return texel(ix, iy)
@@ -654,12 +739,12 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
   -- ball paints solid black the moment the camera turns. The foot rows
   -- stay dark on purpose: their whole source row is outline-black.
   local function sideTexel(ix, iy)
-    local r = src[iy * 16 + ix]
+    local r = src[iy * N + ix]
     local dir = ix + ix < loRow[iy] + hiRow[iy] and 1 or -1
     for step = 0, 3 do
       local x2 = ix + dir * step
-      local i2 = r * 16 + x2
-      if x2 < 0 or x2 > 15 or not mask[i2] then break end
+      local i2 = r * N + x2
+      if x2 < 0 or x2 > N - 1 or not mask[i2] then break end
       if cls[i2] ~= "black" then return texel(x2, r) end
     end
     return texel(ix, r)
@@ -667,20 +752,20 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
 
   local quads = {}
 
-  for iy = 0, 15 do
+  for iy = 0, N - 1 do
     if loRow[iy] then
-      local yB, yT = 15 - iy, 16 - iy
+      local yB, yT = N - 1 - iy, N - iy
 
       -- front and back: the drawing per-pixel, columns merged where they
       -- share a chord plane; a run never crosses the 8px atlas tile seam
       -- (its u range must interpolate inside one tile)
       local ix = loRow[iy]
       while ix <= hiRow[iy] do
-        local i = iy * 16 + ix
+        local i = iy * N + ix
         if z0[i] then
           local ix2 = ix
           while ix2 + 1 <= hiRow[iy] do
-            local j = iy * 16 + ix2 + 1
+            local j = iy * N + ix2 + 1
             if z0[j] == z0[i] and z1[j] == z1[i]
                and math.floor((ix2 + 1) / 8) == math.floor(ix / 8) then
               ix2 = ix2 + 1
@@ -692,8 +777,8 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
           local ax1 = (texel(ix2, src[i]))
           local u0, u1 = (ax0 + 0.05) / atlasW, (ax1 + 0.95) / atlasW
           local v0, v1 = (ay + 0.05) / atlasH, (ay + 0.95) / atlasH
-          local x0, x1 = ix - 8, ix2 - 7
-          local zF, zB = z1[i] - 8, z0[i] - 8
+          local x0, x1 = ix - N2, ix2 - N2 + 1
+          local zF, zB = z1[i] - N2, z0[i] - N2
           quads[#quads + 1] = {
             { x0, yB, zF }, { x1, yB, zF }, { x1, yT, zF }, { x0, yT, zF },
             uv = { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
@@ -713,11 +798,11 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
       -- sides, steps, undersides: constant-texel quads over the z runs a
       -- neighbour doesn't cover
       for ix = loRow[iy], hiRow[iy] do
-        local i = iy * 16 + ix
+        local i = iy * N + ix
         if z0[i] then
           local ax, ay = texel(ix, src[i])
           local u, v = (ax + 0.5) / atlasW, (ay + 0.5) / atlasH
-          local x0, x1 = ix - 8, ix - 7
+          local x0, x1 = ix - N2, ix - N2 + 1
 
           -- exposed z pieces against one neighbouring column
           local function pieces(nx, ny, emit)
@@ -728,7 +813,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
                 while iz2 + 1 < z1[i] and not solidAt(nx, ny, iz2 + 1) do
                   iz2 = iz2 + 1
                 end
-                emit(iz - 8, iz2 - 7, iz, iz2)
+                emit(iz - N2, iz2 - N2 + 1, iz, iz2)
                 iz = iz2 + 1
               else
                 iz = iz + 1
@@ -757,7 +842,20 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
                 u = tu, v = tv, shade = ROUND_SHADE.top,
               }
             end
-            if izA == z0[i] and izB == z1[i] - 1 and izB - izA >= 2 then
+            if capTopRow and iy == capTopRow and capZ1 then
+              -- the CUT FACE (a capped hull's top): project the drawn
+              -- ellipse across the round cap voxel row by voxel row --
+              -- its top arc at the cap's north rim, its bottom arc at
+              -- the south, the perspective the 2D art already implies
+              for iz = izA, izB do
+                local t = capZ1 - 1 > capZ0
+                          and (iz - capZ0) / (capZ1 - 1 - capZ0) or 0
+                local ry = capY0 + math.floor(t * (capY1 - capY0) + 0.5)
+                local cax, cay = texel(ix, ry)
+                top(iz - N2, iz - N2 + 1,
+                    (cax + 0.5) / atlasW, (cay + 0.5) / atlasH)
+              end
+            elseif izA == z0[i] and izB == z1[i] - 1 and izB - izA >= 2 then
               -- the dome cap: outline on the rim cells, canopy inside
               local du, dv = deepTexel(ix, iy)
               top(zA, zA + 1, u, v)
@@ -767,7 +865,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles)
               top(zA, zB, u, v)
             end
           end)
-          if iy < 15 then
+          if iy < N - 1 then
             pieces(ix, iy + 1, function(zA, zB)
               quads[#quads + 1] = {
                 { x0, yB, zB }, { x1, yB, zB }, { x1, yB, zA }, { x0, yB, zA },
@@ -815,23 +913,91 @@ function Structures.buildCylinders(S, map, x0, x1, y0, y1, groundTiles)
   end
   local tsid = tostring(map.tileset.id or map.tileset.image or "?")
 
+  -- the stump class's drawn-ellipse height, hand-authored per tileset
+  -- (the profile's stump_cap, in art rows)
+  local stumpCap = 6
+  do
+    local okP, prof = pcall(V.data, "voxel_heights")
+    local entry = okP and type(prof) == "table" and prof.tilesets
+                  and prof.tilesets[map.tileset.id]
+    if entry and type(entry.stump_cap) == "number" then
+      stumpCap = entry.stump_cap
+    end
+  end
+
+  -- cells consumed by a 2x2 `canopy` group; the scan runs north to
+  -- south, west to east, so an anchor always claims its partners
+  -- before they are visited
+  local grouped = {}
   for cy = math.floor(y0 / 2), math.floor(y1 / 2) do
     for cx = math.floor(x0 / 2), math.floor(x1 / 2) do
       Budget.tick()
+      local ckey = cy * 8192 + cx
       local k = keyOf(cx * 2, cy * 2)
-      local s = S.shapeAt[k]
+      local s = (not grouped[ckey]) and S.shapeAt[k] or nil
       local near = cx * 2 >= -ROUND_RING and cx * 2 < tw + ROUND_RING
                and cy * 2 >= -ROUND_RING and cy * 2 < th + ROUND_RING
-      if s and s.art == "cylinder" and near then
+      if s and s.art == "canopy" and near then
+        -- ONE 32px hull over the 2x2-cell drawing. The partner cells
+        -- must be round-pinned too, or the drawing is partial (a map
+        -- edit, a mod's stray anchor tile) and the anchor is left
+        -- alone rather than carved into a half-empty giant.
+        local whole = true
+        for _, d in ipairs({ { 1, 0 }, { 0, 1 }, { 1, 1 } }) do
+          local ps = S.shapeAt[keyOf((cx + d[1]) * 2, (cy + d[2]) * 2)]
+          if not (ps and (ps.art == "cylinder" or ps.art == "canopy")) then
+            whole = false
+          end
+        end
+        if whole then
+          local ground = false
+          if data then
+            local ids = {}
+            for dy = 0, 3 do
+              for dx = 0, 3 do
+                ids[#ids + 1] = S.tileAt[keyOf(cx * 2 + dx, cy * 2 + dy)]
+              end
+            end
+            local sig = tsid .. "|g32|" .. gsig .. "|"
+                        .. table.concat(ids, ":")
+            local tpl = roundCache[sig]
+            if not tpl then
+              local tq, tbg = roundTemplate(S, map, data, cx, cy,
+                                            groundTiles, 32)
+              tpl = { quads = tq, bg = tbg }
+              roundCache[sig] = tpl
+            end
+            ground = tpl.bg or false
+            S.roundStamps[#S.roundStamps + 1] =
+              { quads = tpl.quads, mx = cx * 16 + 16, mz = cy * 16 + 16,
+                r = 16 }
+          end
+          for dy = 0, 3 do
+            for dx = 0, 3 do
+              local tk = keyOf(cx * 2 + dx, cy * 2 + dy)
+              S.skip[tk] = true
+              S.ground[tk] = ground
+            end
+          end
+          grouped[ckey + 1] = true
+          grouped[ckey + 8192] = true
+          grouped[ckey + 8193] = true
+        end
+      elseif s and s.art == "cylinder" and near then
+        -- a `stump`-class cell is the same hull with a cut face: its
+        -- top capRows of drawing project onto the round top
+        local cap = s.class == "stump" and stumpCap or nil
         local ground = false
         if data then
-          local sig = tsid .. "|" .. gsig .. "|" .. table.concat({
+          local sig = tsid .. (cap and ("|c" .. cap) or "") .. "|"
+            .. gsig .. "|" .. table.concat({
             S.tileAt[k], S.tileAt[keyOf(cx * 2 + 1, cy * 2)],
             S.tileAt[keyOf(cx * 2, cy * 2 + 1)],
             S.tileAt[keyOf(cx * 2 + 1, cy * 2 + 1)] }, ":")
           local tpl = roundCache[sig]
           if not tpl then
-            local tq, tbg = roundTemplate(S, map, data, cx, cy, groundTiles)
+            local tq, tbg = roundTemplate(S, map, data, cx, cy,
+                                          groundTiles, 16, cap)
             tpl = { quads = tq, bg = tbg }
             roundCache[sig] = tpl
           end
@@ -1290,6 +1456,7 @@ function Structures.buildVolume(S, map, tiles)
 
   local runs = {}
   local heightVotes = {}
+  local repeatVotes = {}
   for tx, ys in pairs(cols) do
     -- visit each contiguous vertical run in this column
     local sorted = {}
@@ -1320,12 +1487,35 @@ function Structures.buildVolume(S, map, tiles)
             break
           end
         end
+        -- A one-row TRIM at the column's foot hides a repeat from the
+        -- scan above, which anchors at the front tile: a cliff plateau
+        -- ends its south edge in a rounded corner tile, the corner
+        -- never recurs, and the column read its whole capped extent --
+        -- a 48px fin (or a whole tent of them) sticking out of a 16px
+        -- mesa on Routes 3 and 4. When the two rows directly above the
+        -- front are IDENTICAL, the column is that repeat wearing a trim
+        -- foot: one course plus the trim is its drawn unit. Doorway
+        -- columns are untouched -- their run answers to the region
+        -- (see below) before the unit matters.
+        if not repeatRead and extent > 2
+           and map:tileAt(tx, front - 1) == map:tileAt(tx, front - 2) then
+          unit = 2
+          repeatRead = true
+        end
+      end
+      local isDoor = false
+      for ty = north, front do
+        if S.doorFold[keyOf(tx, ty)] then
+          isDoor = true
+          break
+        end
       end
       local run = { front = front, north = north, extent = extent,
-                    unit = unit, fromRepeat = repeatRead }
+                    unit = unit, fromRepeat = repeatRead, door = isDoor }
       runs[#runs + 1] = { tx = tx, run = run }
       local h = unit * 8
       heightVotes[h] = (heightVotes[h] or 0) + 1
+      if repeatRead then repeatVotes[h] = (repeatVotes[h] or 0) + 1 end
     end
   end
 
@@ -1337,11 +1527,27 @@ function Structures.buildVolume(S, map, tiles)
   for h, n in pairs(heightVotes) do
     if n > modeN or (n == modeN and h > modeH) then modeH, modeN = h, n end
   end
+  -- whether the region's dominant columns are flat repeats (a cliff
+  -- mound's plateau) rather than drawn facades (a house's front)
+  local modeRepeat = (repeatVotes[modeH] or 0) * 2 > modeN
   for _, r in ipairs(runs) do
     local run = r.run
     local h = run.unit * 8
     local adopted = false
-    if run.fromRepeat and modeH > h then
+    local flatDoor = false
+    if run.door then
+      -- A folded doorway column answers to its region ENTIRELY. Its own
+      -- reading spans the door plus everything drawn above it -- a
+      -- house's full height when the door is a house's, but a 32px
+      -- tower over a 16px plateau when the door is a cave mouth cut
+      -- into a cliff mound (Diglett's Cave: the entrance jumped a block
+      -- above the mound around it). Height and top both come from the
+      -- region: the mode height, roofed like a facade when the mode
+      -- columns are drawn facades, flat when they are flat repeats.
+      h = modeH
+      adopted = not modeRepeat
+      flatDoor = modeRepeat
+    elseif run.fromRepeat and modeH > h then
       h = modeH
       adopted = true
     end
@@ -1359,7 +1565,8 @@ function Structures.buildVolume(S, map, tiles)
     -- whole roof area -- and a rooftop tilted into a 48px ramp reads
     -- wrong instantly. Distinct top rows -> slope; repeated -> level top.
     local roofRows = 0
-    if S.outdoor and (not run.fromRepeat or adopted) and h >= 16 then
+    if S.outdoor and (not run.fromRepeat or adopted) and h >= 16
+       and not flatDoor then
       roofRows = math.min(2, math.floor(h / 8) - 1)
       if roofRows > 0 and map:tileAt(r.tx, run.north)
                          == map:tileAt(r.tx, run.north + 1) then
@@ -1712,10 +1919,24 @@ function Structures.buildObject(S, map, region, cluster,
   -- the box's top with its feet on the box's north row, and the claimed
   -- tiles keep rendering as that box (wearing its plain art) instead of
   -- punching a floor-level hole through it.
+  --
+  -- Only when the prop's OWN CELL IS BLOCKED, though.  "Is something
+  -- drawn above me?" is not the same question as "am I standing on it":
+  -- a chair drawn against the north side of a table is above the table's
+  -- trim row too, and it was being lifted onto the tabletop -- three
+  -- chairs standing on the furniture in Cinnabar's trade room and
+  -- Fuchsia's meeting room, with the claimed cells re-tiled as tabletop
+  -- so the table marched two rows north with them.  The world already
+  -- knows which is which: a thing that sits ON furniture occupies a
+  -- blocked cell (you cannot walk through the gym statue, Red's plant,
+  -- the PC), while a seat you walk up to is in a walkable one.
   local baseY, support = 0, nil
   if force then
     local bs = S.shapeAt[keyOf(cluster.minX, cluster.maxY + 1)]
-    if bs and bs.authored and bs.art == "upright" and (bs.h or 0) > 0 then
+    local blocked = not map:isWalkableCell(math.floor(cluster.minX / 2),
+                                           math.floor(cluster.maxY / 2))
+    if blocked and bs and bs.authored and bs.art == "upright"
+       and (bs.h or 0) > 0 then
       baseY, support = bs.h, bs
     end
   end
@@ -1844,7 +2065,17 @@ function Structures.buildObject(S, map, region, cluster,
   end
   for _, c in ipairs(cluster.tiles) do
     local k = keyOf(c[1], c[2])
-    if support then
+    if support and support.class == "wall" then
+      -- a figure drawn above a FULL-HEIGHT block (the gym statue on its
+      -- plinth) is a statue on a pillar with ONE cell of footprint: the
+      -- block below already carries the whole base, so the drawn cell
+      -- becomes synthesized floor rather than a second block marching
+      -- the base backwards. Furniture supports (a monitor on its desk)
+      -- keep the box-extension below -- their drawn cell is the
+      -- furniture's own upper rows, and floor there would amputate it.
+      S.skip[k] = true
+      S.ground[k] = best
+    elseif support then
       -- the claimed tile keeps rendering as the box the prop stands on,
       -- wearing the art its own ROW would have without the drawing (the
       -- trim row stays trim); only when the whole row is the prop does
@@ -1874,14 +2105,21 @@ end
 
 -- ---- tall grass ----
 
--- A tall-grass tile draws its four tuft segments in two ROWS: the art's
--- top half is one row of grass, the bottom half another. Each row stands
--- as a thin per-pixel slab at its own drawn depth inside the tile, over
--- the flat grass base the tile already renders -- so the player walks
--- BETWEEN rows, and the southern row occludes their feet the way the 2D
--- grass overdraw did. Transparency respected: only the tuft strokes stand.
--- Runs of adjacent pixels merge into single quads, and one template per
--- grass tile id is stamped across the map (grass comes in fields).
+-- A tall-grass CELL is four tufts: 2x2 tiles, and each 8x8 tile is one
+-- whole clump of grass. Each tile stands as its own thin per-pixel slab
+-- at ITS OWN depth -- the cell's north tile row in the north half of the
+-- cell, the south row in the south half -- over the flat grass base the
+-- tile already renders. So the player walks BETWEEN the two rows, and
+-- the southern row occludes their feet the way the 2D grass overdraw
+-- did. Transparency respected: only the tuft strokes stand. Runs of
+-- adjacent pixels merge into single quads, and one template per grass
+-- tile id is stamped across the map (grass comes in fields).
+--
+-- One tile is ONE standing piece, full height. The first cut split each
+-- tile again into its top and bottom four art rows and stood those at
+-- two different depths, which cut every blade that runs down the tile
+-- clean in half -- the two halves ended up 4px tall and 4px apart in
+-- depth, so a clump read as two stubs rather than one tuft.
 local GRASS_THICK = 2
 
 local function grassTemplate(map, data, tileId)
@@ -1898,49 +2136,48 @@ local function grassTemplate(map, data, tileId)
   end
 
   local quads = {}
-  for half = 0, 1 do
-    local rowBase = half * 4
-    local zMid = half == 0 and 2.5 or 6.5
-    local zB, zF = zMid - GRASS_THICK / 2, zMid + GRASS_THICK / 2
-    for iy = 0, 3 do
-      local yTop = 4 - iy
-      local yBot = yTop - 1
-      local ix = 0
-      while ix < 8 do
-        if opaque(ix, rowBase + iy) then
-          local ix2 = ix
-          while ix2 + 1 < 8 and opaque(ix2 + 1, rowBase + iy) do
-            ix2 = ix2 + 1
-          end
-          local u0 = (ax0 + ix + 0.05) / atlasW
-          local u1 = (ax0 + ix2 + 0.95) / atlasW
-          local v0 = (ay0 + rowBase + iy + 0.05) / atlasH
-          local v1 = (ay0 + rowBase + iy + 0.95) / atlasH
-          quads[#quads + 1] = {           -- front
-            { ix, yBot, zF }, { ix2 + 1, yBot, zF },
+  -- the slab stands across the middle of its own tile, so the two tile
+  -- rows of a cell are half a cell apart in depth
+  local zMid = 4
+  local zB, zF = zMid - GRASS_THICK / 2, zMid + GRASS_THICK / 2
+  for iy = 0, 7 do
+    local yTop = 8 - iy
+    local yBot = yTop - 1
+    local ix = 0
+    while ix < 8 do
+      if opaque(ix, iy) then
+        local ix2 = ix
+        while ix2 + 1 < 8 and opaque(ix2 + 1, iy) do
+          ix2 = ix2 + 1
+        end
+        local u0 = (ax0 + ix + 0.05) / atlasW
+        local u1 = (ax0 + ix2 + 0.95) / atlasW
+        local v0 = (ay0 + iy + 0.05) / atlasH
+        local v1 = (ay0 + iy + 0.95) / atlasH
+        quads[#quads + 1] = {           -- front
+          { ix, yBot, zF }, { ix2 + 1, yBot, zF },
+          { ix2 + 1, yTop, zF }, { ix, yTop, zF },
+          uv = { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
+          shade = 1,
+        }
+        quads[#quads + 1] = {           -- back
+          { ix2 + 1, yBot, zB }, { ix, yBot, zB },
+          { ix, yTop, zB }, { ix2 + 1, yTop, zB },
+          uv = { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } },
+          shade = 0.68,
+        }
+        -- blade tips: a top strip where the row above is clear
+        if not opaque(ix, iy - 1) then
+          quads[#quads + 1] = {
+            { ix, yTop, zB }, { ix2 + 1, yTop, zB },
             { ix2 + 1, yTop, zF }, { ix, yTop, zF },
-            uv = { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
+            uv = { { u0, v0 }, { u1, v0 }, { u1, v0 }, { u0, v0 } },
             shade = 1,
           }
-          quads[#quads + 1] = {           -- back
-            { ix2 + 1, yBot, zB }, { ix, yBot, zB },
-            { ix, yTop, zB }, { ix2 + 1, yTop, zB },
-            uv = { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } },
-            shade = 0.68,
-          }
-          -- blade tips: a top strip where the row above is clear
-          if not opaque(ix, rowBase + iy - 1) then
-            quads[#quads + 1] = {
-              { ix, yTop, zB }, { ix2 + 1, yTop, zB },
-              { ix2 + 1, yTop, zF }, { ix, yTop, zF },
-              uv = { { u0, v0 }, { u1, v0 }, { u1, v0 }, { u0, v0 } },
-              shade = 1,
-            }
-          end
-          ix = ix2 + 1
-        else
-          ix = ix + 1
         end
+        ix = ix2 + 1
+      else
+        ix = ix + 1
       end
     end
   end
@@ -1976,6 +2213,206 @@ function Structures.buildGrass(S, map, x0, x1, y0, y1, data)
             { q[4][1] + wx, q[4][2], q[4][3] + wz },
             uv = q.uv, shade = q.shade,
           }
+        end
+      end
+    end
+  end
+end
+
+-- ---- flowers ----
+
+-- The animated flower tile stands up as a billboard ONE VOXEL deep, cut
+-- to the drawing's darkest tones PLUS everything they enclose -- the
+-- round-scenery hull's rule: flood the tile border through every
+-- non-dark pixel, and what the flood cannot reach is the flower, its
+-- pale petal insides included. The mesh is static and the flower is
+-- not, so the geometry spans the UNION of that mask over the base art
+-- and every animation frame, and TerrainAtlas rewrites the tile's slot
+-- each step with only the CURRENT frame's mask opaque -- the rest keyed
+-- to alpha, which the voxel shader discards. The standing silhouette
+-- trims itself frame by frame in texture space; the sway animates
+-- without a vertex moving, off the same engine clock as the flat path.
+--
+-- The ground beneath is synthesized from the commonest flat neighbour,
+-- like the ground under a detected prop: the tile's own slot no longer
+-- holds art anyone can draw flat.
+local FLOWER_THICK = 1
+
+local function flowerFrames(tileset, tileId)
+  local out = {}
+  local ok, declared = pcall(function()
+    if tileset.animatedTiles then return tileset.animatedTiles end
+    local TileRenderer = require("src.render.TileRenderer")
+    return TileRenderer.defaultAnimatedTiles(tileset)
+  end)
+  if not ok then return out end
+  for _, spec in ipairs(type(declared) == "table" and declared or {}) do
+    if spec.kind == "frames" and spec.tile == tileId then
+      for _, path in pairs(spec.images or {}) do
+        local okF, frame = pcall(Assets.imageData, path)
+        if okF and frame then out[#out + 1] = frame end
+      end
+    end
+  end
+  return out
+end
+
+local function flowerTemplate(map, data, tileId)
+  local tileset = map.tileset
+  local perRow = tileset.tilesPerRow or 16
+  local atlasW = tileset.imageWidth or 128
+  local atlasH = tileset.imageHeight or 48
+  local ax0 = (tileId % perRow) * 8
+  local ay0 = math.floor(tileId / perRow) * 8
+
+  -- per image: dark tones, then the border flood that finds what they
+  -- enclose. Each image closes over ITS OWN outline before the union --
+  -- a pocket two frames only enclose together is not part of either.
+  local dark = {}
+  local function markMask(img, ox, oy)
+    local d, reach, stack = {}, {}, {}
+    for py = 0, 7 do
+      for px = 0, 7 do
+        local r, g, b, a = img:getPixel(ox + px, oy + py)
+        if a > 0 and math.min(r, g, b) <= 0.5 then
+          d[py * 8 + px] = true
+        end
+      end
+    end
+    for i = 0, 7 do
+      for _, s in ipairs({ i, 56 + i, i * 8, i * 8 + 7 }) do
+        if not d[s] and not reach[s] then
+          reach[s] = true
+          stack[#stack + 1] = s
+        end
+      end
+    end
+    while #stack > 0 do
+      local p = table.remove(stack)
+      local px, py = p % 8, math.floor(p / 8)
+      for _, dir in ipairs(DIRS4) do
+        local nx, ny = px + dir[1], py + dir[2]
+        if nx >= 0 and nx < 8 and ny >= 0 and ny < 8 then
+          local ni = ny * 8 + nx
+          if not d[ni] and not reach[ni] then
+            reach[ni] = true
+            stack[#stack + 1] = ni
+          end
+        end
+      end
+    end
+    for i = 0, 63 do
+      if d[i] or not reach[i] then dark[i] = true end
+    end
+  end
+  markMask(data, ax0, ay0)
+  for _, frame in ipairs(flowerFrames(tileset, tileId)) do
+    pcall(markMask, frame, 0, 0)
+  end
+
+  local function on(px, py)
+    if px < 0 or px > 7 or py < 0 or py > 7 then return false end
+    return dark[py * 8 + px] == true
+  end
+
+  local quads = {}
+  local zB = 4 - FLOWER_THICK / 2      -- one slab at the tile's middle
+  local zF = zB + FLOWER_THICK
+  for py = 0, 7 do
+    Budget.tick()
+    local yTop, yBot = 8 - py, 7 - py
+    local ix = 0
+    while ix < 8 do
+      if on(ix, py) then
+        local ix2 = ix
+        while ix2 + 1 < 8 and on(ix2 + 1, py) do ix2 = ix2 + 1 end
+        local u0 = (ax0 + ix + 0.05) / atlasW
+        local u1 = (ax0 + ix2 + 0.95) / atlasW
+        local v0 = (ay0 + py + 0.05) / atlasH
+        local v1 = (ay0 + py + 0.95) / atlasH
+        quads[#quads + 1] = {           -- front
+          { ix, yBot, zF }, { ix2 + 1, yBot, zF },
+          { ix2 + 1, yTop, zF }, { ix, yTop, zF },
+          uv = { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
+          shade = OBJ_SHADE.front,
+        }
+        quads[#quads + 1] = {           -- back
+          { ix2 + 1, yBot, zB }, { ix, yBot, zB },
+          { ix, yTop, zB }, { ix2 + 1, yTop, zB },
+          uv = { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } },
+          shade = OBJ_SHADE.back,
+        }
+        -- petal tips: a top strip where the row above is clear. The
+        -- strip samples its own row's texel, so a tip that is not in
+        -- the current frame discards with the face beneath it
+        if not on(ix, py - 1) then
+          quads[#quads + 1] = {
+            { ix, yTop, zB }, { ix2 + 1, yTop, zB },
+            { ix2 + 1, yTop, zF }, { ix, yTop, zF },
+            uv = { { u0, v0 }, { u1, v0 }, { u1, v0 }, { u0, v0 } },
+            shade = OBJ_SHADE.top,
+          }
+        end
+        ix = ix2 + 1
+      else
+        ix = ix + 1
+      end
+    end
+  end
+  return quads
+end
+
+function Structures.buildFlowers(S, map, tw, th, x0, x1, y0, y1, data)
+  local templates = {}
+  -- flowerQuads, not objectQuads: flowers sit on WALKABLE cells, so
+  -- their mesh draws after the characters with the character pull
+  -- (ChunkMesher's flower mesh) -- terrain-baked they lose the depth
+  -- fight against the pulled card whenever the player stands among them
+  local quads = S.flowerQuads
+  for ty = y0, y1 do
+    for tx = x0, x1 do
+      Budget.tick()
+      local k = keyOf(tx, ty)
+      local s = S.shapeAt[k]
+      if s and s.art == "flower" then
+        -- the tile's atlas slot carries only the standing cutout now, so
+        -- EVERY flower position -- ring included -- paints synthesized
+        -- ground instead of its own art: the commonest flat neighbour
+        -- that is not itself a flower, else the map's commonest ground
+        -- (forMap's end-of-build vote resolves the `false`)
+        S.skip[k] = true
+        local votes, best, bestN = {}, nil, 0
+        for _, d in ipairs(DIRS4) do
+          local nk = keyOf(tx + d[1], ty + d[2])
+          local ns = S.shapeAt[nk]
+          if ns and ns.flat and ns.class ~= "void"
+             and ns.class ~= "flower" then
+            local t = S.tileAt[nk]
+            votes[t] = (votes[t] or 0) + 1
+            if votes[t] > bestN then best, bestN = t, votes[t] end
+          end
+        end
+        S.ground[k] = best or false
+
+        -- standee BODY only, like grass: standing scenery past a map's
+        -- edge would poke into the map next door
+        if tx >= 0 and ty >= 0 and tx < tw and ty < th then
+          local tileId = S.tileAt[k]
+          local tpl = templates[tileId]
+          if not tpl then
+            tpl = flowerTemplate(map, data, tileId)
+            templates[tileId] = tpl
+          end
+          local wx, wz = tx * 8, ty * 8
+          for _, q in ipairs(tpl) do
+            quads[#quads + 1] = {
+              { q[1][1] + wx, q[1][2], q[1][3] + wz },
+              { q[2][1] + wx, q[2][2], q[2][3] + wz },
+              { q[3][1] + wx, q[3][2], q[3][3] + wz },
+              { q[4][1] + wx, q[4][2], q[4][3] + wz },
+              uv = q.uv, shade = q.shade,
+            }
+          end
         end
       end
     end

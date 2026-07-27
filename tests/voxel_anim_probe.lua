@@ -94,6 +94,8 @@ return function(game)
     if S then
       local def = ow.map.def
       for _, spec in ipairs(specs) do
+        if not spec.tile then goto continue end   -- "toggle" specs claim
+                                                  -- tile LISTS, not one slot
         local flat, prop, run, first = 0, 0, 0, nil
         for ty = 0, def.height * 4 - 1 do
           for tx = 0, def.width * 4 - 1 do
@@ -112,17 +114,32 @@ return function(game)
                .. " %d inside a prop%s"):format(spec.tile, flat, run, prop,
           first and (" -- first at cell " .. math.floor(first[1] / 2)
                      .. "," .. math.floor(first[2] / 2)) or ""))
+        ::continue::
       end
     end
   end
 
   -- one animation period is 20 logic frames at 60Hz, and TileRenderer.tick
-  -- runs on wall-clock steps, so ~22 rendered frames lands the next step
+  -- runs on wall-clock steps, so ~22 rendered frames lands the next step.
+  -- animFrame is an OPTIONAL engine seam this build may not export; the
+  -- mod's own clock (TerrainAtlas._animFrame) reads the same counter by
+  -- whatever route exists, so ask it first.
+  local function clock()
+    if TerrainAtlas and TerrainAtlas._animFrame then
+      local ok, f = pcall(TerrainAtlas._animFrame)
+      if ok and type(f) == "number" then return f end
+    end
+    if TileRenderer.animFrame then
+      local ok, f = pcall(TileRenderer.animFrame)
+      if ok and type(f) == "number" then return f end
+    end
+    return -1
+  end
   for i = 1, shots do
     game.capturePath = ("%s/anim_%s_L%d_%02d.png"):format(DIR, mapId, level, i)
     wait(3)
     print(("[anim] shot %d at animFrame %d step %d"):format(
-      i, TileRenderer.animFrame(), math.floor(TileRenderer.animFrame() / 20) % 8))
+      i, clock(), math.floor(clock() / 20) % 8))
     dumpAtlas(tostring(i))
     wait(22)
   end

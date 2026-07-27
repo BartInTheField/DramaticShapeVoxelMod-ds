@@ -56,10 +56,20 @@ local FALLBACK_HEIGHTS = {
   tree = 16,
   roof = 28,
   cylinder = 16,
+  -- big round scenery: a 2x2-CELL drawing carved as ONE 32px voxel hull
+  -- (Viridian Forest's trees). The class pins only the drawing's
+  -- top-left corner tile; the other cells stay `cylinder` and are
+  -- claimed by the group build (see Structures.buildCylinders)
+  canopy = 32,
+  -- a cylinder hull whose drawn top is a CUT FACE (tree stumps): the
+  -- body builds from the bark rows and the drawn ellipse projects onto
+  -- the hull's round top
+  stump = 16,
   billboard = 16,
   signpost = 16,
   post = 16,
   grass = 0,
+  flower = 0,
   -- interior furniture: face-on drawings the detector would otherwise
   -- raise to wall height (or merge into the wall).  A bed is drawn from
   -- above and lies low; tables and desks are boxes at their real height;
@@ -103,6 +113,8 @@ local ART = {
   fence = "upright",
   sign = "upright",
   cylinder = "cylinder",
+  canopy = "canopy",
+  stump = "cylinder",
   billboard = "billboard",
   -- signposts share the billboard treatment but as their own pool at a
   -- 2-voxel depth: a sign is a thin plate on a stick, and the standard
@@ -110,6 +122,11 @@ local ART = {
   signpost = "billboard",
   post = "post",
   grass = "grass",
+  -- animated flowers: flat synthesized ground PLUS a standing cutout of
+  -- the drawing's darkest tones, one voxel deep (see Structures'
+  -- buildFlowers). Height 0 so a build with no pixel access degrades to
+  -- the flat tile it always drew, not a box
+  flower = "flower",
   -- furniture: a bed's art depicts its top surface; tables and desks are
   -- boxes whose fronts fold up (the mesher's authored-fold rule).
   -- Stools, `prop` and `cutout` are standee pools alongside `billboard`
@@ -185,12 +202,56 @@ local function authoredGroups(tilesetId, heights)
   return out
 end
 
+-- Conditional pins: tile id -> list of { above = {tile ids}, class }.
+--
+-- A pin is per TILE ID, and one graphic can mean two things. The route
+-- gates' $32/$33 is the case that forced this: the artist reuses it for
+-- the wall's dark base course AND for every service counter's front, and
+-- it is the bottom row of its cell either way. Pinned `wall` the counter
+-- stands a full 16px; pinned `counter` the wall bank corrugates 16/8 for
+-- sixteen rows. Neither is right, and no per-tile pin can be, because
+-- forMap resolves an id to ONE shape.
+--
+-- What separates the two uses is what is drawn ABOVE: the wall's upper
+-- course over a wall base, the counter's top over a counter front. So a
+-- profile entry may carry `when_above = { [tile] = { { above = {...},
+-- class = "..." } } }`, evaluated per POSITION in TileShape.at, where
+-- the map and coordinates are in hand. First match wins; no match keeps
+-- the tile's ordinary pin.
+local function authoredConditions(tilesetId, heights)
+  local s = load()
+  local entry = s and s.tilesets and s.tilesets[tilesetId]
+  local spec = entry and entry.when_above
+  if type(spec) ~= "table" then return nil end
+  local out, any = {}, false
+  for tile, rules in pairs(spec) do
+    if type(tile) == "number" and type(rules) == "table" then
+      local list = {}
+      for _, rule in ipairs(rules) do
+        if type(rule) == "table" and heights[rule.class]
+           and type(rule.above) == "table" then
+          local set = {}
+          for _, t in ipairs(rule.above) do set[t] = true end
+          list[#list + 1] = { above = set, class = rule.class }
+        end
+      end
+      if #list > 0 then
+        out[tile] = list
+        any = true
+      end
+    end
+  end
+  return any and out or nil
+end
+
 local function shapeFor(class, heights, authored)
   return { class = class, h = heights[class] or 0,
            art = ART[class] or "upright",
-           -- grass draws its flat ground base like any walkable tile; the
-           -- standing tuft rows are additive geometry from Structures
-           flat = ART[class] == "flat" or class == "grass",
+           -- grass and flowers draw a flat ground base like any walkable
+           -- tile; the standing tufts and cutouts are additive geometry
+           -- from Structures
+           flat = ART[class] == "flat" or class == "grass"
+                  or class == "flower",
            authored = authored or false }
 end
 
@@ -210,7 +271,29 @@ function TileShape.forMap(map)
   local count = math.floor((tileset.imageWidth or 128) / 8)
                 * math.floor((tileset.imageHeight or 48) / 8)
 
-  local shapes = { classes = {} }
+  -- derived pin: a tile the tileset animates by FRAME REWRITE (the
+  -- overworld's flower) is already named by its animation spec, so like
+  -- tall grass it needs no profile entry anywhere. Hand-authoring still
+  -- wins -- a mod animating a wall tile this way keeps its wall by
+  -- listing it. Guarded because the spec seam is engine data a stub map
+  -- may not carry.
+  local flowerTiles = {}
+  do
+    local ok, declared = pcall(function()
+      if tileset.animatedTiles then return tileset.animatedTiles end
+      local TileRenderer = require("src.render.TileRenderer")
+      return TileRenderer.defaultAnimatedTiles(tileset)
+    end)
+    if ok then
+      for _, spec in ipairs(type(declared) == "table" and declared or {}) do
+        if spec.kind == "frames" and spec.tile then
+          flowerTiles[spec.tile] = true
+        end
+      end
+    end
+  end
+
+  local shapes = { classes = {}, cond = authoredConditions(id, heights) }
   for class in pairs(FALLBACK_HEIGHTS) do
     shapes.classes[class] = shapeFor(class, heights)
   end
@@ -222,6 +305,8 @@ function TileShape.forMap(map)
       -- derived pin: every tileset already names its tall-grass tile, so
       -- the standing-tuft treatment needs no profile entry anywhere
       shapes[t] = shapeFor("grass", heights, true)
+    elseif flowerTiles[t] then
+      shapes[t] = shapeFor("flower", heights, true)
     elseif map.waterTiles and map.waterTiles[t] then
       shapes[t] = shapes.classes.water
     elseif map.walkable and map.walkable[t] then
@@ -241,6 +326,19 @@ end
 -- map:tileAt(tx, ty), passed in because every caller already has it.
 function TileShape.at(map, shapes, tile, tx, ty)
   local s = shapes[tile]
+  -- conditional pins first: they are authored answers that need the
+  -- POSITION to resolve, so they outrank both the flat pin on the same
+  -- tile and the cell rules below (see authoredConditions)
+  local rules = shapes.cond and shapes.cond[tile]
+  if rules then
+    local above = map:tileAt(tx, ty - 1)
+    for _, rule in ipairs(rules) do
+      if above and rule.above[above] then
+        shapes.classes[rule.class].authored = true
+        return shapes.classes[rule.class]
+      end
+    end
+  end
   if not s or s.authored then return s end
   local cx = math.floor(tx / 2)
   local cy = math.floor(ty / 2)

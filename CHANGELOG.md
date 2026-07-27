@@ -1,5 +1,374 @@
 # Changelog
 
+## 1.0.6
+
+### Added
+
+- **Conditional pins.** A profile entry may now carry `when_above`:
+  tile id -> rules keyed on the tile drawn directly north of it,
+  resolved per POSITION in `TileShape.at`. A pin is per tile id and one
+  graphic can mean two things -- the route gates' `$32` is both the
+  wall's dark base course and every service counter's front, and it is
+  the bottom row of its cell either way. Pinned `wall` the counters
+  stood a full 16px; pinned `counter` the deep wall banks corrugated
+  16/8 for sixteen rows and the room read as crates. What separates the
+  two uses is what sits on top, so that is what the rule reads. The
+  gates now have half-height counters AND level walls.
+
+- **The Pokemon Tower has an exterior.** It is the one catalogued
+  building drawing the map edge cuts off (no roof band is on the map at
+  all), and it had no `buildings` entry, so it fell to the volume path
+  -- which tops a run by repeating its first two rows, laying window
+  courses flat across the plateau. Sealing the silhouette on the north
+  alone closes it (88% fill, one piece, against 37% and 126 pieces
+  unsealed), and one row of roof band spent on the drawing's top margin
+  costs no window course. It stands as a real tower, panes recessed,
+  door on the ground.
+
+- **The Indigo Plateau statues stand up**, built exactly like the gym
+  statues: plinth a solid 16px block, figure a per-pixel cutout riding
+  it. On the avenue the statues stack with no gap, so the flood joined
+  six of them into one 24-row region and the volume builder raised
+  ridges of boxes with the statue art folded on the front. The same
+  bird is drawn at the foot of every badge-check pillar, so those are
+  crowned too.
+
+### Fixed
+
+- **Tall grass: one clump per tile.** Each 8x8 tile is a whole clump,
+  but the template split every tile AGAIN into its top and bottom four
+  art rows and stood those at two different depths -- so any blade
+  running down a tile was cut in half, into two 4px stubs 4px apart.
+  One tile is now one full-height standing slab at its own depth; a
+  cell's 2x2 tiles still stand independently, so the player walks
+  between the north and south rows.
+
+- **Ledge lines are continuous.** `$34` is the cliff slope's foot and
+  also the pillar between hop-down segments; pinned `wall` with the
+  rest of the slope chain (the Diglett's Cave fix) it stood those
+  pillars 16px beside a 6px lip. At ledge height the run reads as one
+  lip, and the mound is unchanged -- its foot row reads as the talus it
+  is drawn as.
+
+- **A prop only stands on furniture when its own cell is blocked.**
+  "Is something drawn above me" is not "am I standing on it": a chair
+  drawn against the north side of a table is above the table's trim row
+  too, and was being lifted onto the tabletop, with its claimed cells
+  re-tiled as tabletop so the table marched two rows north. Three
+  chairs in Cinnabar's trade room and Fuchsia's meeting room, and the
+  Celadon diner's stools. The world already knows the difference: a
+  thing that sits ON furniture occupies a blocked cell, a seat you walk
+  up to is in a walkable one.
+
+- **Caves: nothing below sea level, and the water is water.** Two tiles
+  were identified backwards in the first pass. `$14` -- the tile the
+  engine animates, that `Map.WATER_TILES` names and that Surf runs on
+  -- was pinned `wall`, so Cerulean Cave's lake and the Seafoam sea
+  stood up as rock slabs. And the pale dithered rock fill was pinned
+  `water`, cutting 612 tiles of two-cell-wide trench through four maps.
+  Both corrected; a sweep of all 19 cave maps now reports zero tiles
+  below the datum. The elevation scheme is documented in the entry and
+  derived from the game's own `tilePairs`: dark floor, water and drop
+  holes at 0, the lit shelf a 6px step above, rock at 16.
+
+- **Cave ladders climb.** Which ladder graphic goes up and which goes
+  down is unanimous in the warp table -- 37 cells of one always warp
+  down, 40 of the other always up -- so they are real stepped flights
+  now, not painted plates.
+
+- **Poke Mart's register stands on the counter.** The pin was on the
+  wrong tile: `$08` is the counter's own top band, not the register, so
+  the standee flood ate everything but two black lines. The register is
+  the keypad-and-receipt drawing one row up.
+
+- **Celadon's televisions**, which were solid 16px boxes wearing the TV
+  art on one face, and the **Pokemon Tower reception desk** and the
+  **gate counters**, which stood at wall height, are all their drawn
+  heights now. The **Fan Club and Silph boardroom statues** were read
+  as seated chairmen and painted onto the tabletop; they are cutouts
+  standing on their pedestals, and the tables are cut to a true
+  octagonal footprint.
+
+## 1.0.5
+
+### Added
+
+- **Every remaining interior is furnished.** The profile covered ten
+  tilesets; it now covers twenty-three -- 1,190 pinned tiles across
+  `GATE`, `FOREST_GATE`, `LOBBY`, `MUSEUM`, `LAB`, `MANSION`,
+  `INTERIOR`, `CLUB`, `SHIP`, `SHIP_PORT`, `FACILITY`, `CEMETERY` and
+  `UNDERGROUND`, plus full entries for `CAVERN` and `GYM` which had only
+  stubs. Roughly 130 maps, surveyed against the standard the finished
+  interiors already set: one 16px wall band carrying whatever is drawn
+  built into it, half-cell counters so the drawn front folds up and the
+  top stays on top, `bookcase` collapse for free-standing shelves,
+  thin-pool standees for plants, and small objects riding the furniture
+  they are drawn above.
+
+  What the detector was doing before, by way of what changed:
+
+  - **Rooms with no walls.** Three tile ids (`$14`, `$32`, `$48`) are
+    claimed by the engine's water set in EVERY tileset, and collision is
+    per CELL, so one of them in a cell's bottom-left corner sank the
+    whole cell. `$32` draws both the route gates' wall base course and
+    every counter front, so all 25 gate maps were a checkered floor in a
+    moat; the same trap put ponds through two thirds of Seafoam B4F,
+    under every museum vitrine, along the S.S. Anne's wall corners and
+    across Silph Co 1F's lobby island. The set is wider than three ids
+    in practice -- `LAB`, `MANSION` and `INTERIOR` each hit six to nine
+    -- because the test is per cell, so an innocent tile sharing a cell
+    with a trapped one sinks with it and has to be pinned too.
+  - **Towers and fused monoliths.** Counters raised to 48px dragging
+    their wall band with them, merchandise racks fused sideways into
+    32px blocks four tiles deep, cave shelf edges standing as 48px fins
+    beside a 16px band, the Vermilion liner folded upright into a lumpy
+    48px slab.
+  - **Furniture that was not there at all.** Anything whose cell is
+    walkable resolved to flat ground: 59 department-store stools, every
+    gate lounge table and pair of binoculars, both museum staircases,
+    the gym-lounge chairs, and -- via the void rule -- the black
+    partition walls every gym is divided by, which left their white rim
+    columns standing as hollow 48px fins.
+  - **314 gravestones** in Pokemon Tower were 8px stubs, because the
+    volume path measured only their bottom row and dropped the arch.
+
+  Notable readings: the S.S. Anne's hull is `roof` (a drawing seen from
+  above, so the art belongs on the top face); the Warden's specimens and
+  Celadon Gym's shrubs are `cylinder` voxel balls, the first indoor use
+  of that class; the Fan Club's octagonal boardroom table is `counter`
+  rather than `table`, because only a counter rides its upper rows onto
+  the top face in drawn order -- which is what draws the seated chairman
+  exactly once, the Pokemon Center couch case verbatim.
+
+  Fuchsia Gym's invisible maze is deliberately left flat. Raising it
+  would read better as a room, and would also hand the player the
+  solution; a shape is purely presentational, so the drawn answer wins
+  and the gym plays as the flat game does.
+
+### Fixed
+
+- **A profile pin now outranks the door fold.** `Structures.forMap`
+  folds a door cell into its facade so the doorway does not punch a hole
+  in the wall -- but it overwrote the resolved shape unconditionally,
+  including for AUTHORED tiles, which contradicts rule 1 of the
+  documented resolution order. Any pin on a tile its tileset also lists
+  in `doorTiles` was dead on arrival: all four Celadon Mansion
+  staircases and Pokemon Mansion 3F's descent are door tiles, so
+  `stair_*` pins there silently did nothing and the flights stayed
+  painted flat on the floor. The fold now skips authored tiles.
+
+## 1.0.4
+
+### Added
+
+- **Viridian Forest grows real trees.** Nearly everything drawn in the
+  forest is ROUND, and the detector was boxing all of it: the big trees
+  came out as ragged mixed-height volumes (their sparse canopy-rim
+  tiles read 0px against 32px bodies, leaving gap-toothed hedge walls),
+  the stump rows merged into 16px crate walls wearing folded stump art,
+  and the trail signs were broken piles -- their $32 tile is the
+  water-fallback trap and recessed into a pond lip in the middle of the
+  woods. All of it is now profile-pinned to the treatments the rest of
+  the world already uses: every tile of the tree drawing (ball, rim
+  wisps, feet) and the stumps take the per-cell voxel HULL the overworld
+  border forest wears -- a tree spans 2x2 cells, so its four
+  quarter-hulls tile into one big lumpy canopy, and each stump becomes a
+  round bollard; the signs take the standing thin-slab `signpost`
+  treatment every town sign gets; and the white sparkle filler inside
+  the tree masses is flat ground instead of an invisible zero-height
+  box. The whole map now resolves to hulls, signs, ledges and ground --
+  a detector sweep finds no stray boxed column anywhere.
+
+  Two refinements over the first cut, both new hull-builder abilities.
+  A tree's drawing spans 2x2 CELLS, and per-cell hulls unfolded it onto
+  the ground -- the ball's top half sat one cell north of its bottom
+  half at the same elevation, reading as a tree cut in half. The new
+  `canopy` class pins the drawing's corner tile as a group anchor and
+  the whole 2x2-cell drawing carves as ONE 32px hull, so every tree is
+  a single tall round canopy (the carver is now parametric over its
+  canvas size, and hull stamps carry their footprint radius). And the
+  stumps' drawn tops are a CUT FACE -- an ellipse of growth rings seen
+  at an angle, not body: the new `stump` class builds the hull from the
+  bark rows alone and projects the ellipse across the round flat top,
+  near arc to the south (`stump_cap` names the ellipse's drawn height),
+  so the rings ride the round part in perspective.
+
+- **Flowers stand up, and keep swaying.** The animated meadow tile
+  ($03, the one tile the overworld animates by frame rewrite) now
+  renders as a billboard one voxel deep: the drawing's darkest tones
+  plus everything they enclose are cut out per pixel, and the ground
+  beneath is synthesized from the commonest flat neighbour, exactly
+  like the ground under a detected prop.
+
+  The interesting part is that the cutout still animates. A mesh is
+  static, so the geometry spans the UNION of the mask over the base art
+  and all three animation frames, and the animation lives entirely in
+  the texture: TerrainAtlas already rewrites the flower's slot in the
+  private animated atlas each step, and for this tile it now writes
+  only the current frame's mask opaque with everything else keyed to
+  alpha 0 -- which the voxel shader discards, and the shadow pass with
+  it. The standing silhouette trims itself frame by frame in texture
+  space, off the same engine clock as the flat path, without a vertex
+  moving. The class is derived, not authored: any frames-animated tile
+  resolves to the new `flower` class with no profile entry, the same
+  way tall grass derives from `grassTile` (hand-authoring still wins).
+
+- **The cuttable bush is a standing cutout.** The four tiles Cut
+  deletes ($2D/$2E/$3D/$3E -- across the whole tileset they appear only
+  in the five cut-tree blocks) are pinned to the thin `prop` pool: a
+  per-pixel standee 5 voxels deep, black-outline segmented with its
+  enclosed pixels kept, the drawn grass dither flooding away. It
+  stands on plain grass ($2C) -- the very tile Cut leaves behind per
+  field.cutTreeSwaps -- via the profile's new `prop_ground` key, which
+  names the tile painted under a pinned prop instead of whatever flat
+  tile its neighbours vote in.
+
+- **Gym statues: a solid plinth, a standing bird.** The statue pair
+  flanking every badge gym's aisle (and Bruno's room) is one cell of
+  figure over one cell of plinth. The plinth ($22/$23/$32/$33) is
+  pinned `wall`: a solid 16px block. The figure ($02/$38/$12/$13) is
+  pinned `prop`: a 5-voxel cutout that stands ON the plinth through the
+  authored-box support rule, its checkered background flooded away and
+  the pixels its outline encloses kept.
+
+  The whole statue keeps ONE cell of footprint. The support rule used
+  to extend the box under the claimed cell (the monitor-on-desk path),
+  which marched the plinth a second block backwards; a figure whose
+  support is a FULL-HEIGHT block now collapses instead -- the drawn
+  figure cell becomes synthesized floor, since the block below already
+  carries the whole base. Furniture supports keep the extension: their
+  drawn cell is the furniture's own upper rows, and floor there would
+  amputate the desk. The round boulder drawn beside some statues is
+  deliberately NOT pinned -- it also tiles wall-to-wall as Pewter's
+  rock rows, which are scenery for the detector.
+
+- **Lt. Surge's trash cans stand up.** The can ($0B/$0C/$1B/$1C, the
+  lone graphic of blocks 38/39) takes the same treatment as the
+  cuttable bush: a 5-voxel `prop` cutout, black-outline segmented with
+  its enclosed pixels kept, standing on the gyms' main floor tile
+  ($11) via `prop_ground`.
+
+- **The Poke Marts furnished to the Center's standard.** The MART
+  tileset shares the Center's atlas image but is its own id, so none
+  of the Center's pins applied, and every mart was raw detector
+  output: a 32px double-height display band for a back wall, the two
+  shelf racks fused into one four-tile-deep monolith, and the clerk's
+  booth towered into a 48px slab wearing the juice poster. Pinned the
+  way the finished interiors are -- the back wall's SALE cases and
+  drink fridges one 16px face like the Center's healing consoles, the
+  racks collapsed to one-cell-deep shelves at drawn height like Red's
+  bookcases, the counter half a cell with the poster riding its top
+  like the nurse's tray, and the cash register standing ON the counter
+  through the authored-box support rule. One 4x4 layout serves every
+  city, so this covers all eight marts.
+
+### Fixed
+
+- **Cut trees now vanish in voxel mode -- and grow back.** The
+  engine's Cut path swapped the block with a raw `setBlock` + renderer
+  rebuild, never emitting `world.block_replaced` -- so this mod's
+  listener (which rebuilds the map's mesh exactly for this) never
+  heard about it, and the diorama kept showing the tree. The engine
+  now routes Cut through `replaceBlock`
+  (src/world/OverworldController.lua), whose whole purpose -- per its
+  own comment, "Victory Road barriers, Cut trees" -- is that same swap
+  plus the event. The regrowth path had the same hole one door away:
+  cut trees are restored block by block when the map is re-entered,
+  and the card-key doors are stamped closed on floor load, both
+  through the same silent `setBlock` -- with the mesh cache staying
+  warm across a round trip (that is what prevLive is for), the world
+  kept showing the stump you left. Both paths now announce each block.
+
+- **A block edit no longer blinks the world down to 2D.** The
+  listener used to drop the edited map's mesh outright, and mesh
+  builds are asynchronous -- so cutting a tree (or stepping out of a
+  door onto a map whose trees just regrew) flashed the flat 2D world
+  for the frames the rebuild took. `ChunkMesher.refresh` rebuilds in
+  place instead: the stale mesh keeps drawing, the replacement cooks
+  in the background, and each slot swaps as its build lands -- the
+  tree pops out (or back in) with the scene never leaving 3D.
+
+- **Flowers cull the player correctly from every angle.** The flower
+  billboards were baked into the terrain mesh, which draws without
+  the characters' camera-ward pull -- so a walker standing among
+  flowers won the depth test against ALL of them, including the
+  flower south of their feet that should overdraw them. The flower
+  quads now ride their own mesh, drawn after the characters with
+  exactly the characters' pull (the tall-grass trick): the flower in
+  front of a walker occludes their feet, the one behind them hides,
+  at every camera angle. Unlike grass the flower mesh still casts
+  shadows -- it is a handful of cutouts per meadow, not thousands of
+  tufts.
+
+- The `voxel_anim_probe` driver crashed on engine builds without the
+  optional `TileRenderer.animFrame` seam, and again on tilesets whose
+  animation list carries a "toggle" entry (spinner rooms), which claims
+  a tile LIST rather than one slot. It now reads the clock through the
+  mod's own fallback chain and skips toggle entries in the placement
+  census.
+
+- **The shoreline no longer opens into the sky beside buildings and
+  signs.** Water recesses 2px below the ground, and the ground tile beside
+  it closes the step with a small below-ground side band -- but a tile
+  CLAIMED by a standing object (a building footprint, a sign standee, the
+  bushes ringing Fuchsia's ponds) only painted its synthesized flat ground
+  and never emitted sides. Along every stretch where such a tile met
+  water, the two-pixel step was an open slit straight through to the sky
+  behind the mesh. The skip branch now emits the same below-ground bands
+  ordinary ground does, cut from the synthesized ground's own art, so the
+  shoreline lip is continuous whatever stands on the bank.
+
+- **Edge-row buildings keep their facades.** The south wall of Saffron's
+  row houses -- profiled buildings whose front row is the map's last tile
+  row -- lies exactly on the boundary plane shared with Route 6, and the
+  prebuilt-quad keep rules dropped it: the strict body test excludes the
+  plane, and the closed neighbour mask (which exists to kill ring scraps
+  whose rects sit exactly on that line) swallowed what was left, so from
+  Route 6 the houses stood hollow. The two cases are geometrically
+  identical degenerate rects, but they FACE opposite ways: a face pointing
+  away from the body is this map's own facade and nothing in the
+  neighbour will ever draw that plane, while a face pointing into the
+  body is the scrap the mask is for. The mesher now reads the winding and
+  keeps outward faces on the body's boundary planes, on all four edges.
+
+  The roof RIM had the same problem one step further out: an edge-row
+  house's eave overhangs `frontEave` voxels PAST the boundary plane into
+  the neighbour's airspace, and those quads are neither on the plane
+  (the winding rescue) nor over the body -- the neighbour-body mask ate
+  them as ring scraps, so from across the seam the roof edge was open
+  sky at low camera angles. Building placements only ever scan the map
+  BODY, so every building quad is this map's own structure by
+  construction: they now carry an `own` flag the edge keep-rules never
+  touch.
+
+- **Diglett's Cave mounds (and cliffs everywhere) stop sprouting
+  towers.** Two detector misreadings stacked up on the cave-entrance
+  mound. The dark east slope of the cliff drawing ($02/$24/$34) is one
+  texture repeated over the mound's whole height, but its corner tiles
+  break the repeat scan, so those columns rose to 32px -- the rock
+  pillar beside the entrance. And a folded doorway column reads its own
+  drawn extent (the door plus everything above it), which is a house's
+  real height when the door is a house's, but a 32px tower over a 16px
+  plateau when the door is a cave mouth -- the entrance jumped a block
+  above the mound around it. The slope chain is now profile-pinned to
+  one 16px course, and a doorway column answers to its REGION entirely:
+  height from the region's dominant column, top flat when those columns
+  are flat repeats (the mound) and roofed when they are drawn facades
+  (a house). Both cave entrances -- and every cliff built from the same
+  slope tiles -- now read as one level mesa with the cave mouth at
+  ground level. A new `voxel_mound_probe` driver prints the detector's
+  per-column class and height over any rectangle, which is how this was
+  diagnosed.
+
+  Routes 3 and 4 had a third variant of the same misreading: the repeat
+  scan anchors at a column's FRONT tile, and a plateau column that ends
+  in a one-off rounded corner tile ($13/$35) never matched -- it read
+  its whole capped extent and shot up as a 48px fin (several together
+  made a tent). When the two rows directly above the front are
+  identical, the column is now read as that repeat wearing a trim foot:
+  its unit is one course plus the trim. Doorway columns still answer to
+  their region first, so houses are untouched.
+
 ## 1.0.3
 
 ### Added

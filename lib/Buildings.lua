@@ -98,9 +98,24 @@ local models = {}          -- "<tileset>:<index>" -> prebuilt local quads
 
 -- Composite the template out of the atlas and flood the silhouette in from
 -- the border. Returns flat arrays indexed y * W + x.
+--
+-- `topRows`, when a template carries it, is extra drawing rows composited
+-- ABOVE the matched grid: rows of the same drawing that are not on the
+-- map this template places on. The Pokemon Tower is the case that needs
+-- it -- the drawing straddles the LAVENDER_TOWN / ROUTE_10 boundary, its
+-- roof band and top window courses standing in the route's last rows, so
+-- no single map's grid holds the whole building. The matcher never sees
+-- topRows (placement is still by `tiles` alone); they exist so the MODEL
+-- is built from the complete drawing and the tower rises to its real
+-- height instead of folding as two half-buildings.
 local function read(t, data, perRow)
   local tiles = t.tiles
-  local bh, bw = #tiles, #tiles[1]
+  if t.topRows then
+    tiles = {}
+    for _, row in ipairs(t.topRows) do tiles[#tiles + 1] = row end
+    for _, row in ipairs(t.tiles) do tiles[#tiles + 1] = row end
+  end
+  local bh, bw = #tiles, #t.tiles[1]
   local W, H = bw * 8, bh * 8
   local col, ax, ay = {}, {}, {}
   for sy = 0, H - 1 do
@@ -258,7 +273,13 @@ local function measure(sp, t)
     shadeTexel[s] = shadeTexel[s] or shadeTexel[BLACK] or 0
   end
 
-  return { top = top, ytop = ytop, D = H,
+  -- Depth is the MATCHED footprint, not the sprite height. The two are
+  -- the same number for every whole-drawing template (the sprite is
+  -- built from `tiles` alone), but a template with `topRows` has a
+  -- sprite taller than its footprint -- the tower's 16-row drawing
+  -- stands on the 8 rows of it that are actually on the map, and D = H
+  -- would have pushed its body 64px south into the town plaza.
+  return { top = top, ytop = ytop, D = #t.tiles * 8,
            recess = recess, interior = interior, shadeTexel = shadeTexel }
 end
 
@@ -606,13 +627,42 @@ function Buildings.build(S, map, data, perRow)
       for ty = 0, th - bh do
         Budget.tick()
         for tx = 0, tw - bw do
-          if S.tileAt[keyOf(tx, ty)] == first and matches(S, t, tx, ty) then
+          -- A placement never stamps into cells another template already
+          -- claimed. Templates are matched independently, and one
+          -- drawing can satisfy two grids: the Pokemon Tower's upper
+          -- twelve rows on ROUTE_10 are a standard 6-cell block tile for
+          -- tile, so `gabled_block_6x6` matched there and stood a whole
+          -- second building behind the tower. First claim wins, so the
+          -- list order below is the priority order -- the tower's own
+          -- templates come first precisely so they take those cells.
+          local free = S.tileAt[keyOf(tx, ty)] == first
+          if free then
+            for r = 0, bh - 1 do
+              for c = 0, bw - 1 do
+                if S.skip[keyOf(tx + c, ty + r)] then
+                  free = false
+                  break
+                end
+              end
+              if not free then break end
+            end
+          end
+          if free and matches(S, t, tx, ty) then
             if not built then
               local key = tileset.id .. ":" .. index
               if not models[key] then
-                local sp = read(t, data, perRow)
-                local pr = measure(sp, t)
-                models[key] = emit(model(sp, pr, t), sp, atlasW, atlasH)
+                if t.claimOnly then
+                  -- claim the cells, stamp nothing: the drawing here is
+                  -- the off-map half of a building another map models in
+                  -- full (the tower's roof rows on ROUTE_10 -- Lavender's
+                  -- placement composites them via topRows). Left to the
+                  -- detector they stood as a second half-building.
+                  models[key] = {}
+                else
+                  local sp = read(t, data, perRow)
+                  local pr = measure(sp, t)
+                  models[key] = emit(model(sp, pr, t), sp, atlasW, atlasH)
+                end
               end
               built = models[key]
             end
@@ -669,6 +719,13 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh)
       { q[3][1] + mx, q[3][2], q[3][3] + mz },
       { q[4][1] + mx, q[4][2], q[4][3] + mz },
       uv = q.uv, shade = q.shade,
+      -- placements only ever scan the BODY, so a building is always this
+      -- map's own structure: the mesher's edge keep-rules must not eat
+      -- the parts that poke past the boundary (an edge-row house's eave
+      -- juts frontEave voxels into the neighbour's airspace, and the
+      -- neighbour-body mask read that overhang as a ring scrap -- which
+      -- opened the roof rim into the sky from across the seam)
+      own = true,
     }
   end
 end

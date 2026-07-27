@@ -27,6 +27,9 @@
 -- the first place (home/vcopy.asm rewrites the tile's VRAM bytes); the 2D
 -- overdraw is the port's workaround, not the original.
 
+-- the mod namespace (see main.lua): V.require loads a sibling module
+local V = ...
+
 local Assets = require("src.render.Assets")
 local TileRenderer = require("src.render.TileRenderer")
 local PaletteFX = require("src.render.PaletteFX")
@@ -146,6 +149,8 @@ local function learnShades(raw, baked, tile, perRow)
   return map
 end
 
+local DIRS4 = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+
 -- One animated entry's tile slot, written into `out` at step `step`.
 local function patch(out, entry, spec, step)
   local perRow, tile = entry.perRow, spec.tile
@@ -167,12 +172,59 @@ local function patch(out, entry, spec, step)
     local ok, frame = pcall(Assets.imageData, path)
     if not ok or not frame then return end
     local shades = entry.shades and entry.shades[tile]
+    -- a `cut` tile is the flower billboard's slot (Structures'
+    -- buildFlowers): only the frame's darkest tones AND what they
+    -- enclose stay opaque -- the round-scenery hull's rule, flooding
+    -- the frame border through every non-dark pixel so the pale petal
+    -- insides survive with the outline. The true background is keyed
+    -- to alpha; nothing else samples this slot (the ground under a
+    -- flower is synthesized), and the shader's discard is what lets
+    -- the billboard's silhouette change per frame under geometry that
+    -- never moves.
+    local mask = nil
+    if entry.cut and entry.cut[tile] then
+      local dark, reach, stack = {}, {}, {}
+      for y = 0, 7 do
+        for x = 0, 7 do
+          local r, _, _, a = frame:getPixel(x, y)
+          if a > 0 and shadeOf(r) >= 3 then dark[y * 8 + x] = true end
+        end
+      end
+      for i = 0, 7 do
+        for _, s in ipairs({ i, 56 + i, i * 8, i * 8 + 7 }) do
+          if not dark[s] and not reach[s] then
+            reach[s] = true
+            stack[#stack + 1] = s
+          end
+        end
+      end
+      while #stack > 0 do
+        local p = table.remove(stack)
+        local px, py = p % 8, math.floor(p / 8)
+        for _, d in ipairs(DIRS4) do
+          local nx, ny = px + d[1], py + d[2]
+          if nx >= 0 and nx < 8 and ny >= 0 and ny < 8 then
+            local ni = ny * 8 + nx
+            if not dark[ni] and not reach[ni] then
+              reach[ni] = true
+              stack[#stack + 1] = ni
+            end
+          end
+        end
+      end
+      mask = {}
+      for i = 0, 63 do mask[i] = dark[i] or not reach[i] end
+    end
     for y = 0, 7 do
       for x = 0, 7 do
         local r, g, b, a = frame:getPixel(x, y)
-        local col = shades and shades[shadeOf(r)]
-        if col and a > 0 then r, g, b = col[1], col[2], col[3] end
-        out:setPixel(dx + x, dy + y, r, g, b, a)
+        if mask and not mask[y * 8 + x] then
+          out:setPixel(dx + x, dy + y, 0, 0, 0, 0)
+        else
+          local col = shades and shades[shadeOf(r)]
+          if col and a > 0 then r, g, b = col[1], col[2], col[3] end
+          out:setPixel(dx + x, dy + y, r, g, b, a)
+        end
       end
     end
   end
@@ -424,6 +476,28 @@ local function newEntry(map, base, baked)
       for _, spec in ipairs(specs) do
         if spec.kind == "frames" then
           e.shades[spec.tile] = learnShades(raw, src, spec.tile, e.perRow)
+        end
+      end
+    end
+    -- a frame-animated tile that resolved to the `flower` class stands as
+    -- a 1px billboard (Structures.buildFlowers), and its slot in THIS
+    -- copy carries only each frame's dark tones with the rest keyed to
+    -- alpha -- see patch(). Gated on the resolved shape so a profile that
+    -- pins the tile to something solid keeps a fully opaque slot, and on
+    -- the tileset art being readable: without pixels Structures cannot
+    -- have stood the billboard up (or synthesized the ground), and an
+    -- alpha-keyed slot under an ordinary flat quad is a hole in the world.
+    for _, spec in ipairs(specs) do
+      if spec.kind == "frames" then
+        local okCut, isFlower = pcall(function()
+          local okA, art = pcall(Assets.imageData, tileset.image)
+          if not (okA and art and art.getPixel) then return false end
+          local sh = V.require("TileShape").forMap(map)[spec.tile]
+          return sh ~= nil and sh.class == "flower"
+        end)
+        if okCut and isFlower then
+          e.cut = e.cut or {}
+          e.cut[spec.tile] = true
         end
       end
     end
