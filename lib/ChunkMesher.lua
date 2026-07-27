@@ -703,15 +703,17 @@ local function runGeometry(map, bodyOnly, masks, sink)
 
   -- round-tree stamps: the shared hull template translated per cell,
   -- through reusable scratch corners so expansion allocates nothing.
-  -- A hull spans at most its own 16px cell, so one rect test usually
-  -- answers for the whole stamp: strictly interior stamps keep every
-  -- quad, ring stamps buried under a neighbour body (or, body-only, ring
-  -- stamps full stop) skip without touching their quads. Only stamps
-  -- crossing a boundary walk quad by quad.
+  -- A hull spans at most its own footprint -- one 16px cell unless the
+  -- stamp carries a wider radius (the 2x2-cell canopy groups) -- so one
+  -- rect test usually answers for the whole stamp: strictly interior
+  -- stamps keep every quad, ring stamps buried under a neighbour body
+  -- (or, body-only, ring stamps full stop) skip without touching their
+  -- quads. Only stamps crossing a boundary walk quad by quad.
   local sc = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 } }
   for _, st in ipairs(S.roundStamps or {}) do
     local mx, mz = st.mx, st.mz
-    local sx0, sz0, sx1, sz1 = mx - 8, mz - 8, mx + 8, mz + 8
+    local sr = st.r or 8
+    local sx0, sz0, sx1, sz1 = mx - sr, mz - sr, mx + sr, mz + sr
     local interior = sx0 > 0 and sx1 < bw and sz0 > 0 and sz1 < bh
     local overBody = sx1 > 0 and sx0 < bw and sz1 > 0 and sz0 < bh
     local keepAll, skipAll

@@ -22,6 +22,20 @@
   box. The whole map now resolves to hulls, signs, ledges and ground --
   a detector sweep finds no stray boxed column anywhere.
 
+  Two refinements over the first cut, both new hull-builder abilities.
+  A tree's drawing spans 2x2 CELLS, and per-cell hulls unfolded it onto
+  the ground -- the ball's top half sat one cell north of its bottom
+  half at the same elevation, reading as a tree cut in half. The new
+  `canopy` class pins the drawing's corner tile as a group anchor and
+  the whole 2x2-cell drawing carves as ONE 32px hull, so every tree is
+  a single tall round canopy (the carver is now parametric over its
+  canvas size, and hull stamps carry their footprint radius). And the
+  stumps' drawn tops are a CUT FACE -- an ellipse of growth rings seen
+  at an angle, not body: the new `stump` class builds the hull from the
+  bark rows alone and projects the ellipse across the round flat top,
+  near arc to the south (`stump_cap` names the ellipse's drawn height),
+  so the rings ride the round part in perspective.
+
 - **Flowers stand up, and keep swaying.** The animated meadow tile
   ($03, the one tile the overworld animates by frame rewrite) now
   renders as a billboard one voxel deep: the drawing's darkest tones
