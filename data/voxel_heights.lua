@@ -2731,59 +2731,45 @@ return {
         roofRows = 64, roofBack = 8, roofFront = 8, roofCycle = { 8, 31 },
         slab = 4, frontEave = 4, ledge = nil, seal = "s",
       },
-      -- assets/docs/buildings/B30: the POKEMON TOWER, and the one drawing
-      -- in the catalogue the map edge cuts off.  It stands at
-      -- LAVENDER_TOWN (12,0), tile row 0, so the four rows of roof band
-      -- every other block of this family wears are simply not on the map:
-      -- rows 0..55 are three window courses over brick, 56..62 the base
-      -- course, and that is the whole drawing.
+      -- assets/docs/buildings/B30: the POKEMON TOWER.  The one drawing
+      -- in the catalogue that STRADDLES A MAP BOUNDARY: its purple roof
+      -- band and top two window courses stand in ROUTE_10's last eight
+      -- tile rows, and only the lower eight rows -- six more courses and
+      -- the base with the door -- are on LAVENDER_TOWN, where the
+      -- building begins at tile row 0.  Modelled per map it came out as
+      -- two half-buildings: Lavender's half wearing a fabricated flat
+      -- cap (art row 0 stretched into a yellow slab), Route 10's half a
+      -- low volume of roof drawing folded at ground level behind it.
       --
-      -- REMAINING.md files it unvoxelizable on two counts.  The first is
-      -- real and `seal` answers it; the second is a misreading of it.
+      -- `topRows` is the fix, built for this template: the eight
+      -- ROUTE_10 rows are composited ABOVE the matched grid, so the
+      -- model is the COMPLETE 16-row drawing -- 96px of facade under a
+      -- real 32px roof band -- while placement still matches only the
+      -- Lavender rows.  Its twin `pokemon_tower_top` below claims the
+      -- Route 10 rows and stamps nothing, so the roof half no longer
+      -- also stands as its own building behind the tower.
       --
-      --   Unbounded silhouette.  Every sibling is closed on the north by
-      --   the black outline along the top of its roof band.  Here the top
-      --   row is the 1px light margin over the first window course, so the
-      --   flood seeds the whole of y=0, drops down the 2px light channel
-      --   between the side outline (x=5, x=90) and the window band (x=8),
-      --   and from the first brick course eats the wall out: 37% fill in
-      --   126 pieces.  North is the ONLY way in -- the base course seals
-      --   the south, the side outlines seal east and west -- so `seal =
-      --   "n"` alone restores it: 88% fill, ONE piece, largest 100%, in
-      --   the shipped band.  The 728px left outside are exactly the 5px
-      --   grass margin down each flank plus the terrain row under the base
-      --   course, the same margins every sibling keeps.  (REMAINING.md
-      --   tests "s" and "nswe" and concludes the box cannot be sealed
-      --   because a quarter of it is ground -- but that quarter is the
-      --   unsealed flood's own damage measured back: its 1552px is
-      --   precisely what the flood ate.  North alone is never tried.)
-      --
-      --   No roof drawn.  True, and not fixable: `tiles` is the matcher as
-      --   well as the art, so the roof band cannot be borrowed from B14
-      --   without asking the map for tiles at ty=-4.  One row of band is
-      --   the least the pipeline can be given, and roofRows = 1 spends it
-      --   on that light top margin alone -- no window course is eaten, the
-      --   whole 63px of drawn facade stays standing, and the 4px slab caps
-      --   it flat.  67 voxels: nearly twice the Center and the Mart beside
-      --   it, and one voxel under its own twin B14 -- which is right,
-      --   because B14's facade IS this drawing.
-      --
-      -- The last row carries a THIRTEENTH tile id.  `matches` walks each
-      -- row to its own length while `read` composites only the first
-      -- #tiles[1] columns, so that id constrains where the template may
-      -- land without entering the drawing -- and it must not enter it,
-      -- because the only tile beside the tower is the $11 filler, whose
-      -- hatch carries isolated dark pixels the flood cannot reach: drawn,
-      -- each becomes a 64-deep rod of speckle hanging beside the tower.
-      -- The constraint is needed because these 8 rows ARE rows 5..12 of
-      -- flat_block_6x6: the bare grid matches four times, the tower plus
-      -- the lower two thirds of B14 at CELADON_CITY (14,4), ROUTE_16
-      -- (18,6) and ROUTE_18 (34,4), and nothing stops a second model being
-      -- stamped inside the first.  $11 sits east of the tower's south-east
-      -- corner; the three B14 plots carry grass, path and a plant there
-      -- ($23, $30, $55), so with the extra id the grid resolves once.
+      -- The old silhouette problem is gone with the roof back: the band
+      -- closes the drawing's north outline the way it does on every
+      -- sibling, so no `seal` is needed.  The 13-id last row survives
+      -- from the first attempt: the bare 12-wide grid is B14's lower
+      -- two-thirds tile for tile, and the extra id keeps this template
+      -- from stamping inside flat_block_6x6's three placements
+      -- (`matches` walks a row to its own length; `read` composites
+      -- only #tiles[1] columns, so the 13th id constrains placement
+      -- without entering the drawing).
       {
         id = "pokemon_tower",
+        topRows = {
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 22, 23, 23, 23, 23, 23, 23, 23, 23, 24, 25 },
+          { 37, 38, 34, 34, 34, 34, 34, 34, 34, 34, 40, 41 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+        },
         tiles = {
           { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
           { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
@@ -2794,8 +2780,25 @@ return {
           { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
           { 78, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 79, 17 },
         },
-        roofRows = 1, roofBack = 1, roofFront = 0, roofCycle = { 0, 0 },
-        slab = 4, frontEave = 4, ledge = nil, seal = "n",
+        roofRows = 32, roofBack = 7, roofFront = 8, roofCycle = { 5, 12 },
+        slab = 4, frontEave = 4, ledge = nil,
+      },
+      -- the tower's roof half, where it actually stands on ROUTE_10:
+      -- claimed flat so the drawing does not ALSO fold up as a second
+      -- building behind the modelled tower (see topRows above)
+      {
+        id = "pokemon_tower_top",
+        claimOnly = true,
+        tiles = {
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 56, 18, 18, 18, 18, 18, 18, 18, 18, 56, 25 },
+          { 21, 22, 23, 23, 23, 23, 23, 23, 23, 23, 24, 25 },
+          { 37, 38, 34, 34, 34, 34, 34, 34, 34, 34, 40, 41 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+          { 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 31 },
+          { 15, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 31 },
+        },
       },
     },
 
