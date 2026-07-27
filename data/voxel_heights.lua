@@ -212,7 +212,7 @@ return {
       -- $0D/$0E and $1D/$1E), which is drawn 32px tall and so reads as
       -- two stacked courses of the same band.
       wall = { 34, 35, 50, 51,
-               5, 6, 16,
+               5, 16,
                15, 36, 37, 38, 39, 53, 62, 66,
                68, 69, 70, 71, 84, 86, 87,
                32, 33, 48, 49,
@@ -237,7 +237,12 @@ return {
       -- it is always the top half of a walkable FLOOR cell, so rule 3
       -- already lays it flat.  Lorelei's room uses the same pair for
       -- the paved plaza that stands out of her water.
-      ground = { 4 },
+      -- the entrance mat every gym lays inside its door ($06 over $16,
+      -- 28 placements and nowhere else): drawn from straight above, so
+      -- it lies FLAT.  $06 was in the wall band above, which stood the
+      -- mat's top half up as a 16px box in the doorway -- the cell rule
+      -- could not save it, because a pin outranks the cell.
+      ground = { 4, 6, 22 },
       -- Celadon's hedge: a round shrub, one per cell ($2C/$2D over
       -- $2E/$2F), 35 of them planted wall to wall.  Round drawings get
       -- the cylinder archetype -- one voxel ball per 16x16 cell carved

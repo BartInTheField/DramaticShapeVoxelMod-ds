@@ -1930,8 +1930,16 @@ function Structures.buildObject(S, map, region, cluster,
   -- knows which is which: a thing that sits ON furniture occupies a
   -- blocked cell (you cannot walk through the gym statue, Red's plant,
   -- the PC), while a seat you walk up to is in a walkable one.
+  --
+  -- FENCE POSTS (the `post` pool, force == "opaque") never take the lift
+  -- at all. A post stands in the ground by definition -- it is not a
+  -- thing set down on top of something -- and its cell is blocked like
+  -- any other post, so the test above cannot tell it apart. Lavender
+  -- Town is where it showed: pinning the cliff's slope chain gave the
+  -- posts along the cliff edge an authored 16px box to their south, and
+  -- they were hoisted to stand on the clifftop instead of the path.
   local baseY, support = 0, nil
-  if force then
+  if force and force ~= "opaque" then
     local bs = S.shapeAt[keyOf(cluster.minX, cluster.maxY + 1)]
     local blocked = not map:isWalkableCell(math.floor(cluster.minX / 2),
                                            math.floor(cluster.maxY / 2))
