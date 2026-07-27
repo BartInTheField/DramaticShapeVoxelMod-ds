@@ -1350,6 +1350,21 @@ function Structures.buildVolume(S, map, tiles)
             break
           end
         end
+        -- A one-row TRIM at the column's foot hides a repeat from the
+        -- scan above, which anchors at the front tile: a cliff plateau
+        -- ends its south edge in a rounded corner tile, the corner
+        -- never recurs, and the column read its whole capped extent --
+        -- a 48px fin (or a whole tent of them) sticking out of a 16px
+        -- mesa on Routes 3 and 4. When the two rows directly above the
+        -- front are IDENTICAL, the column is that repeat wearing a trim
+        -- foot: one course plus the trim is its drawn unit. Doorway
+        -- columns are untouched -- their run answers to the region
+        -- (see below) before the unit matters.
+        if not repeatRead and extent > 2
+           and map:tileAt(tx, front - 1) == map:tileAt(tx, front - 2) then
+          unit = 2
+          repeatRead = true
+        end
       end
       local isDoor = false
       for ty = north, front do
