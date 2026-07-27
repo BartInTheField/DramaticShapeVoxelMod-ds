@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **The shoreline no longer opens into the sky beside buildings and
+  signs.** Water recesses 2px below the ground, and the ground tile beside
+  it closes the step with a small below-ground side band -- but a tile
+  CLAIMED by a standing object (a building footprint, a sign standee, the
+  bushes ringing Fuchsia's ponds) only painted its synthesized flat ground
+  and never emitted sides. Along every stretch where such a tile met
+  water, the two-pixel step was an open slit straight through to the sky
+  behind the mesh. The skip branch now emits the same below-ground bands
+  ordinary ground does, cut from the synthesized ground's own art, so the
+  shoreline lip is continuous whatever stands on the bank.
+
+- **Edge-row buildings keep their facades.** The south wall of Saffron's
+  row houses -- profiled buildings whose front row is the map's last tile
+  row -- lies exactly on the boundary plane shared with Route 6, and the
+  prebuilt-quad keep rules dropped it: the strict body test excludes the
+  plane, and the closed neighbour mask (which exists to kill ring scraps
+  whose rects sit exactly on that line) swallowed what was left, so from
+  Route 6 the houses stood hollow. The two cases are geometrically
+  identical degenerate rects, but they FACE opposite ways: a face pointing
+  away from the body is this map's own facade and nothing in the
+  neighbour will ever draw that plane, while a face pointing into the
+  body is the scrap the mask is for. The mesher now reads the winding and
+  keeps outward faces on the body's boundary planes, on all four edges.
+
 ## 1.0.3
 
 ### Added
