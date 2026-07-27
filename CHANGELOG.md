@@ -157,6 +157,15 @@
   per-column class and height over any rectangle, which is how this was
   diagnosed.
 
+  Routes 3 and 4 had a third variant of the same misreading: the repeat
+  scan anchors at a column's FRONT tile, and a plateau column that ends
+  in a one-off rounded corner tile ($13/$35) never matched -- it read
+  its whole capped extent and shot up as a 48px fin (several together
+  made a tent). When the two rows directly above the front are
+  identical, the column is now read as that repeat wearing a trim foot:
+  its unit is one course plus the trim. Doorway columns still answer to
+  their region first, so houses are untouched.
+
 ## 1.0.3
 
 ### Added
