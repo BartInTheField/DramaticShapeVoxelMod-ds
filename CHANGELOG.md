@@ -59,6 +59,20 @@
   its enclosed pixels kept, standing on the gyms' main floor tile
   ($11) via `prop_ground`.
 
+- **The Poke Marts furnished to the Center's standard.** The MART
+  tileset shares the Center's atlas image but is its own id, so none
+  of the Center's pins applied, and every mart was raw detector
+  output: a 32px double-height display band for a back wall, the two
+  shelf racks fused into one four-tile-deep monolith, and the clerk's
+  booth towered into a 48px slab wearing the juice poster. Pinned the
+  way the finished interiors are -- the back wall's SALE cases and
+  drink fridges one 16px face like the Center's healing consoles, the
+  racks collapsed to one-cell-deep shelves at drawn height like Red's
+  bookcases, the counter half a cell with the poster riding its top
+  like the nurse's tray, and the cash register standing ON the counter
+  through the authored-box support rule. One 4x4 layout serves every
+  city, so this covers all eight marts.
+
 ### Fixed
 
 - **Cut trees now vanish in voxel mode -- and grow back.** The

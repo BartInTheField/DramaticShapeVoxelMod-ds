@@ -357,6 +357,38 @@ return {
       -- accepted trade for a real plant silhouette
       prop = { 32, 33, 34, 35, 48, 49, 50, 51 },
     },
+
+    -- The Poke Marts (one 4x4 layout serves every city; the tileset
+    -- shares the Center's atlas image but is its own id, so the pins
+    -- above do not carry over).  Same failures as everywhere indoors:
+    -- the detector towered the whole north display band to 32px, merged
+    -- the clerk's booth into a 48px slab wearing the juice poster, and
+    -- boxed the two free-standing shelf racks into one 4-tile-deep
+    -- monolith.
+    MART = {
+      -- the wall band stays one 16px face: the trim and case tops
+      -- (40/90/91), the SALE cases (78/79) with their feet (23/29), and
+      -- the glass drink fridges (44-47) with their feet (62/63) -- all
+      -- drawn built INTO the back wall, exactly like the Center's
+      -- healing consoles
+      wall = { 23, 29, 40, 44, 45, 46, 47, 62, 63, 78, 79, 90, 91 },
+      -- the clerk's counter, half a cell high like every service
+      -- counter: the south front (24/25), the east-facing display run
+      -- (16/41/89 panels, 14/15/30/31 the juice-poster case whose art
+      -- rides the top like the nurse's tray), and the dark section
+      -- beside the register (56, near-black -- pinned or the void rule
+      -- flattens it)
+      counter = { 14, 15, 16, 24, 25, 30, 31, 41, 56, 89 },
+      -- the cash register stands ON the pinned counter through the
+      -- authored-box support rule, black-outline segmented
+      billboard = { 8 },
+      -- the free-standing shelf racks: TALL drawings, not deep ones --
+      -- each rank collapses onto a one-cell-deep shelf at its drawn
+      -- height (the Dojo/Red's-house treatment). 64/65/67 and 80/81/83
+      -- are the bottle rows the clerk's booth also wears as its top
+      -- display; 68/69/71 and 84/85/87 the goods rows below
+      bookcase = { 64, 65, 67, 68, 69, 71, 80, 81, 83, 84, 85, 87 },
+    },
   },
 
   -- Buildings whose whole sprite is voxelized band by band (lib/Buildings.lua,
