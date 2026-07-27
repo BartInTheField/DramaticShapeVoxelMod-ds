@@ -56,6 +56,15 @@ local FALLBACK_HEIGHTS = {
   tree = 16,
   roof = 28,
   cylinder = 16,
+  -- big round scenery: a 2x2-CELL drawing carved as ONE 32px voxel hull
+  -- (Viridian Forest's trees). The class pins only the drawing's
+  -- top-left corner tile; the other cells stay `cylinder` and are
+  -- claimed by the group build (see Structures.buildCylinders)
+  canopy = 32,
+  -- a cylinder hull whose drawn top is a CUT FACE (tree stumps): the
+  -- body builds from the bark rows and the drawn ellipse projects onto
+  -- the hull's round top
+  stump = 16,
   billboard = 16,
   signpost = 16,
   post = 16,
@@ -104,6 +113,8 @@ local ART = {
   fence = "upright",
   sign = "upright",
   cylinder = "cylinder",
+  canopy = "canopy",
+  stump = "cylinder",
   billboard = "billboard",
   -- signposts share the billboard treatment but as their own pool at a
   -- 2-voxel depth: a sign is a thin plate on a stick, and the standard

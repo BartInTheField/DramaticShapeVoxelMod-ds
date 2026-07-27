@@ -399,17 +399,24 @@ return {
       -- the hop-down edge, from data.field.tilePairs (CAVERN's entry
       -- above carries the same note for its own pair)
       ledge = { 46 },
-      -- the big trees -- the ball ($05/$06/$15/$16/$25/$26), its rim
-      -- wisps ($04/$07/$17/$23/$24/$27) and its feet ($35/$36) -- and
-      -- the stumps ($02/$03/$12/$13): one voxel hull per 16x16 cell,
-      -- cut from the cell's own art, the treatment the overworld border
-      -- forest already wears.  A tree spans 2x2 cells, so its four
-      -- quarter-hulls tile into one big lumpy canopy.  Every tile of
-      -- the drawing is listed: the cell-rounding is per TILE, and a rim
-      -- tile left out keeps its detector reading -- which is exactly
-      -- the ragged 0/8/16/32px box collar the trees wore
-      cylinder = { 2, 3, 4, 5, 6, 7, 18, 19, 21, 22, 23,
+      -- the big trees: the whole 2x2-CELL drawing carves as ONE 32px
+      -- voxel hull, so a tree is a single tall canopy instead of four
+      -- ground-level quarter-pancakes ("cut in half", as the first
+      -- attempt read).  `canopy` pins the drawing's top-left corner
+      -- tile ($04) as the group anchor; every other tile of the
+      -- drawing stays `cylinder` so the group build can verify and
+      -- claim its cells -- and so a stray partial drawing degrades to
+      -- per-cell hulls rather than boxes
+      canopy = { 4 },
+      cylinder = { 5, 6, 7, 21, 22, 23,
                    35, 36, 37, 38, 39, 53, 54 },
+      -- the stumps ($02/$03/$12/$13): a hull whose drawn top is a CUT
+      -- FACE.  The body builds from the bark rows alone, and the drawn
+      -- ellipse of growth rings projects onto the hull's round flat
+      -- top -- its bottom arc to the south, the way the 2D art means
+      -- it.  stump_cap is the ellipse's height in art rows
+      stump = { 2, 3, 18, 19 },
+      stump_cap = 7,
       -- the white sparkle filler inside the tree masses: flat, not an
       -- invisible zero-height box
       ground = { 0 },
