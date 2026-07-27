@@ -430,7 +430,36 @@ local function runGeometry(map, bodyOnly, masks, sink)
       if s and S.skip[k] then
         -- an object stands here; paint its synthesized ground and let the
         -- prebuilt prism quads (appended below) carry the art
-        if S.ground[k] then topQuad(tx * 8, ty * 8, 0, S.ground[k], 1) end
+        local g = S.ground[k]
+        if g then
+          topQuad(tx * 8, ty * 8, 0, g, 1)
+          -- the claimed tile is still ground at height 0, and water next
+          -- door still recesses below it: without the same below-ground
+          -- side bands ordinary ground emits, the two-pixel shoreline
+          -- face is a slit into the sky behind the mesh -- which is
+          -- exactly what a building plot or a sign standing at the
+          -- waterline showed. Same bands, cut from the synthesized
+          -- ground's own art
+          for _, side in ipairs(SIDES) do
+            local nh = heightAt(tx + side[1], ty + side[2])
+            if nh < 0 then
+              local d = side[3]
+              local lat = LATERAL[d]
+              local hl = lat and heightAt(tx + lat[1], ty + lat[2]) or 0
+              local hr = lat and heightAt(tx + lat[3], ty + lat[4]) or 0
+              for band = math.floor(nh / 8), -1 do
+                local y0 = math.max(nh, band * 8)
+                local y1 = math.min(0, band * 8 + 8)
+                if y1 > y0 then
+                  sideQuad(d, tx * 8, ty * 8, y0, y1, g,
+                           (band * 8 + 8) - y1, (band * 8 + 8) - y0,
+                           sideShades(hl, hr, y0, y1, y0 <= nh,
+                                      Voxel3D.FACE_SHADE[d]))
+                end
+              end
+            end
+          end
+        end
       elseif s then
         local run = S.runs[k]
         local h = run and run.h or s.h
@@ -610,6 +639,31 @@ local function runGeometry(map, bodyOnly, masks, sink)
     return overBody or not maskedClosed(x0, z0, x1, z1)
   end
 
+  -- A face lying EXACTLY on a body boundary plane is ambiguous to the
+  -- rect tests above: a body structure's outward facade (a Saffron row
+  -- house whose front row is the map's last row, its south wall on the
+  -- shared plane with Route 6) and the inward face of a ring scrap
+  -- occupy the same degenerate rect, and the strict overBody plus the
+  -- closed mask dropped BOTH -- which is why those facades were missing.
+  -- The winding tells them apart: a face pointing AWAY from the body
+  -- belongs to this map's own edge-row structure and nothing in the
+  -- neighbour will ever draw that plane, so it stays; a face pointing
+  -- INTO the body is the scrap the mask rules exist to kill, and falls
+  -- through to them.
+  local function outwardOnEdge(q, x0, z0, x1, z1)
+    if z0 == z1 and (z0 == 0 or z0 == bh) and x1 > 0 and x0 < bw then
+      local nz = (q[2][1] - q[1][1]) * (q[3][2] - q[1][2])
+                 - (q[2][2] - q[1][2]) * (q[3][1] - q[1][1])
+      return (z0 == bh and nz > 0) or (z0 == 0 and nz < 0)
+    end
+    if x0 == x1 and (x0 == 0 or x0 == bw) and z1 > 0 and z0 < bh then
+      local nx = (q[2][2] - q[1][2]) * (q[3][3] - q[1][3])
+                 - (q[2][3] - q[1][3]) * (q[3][2] - q[1][2])
+      return (x0 == bw and nx > 0) or (x0 == 0 and nx < 0)
+    end
+    return false
+  end
+
   local scUV = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } }
   local function quadUV(q)
     if q.uv then return q.uv end
@@ -625,7 +679,7 @@ local function runGeometry(map, bodyOnly, masks, sink)
     local x1 = math.max(q[1][1], q[2][1], q[3][1], q[4][1])
     local z0 = math.min(q[1][3], q[2][3], q[3][3], q[4][3])
     local z1 = math.max(q[1][3], q[2][3], q[3][3], q[4][3])
-    if keepQuad(x0, z0, x1, z1) then
+    if outwardOnEdge(q, x0, z0, x1, z1) or keepQuad(x0, z0, x1, z1) then
       push({ q[1], q[2], q[3], q[4] }, quadUV(q), groundShades(q, q.shade))
     end
   end
