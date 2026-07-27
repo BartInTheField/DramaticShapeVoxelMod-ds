@@ -14,8 +14,10 @@
 -- foreign building has stamped here when it has not.
 --
 -- To answer "does template X place on map Y", match its `tiles` grid
--- against the map's tile grid OFFLINE (data/generated/maps.lua plus
--- tilesets.lua) -- no engine needed, and it gives you the coordinates.
+-- against the map's tile grid OFFLINE (the map and tileset tables the
+-- ROM importer writes into the player's own cache -- see
+-- tools/voxel-survey.md for the paths) -- no engine needed, and it gives
+-- you the coordinates.
 -- And note a drawing can STRADDLE A MAP BOUNDARY (the Pokemon Tower's
 -- roof is on ROUTE_10, its facade on LAVENDER_TOWN), in which case no
 -- single map's grid holds the whole thing and each half meshes alone.
