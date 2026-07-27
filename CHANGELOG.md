@@ -138,6 +138,25 @@
   construction: they now carry an `own` flag the edge keep-rules never
   touch.
 
+- **Diglett's Cave mounds (and cliffs everywhere) stop sprouting
+  towers.** Two detector misreadings stacked up on the cave-entrance
+  mound. The dark east slope of the cliff drawing ($02/$24/$34) is one
+  texture repeated over the mound's whole height, but its corner tiles
+  break the repeat scan, so those columns rose to 32px -- the rock
+  pillar beside the entrance. And a folded doorway column reads its own
+  drawn extent (the door plus everything above it), which is a house's
+  real height when the door is a house's, but a 32px tower over a 16px
+  plateau when the door is a cave mouth -- the entrance jumped a block
+  above the mound around it. The slope chain is now profile-pinned to
+  one 16px course, and a doorway column answers to its REGION entirely:
+  height from the region's dominant column, top flat when those columns
+  are flat repeats (the mound) and roofed when they are drawn facades
+  (a house). Both cave entrances -- and every cliff built from the same
+  slope tiles -- now read as one level mesa with the cave mouth at
+  ground level. A new `voxel_mound_probe` driver prints the detector's
+  per-column class and height over any rectangle, which is how this was
+  diagnosed.
+
 ## 1.0.3
 
 ### Added

@@ -192,7 +192,7 @@ function Structures.forMap(map)
   -- still overdraws a walker's feet even though characters stamp over
   -- terrain.)
   S = { shapeAt = shapeAt, tileAt = tileAt, outdoor = Map.isOutdoor(def),
-        runs = {}, skip = {}, ground = {}, objectQuads = {},
+        runs = {}, skip = {}, ground = {}, doorFold = {}, objectQuads = {},
         grassQuads = {}, flowerQuads = {}, roundStamps = {} }
   Buildings.build(S, map, pixels(tileset), perRow)
 
@@ -213,7 +213,12 @@ function Structures.forMap(map)
         if ns and ns.art == "upright" then
           for dy = 0, 1 do
             for dx = 0, 1 do
-              shapeAt[keyOf(cx * 2 + dx, cy * 2 + dy)] = shapes.classes.wall
+              local dk = keyOf(cx * 2 + dx, cy * 2 + dy)
+              shapeAt[dk] = shapes.classes.wall
+              -- remembered for buildVolume: a folded doorway column
+              -- answers to its REGION for height and top, not to its
+              -- own drawn extent (see the door adoption there)
+              S.doorFold[dk] = true
             end
           end
         end
@@ -1314,6 +1319,7 @@ function Structures.buildVolume(S, map, tiles)
 
   local runs = {}
   local heightVotes = {}
+  local repeatVotes = {}
   for tx, ys in pairs(cols) do
     -- visit each contiguous vertical run in this column
     local sorted = {}
@@ -1345,11 +1351,19 @@ function Structures.buildVolume(S, map, tiles)
           end
         end
       end
+      local isDoor = false
+      for ty = north, front do
+        if S.doorFold[keyOf(tx, ty)] then
+          isDoor = true
+          break
+        end
+      end
       local run = { front = front, north = north, extent = extent,
-                    unit = unit, fromRepeat = repeatRead }
+                    unit = unit, fromRepeat = repeatRead, door = isDoor }
       runs[#runs + 1] = { tx = tx, run = run }
       local h = unit * 8
       heightVotes[h] = (heightVotes[h] or 0) + 1
+      if repeatRead then repeatVotes[h] = (repeatVotes[h] or 0) + 1 end
     end
   end
 
@@ -1361,11 +1375,27 @@ function Structures.buildVolume(S, map, tiles)
   for h, n in pairs(heightVotes) do
     if n > modeN or (n == modeN and h > modeH) then modeH, modeN = h, n end
   end
+  -- whether the region's dominant columns are flat repeats (a cliff
+  -- mound's plateau) rather than drawn facades (a house's front)
+  local modeRepeat = (repeatVotes[modeH] or 0) * 2 > modeN
   for _, r in ipairs(runs) do
     local run = r.run
     local h = run.unit * 8
     local adopted = false
-    if run.fromRepeat and modeH > h then
+    local flatDoor = false
+    if run.door then
+      -- A folded doorway column answers to its region ENTIRELY. Its own
+      -- reading spans the door plus everything drawn above it -- a
+      -- house's full height when the door is a house's, but a 32px
+      -- tower over a 16px plateau when the door is a cave mouth cut
+      -- into a cliff mound (Diglett's Cave: the entrance jumped a block
+      -- above the mound around it). Height and top both come from the
+      -- region: the mode height, roofed like a facade when the mode
+      -- columns are drawn facades, flat when they are flat repeats.
+      h = modeH
+      adopted = not modeRepeat
+      flatDoor = modeRepeat
+    elseif run.fromRepeat and modeH > h then
       h = modeH
       adopted = true
     end
@@ -1383,7 +1413,8 @@ function Structures.buildVolume(S, map, tiles)
     -- whole roof area -- and a rooftop tilted into a 48px ramp reads
     -- wrong instantly. Distinct top rows -> slope; repeated -> level top.
     local roofRows = 0
-    if S.outdoor and (not run.fromRepeat or adopted) and h >= 16 then
+    if S.outdoor and (not run.fromRepeat or adopted) and h >= 16
+       and not flatDoor then
       roofRows = math.min(2, math.floor(h / 8) - 1)
       if roofRows > 0 and map:tileAt(r.tx, run.north)
                          == map:tileAt(r.tx, run.north + 1) then

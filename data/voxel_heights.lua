@@ -129,6 +129,15 @@ return {
       -- fence-textured tower. `post` extracts each cell alone, so these
       -- render as the same thin posts, marching north
       post = { 14, 85 },
+      -- the cliff-mound's dark east slope and its corners ($02 the NE
+      -- corner, $24 the slope column, $34 the slope-to-rim seat). Their
+      -- drawn runs span the whole mound drawing, so the detector raised
+      -- them to 32px towers -- the rock pillar beside Diglett's Cave --
+      -- and the doorway column, which adopts its REGION's height,
+      -- inherited the same 32 and put the cave entrance a block above
+      -- the mound around it. Pinned to one 16px course they match the
+      -- plateau body, and the doorway drops with them.
+      wall = { 2, 36, 52 },
       -- the cuttable bush ($2D/$2E/$3D/$3E, the four tiles Cut deletes
       -- -- across the whole tileset they appear only in the five
       -- cut-tree blocks): a standing per-pixel cutout 5 voxels deep,
