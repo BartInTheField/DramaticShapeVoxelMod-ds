@@ -297,6 +297,17 @@ function TileShape.forMap(map)
   for class in pairs(FALLBACK_HEIGHTS) do
     shapes.classes[class] = shapeFor(class, heights)
   end
+  -- a conditional pin's own AUTHORED shape per class it can resolve to,
+  -- kept apart from the shared canonical ones above (see TileShape.at)
+  if shapes.cond then
+    shapes.condShape = {}
+    for _, rules in pairs(shapes.cond) do
+      for _, rule in ipairs(rules) do
+        shapes.condShape[rule.class] = shapes.condShape[rule.class]
+          or shapeFor(rule.class, heights, true)
+      end
+    end
+  end
   for t = 0, count - 1 do
     local class = authored[t]
     if class then
@@ -334,8 +345,13 @@ function TileShape.at(map, shapes, tile, tx, ty)
     local above = map:tileAt(tx, ty - 1)
     for _, rule in ipairs(rules) do
       if above and rule.above[above] then
-        shapes.classes[rule.class].authored = true
-        return shapes.classes[rule.class]
+        -- shapes.condShape, NOT shapes.classes: the canonical class
+        -- shapes are SHARED, and `wall` in particular is the very object
+        -- rule 4 hands every unauthored solid tile. Marking that one
+        -- authored (which the first cut did) made every one of them skip
+        -- the cell rules below, so walkable floors stopped flattening and
+        -- whole rooms rose into a checkerboard of blocks.
+        return shapes.condShape[rule.class]
       end
     end
   end
