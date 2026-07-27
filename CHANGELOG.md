@@ -4,6 +4,24 @@
 
 ### Added
 
+- **Viridian Forest grows real trees.** Nearly everything drawn in the
+  forest is ROUND, and the detector was boxing all of it: the big trees
+  came out as ragged mixed-height volumes (their sparse canopy-rim
+  tiles read 0px against 32px bodies, leaving gap-toothed hedge walls),
+  the stump rows merged into 16px crate walls wearing folded stump art,
+  and the trail signs were broken piles -- their $32 tile is the
+  water-fallback trap and recessed into a pond lip in the middle of the
+  woods. All of it is now profile-pinned to the treatments the rest of
+  the world already uses: every tile of the tree drawing (ball, rim
+  wisps, feet) and the stumps take the per-cell voxel HULL the overworld
+  border forest wears -- a tree spans 2x2 cells, so its four
+  quarter-hulls tile into one big lumpy canopy, and each stump becomes a
+  round bollard; the signs take the standing thin-slab `signpost`
+  treatment every town sign gets; and the white sparkle filler inside
+  the tree masses is flat ground instead of an invisible zero-height
+  box. The whole map now resolves to hulls, signs, ledges and ground --
+  a detector sweep finds no stray boxed column anywhere.
+
 - **Flowers stand up, and keep swaying.** The animated meadow tile
   ($03, the one tile the overworld animates by frame rewrite) now
   renders as a billboard one voxel deep: the drawing's darkest tones

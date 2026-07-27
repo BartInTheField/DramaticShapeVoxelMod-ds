@@ -178,8 +178,33 @@ return {
     CAVERN = {
       ledge = { 5 },
     },
+    -- Viridian Forest.  Nearly everything drawn here is ROUND, and the
+    -- detector was boxing all of it: the big trees came out as ragged
+    -- mixed-height volumes (their sparse canopy-edge tiles read 0px,
+    -- their bodies 32px), the stump rows merged into 16px crate walls
+    -- wearing folded stump art, and the trail sign was a broken pile --
+    -- its $32 tile is the water-fallback trap and recessed into a pond
+    -- lip in the middle of the woods.
     FOREST = {
       ledge = { 46 },
+      -- the big trees -- the ball ($05/$06/$15/$16/$25/$26), its rim
+      -- wisps ($04/$07/$17/$23/$24/$27) and its feet ($35/$36) -- and
+      -- the stumps ($02/$03/$12/$13): one voxel hull per 16x16 cell,
+      -- cut from the cell's own art, the treatment the overworld border
+      -- forest already wears.  A tree spans 2x2 cells, so its four
+      -- quarter-hulls tile into one big lumpy canopy.  Every tile of
+      -- the drawing is listed: the cell-rounding is per TILE, and a rim
+      -- tile left out keeps its detector reading -- which is exactly
+      -- the ragged 0/8/16/32px box collar the trees wore
+      cylinder = { 2, 3, 4, 5, 6, 7, 18, 19, 21, 22, 23,
+                   35, 36, 37, 38, 39, 53, 54 },
+      -- the white sparkle filler inside the tree masses: flat, not an
+      -- invisible zero-height box
+      ground = { 0 },
+      -- the trail signs: the standing thin-slab treatment every town
+      -- sign gets ($32 pinned is also what lifts it out of the water
+      -- trap)
+      signpost = { 33, 34, 49, 50 },
     },
 
     -- Oak's Lab (the tileset also serves the Fighting Dojo and Lance's
