@@ -8,8 +8,8 @@
 --   +Z  map south  (world-pixel y)
 --
 -- A character at rest faces +Z, i.e. toward a camera parked to the south,
--- which is what "facing down" means in the 2D game -- so a facing is just a
--- yaw and tools/build_voxels.py bakes its models in that pose.
+-- which is what "facing down" means in the 2D game -- and a character card
+-- is drawn in exactly that pose, leaning back rather than yawing.
 --
 -- The camera orbits the view centre at Voxel.angle: 0 is straight down
 -- (what the flat 2D view already is) and 50 degrees leans toward the
@@ -44,7 +44,7 @@ Voxel3D.FORMAT = {
   { "VertexShade", "float", 1 },
 }
 
--- Face shading by direction id (see tools/build_voxels.py): top faces stay
+-- Face shading by direction id: top faces stay
 -- full brightness, sides step down so an extruded block reads as solid
 -- instead of a flat sticker, and the faces turned away from the sun are
 -- darkest. The sun hangs in the SOUTHEAST (see ShadowMap), so south and

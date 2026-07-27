@@ -18,7 +18,6 @@ return {
       "T-SHIFT options row and hotkey 6 (OFF / 1 / 2 / 3), the miniature blur",
       "V-GRID on hotkey 5 and V-CURVE on hotkey 7",
       "a sky behind the diorama at the 75-degree rung, outdoor maps only, coloured by the active palette mode",
-      "carved voxel models for 67 overworld sprites (assets/voxels/)",
       "a hand-authored tile shape profile (data/voxel_heights.lua) a mod can extend",
     },
     known = {

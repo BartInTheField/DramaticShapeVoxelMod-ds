@@ -561,6 +561,44 @@ T.eq(#dropped, 2, "a replaced block does not drop the mesh outright")
 T.eq(#refreshed, 1, "it refreshes the mesh in place instead")
 T.eq(refreshed[1], "PALLET_TOWN", "and refreshes exactly the edited map")
 
+-- ------- and the edits the engine does NOT announce
+--
+-- Cut swaps its tree block, the regrowth restores it on re-entry, and the
+-- card-key doors are stamped on floor load -- all writing the block layer
+-- directly, none of them emitting world.block_replaced. The mod wraps
+-- Map:setBlock rather than asking the engine to announce each one (an
+-- earlier cut changed the engine, which is the wrong place: it edits the
+-- game for one mod, and every future block write has to remember).
+--
+-- These run through a REAL Map, so they also pin that the wrap survives
+-- whatever the engine does to that method.
+
+local Map = require("src.world.Map")
+local function fakeMap(id)
+  return setmetatable({
+    id = id,
+    def = { width = 2, height = 2, blocks = { 1, 1, 1, 1 }, borderBlock = 0 },
+  }, Map)
+end
+
+local m = fakeMap("ROUTE_2")
+refreshed = {}
+
+m:setBlock(0, 0, 9)
+T.eq(#refreshed, 1, "a direct setBlock refreshes the mesh -- this is Cut's path")
+T.eq(refreshed[1], "ROUTE_2", "and names the map that was edited")
+T.eq(m:blockAt(0, 0), 9, "and the block really changed")
+
+-- the regrowth rewrites every block it recorded, changed or not; a write
+-- that changes nothing must not throw the mesh away
+m:setBlock(0, 0, 9)
+T.eq(#refreshed, 1, "rewriting a block with the value it already held is not an edit")
+
+-- setBlock silently ignores an out-of-bounds write, so there is nothing
+-- to rebuild for one
+m:setBlock(99, 99, 3)
+T.eq(#refreshed, 1, "an out-of-bounds write refreshes nothing")
+
 ChunkMesher.invalidate = realInvalidate
 ChunkMesher.refresh = realRefresh
 

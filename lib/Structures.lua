@@ -69,7 +69,7 @@ local OBJECT_DEPTH = 6             -- voxel thickness of a detected prop
 -- `signpost` is a plate on a stick -- 2 voxels, the thinnest that still
 -- shows an edge
 local PINNED_DEPTH = { billboard = 10, prop = 5, stool = 10, cutout = 1,
-                       post = 6, signpost = 2 }
+                       console = 10, post = 6, signpost = 2 }
 
 local MAX_ROWS = 6                 -- volume height cap: 48px
 
@@ -1994,13 +1994,18 @@ function Structures.buildObject(S, map, region, cluster,
     c.z1 = c.z0 + depth
   end
 
-  -- A `cutout` pin is ONE object by contract: keep only the largest
-  -- connected drawing.  Loose black scraps -- a cast shadow's drawn
-  -- edge, a seam -- are background even though black pixels always
-  -- survive the shade flood, and this is what removes them.
+  -- A `cutout` or `console` pin is ONE object by contract: keep only
+  -- the largest connected drawing.  Loose black scraps -- a cast
+  -- shadow's drawn edge, a seam, the vertical rules the surrounding
+  -- furniture draws down its own edges -- are background even though
+  -- black pixels always survive the shade flood, and this is what
+  -- removes them.  Every other pool may hold several objects per
+  -- cluster (two stools side by side, a leaf beside a vase), so this
+  -- cannot be the default.
   if force then
     local cs = S.shapeAt[keyOf(cluster.tiles[1][1], cluster.tiles[1][2])]
-    if cs and cs.class == "cutout" and #comps > 1 then
+    if cs and (cs.class == "cutout" or cs.class == "console")
+       and #comps > 1 then
       local biggest = comps[1]
       for _, c in ipairs(comps) do
         if c.n > biggest.n then biggest = c end
