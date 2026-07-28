@@ -645,6 +645,47 @@ function OverworldBattle.install()
     if not ok then error(err, 0) end
   end
 
+  -- The engine's flash has a SECOND half, and it is the one that reaches the
+  -- menu. Beside the white rectangle (dropped above) the flash moves are
+  -- driven by a BGP palette fade -- BGP_LIGHT and friends -- which the
+  -- colorized pipeline applies in drawZonePass to the WHOLE background
+  -- canvas. That canvas carries the HUD glyphs and the text box, so a fade
+  -- meant for the two mons washed the menu out with them.
+  --
+  -- The fade is left switched on for the pics, which read it through
+  -- picImage, and switched off for the zone pass alone. So the mons flash
+  -- and the furniture around them does not.
+  --
+  -- The zone pass has a SECOND thing it paints, and this is the one that
+  -- reads as the menu box flashing. A screen shake makes it fill every zone
+  -- with the zone's own color 0 before it draws the offset copy -- the
+  -- hardware showing empty BG in the strip the shake vacated. On a white
+  -- battle field that fill is invisible; over a world it is an opaque white
+  -- sheet across the whole frame, and since a shake program alternates
+  -- offset and no-offset frames (SE_SHAKE_SCREEN steps dx 1, 0, 1, 0...) it
+  -- switches on and off a few times a second. It is dropped: the background
+  -- here is the map, so what the shake vacates should show the map.
+  local innerZone = BattleState.drawZonePass
+  function BattleState:drawZonePass(src, sx, sy)
+    if not self.dramaticShapeShot then return innerZone(self, src, sx, sy) end
+    -- shadow the method on the instance for this call only; putting the
+    -- field back to whatever it was (normally nil) lets the class method be
+    -- found again
+    local had = rawget(self, "activeBgp")
+    self.activeBgp = function() return nil end
+    local g = love.graphics
+    local rectangle = g.rectangle
+    g.rectangle = function(mode, ...)
+      -- the pass draws no other rectangle; the shake still shifts the copy
+      if mode == "fill" then return end
+      return rectangle(mode, ...)
+    end
+    local ok, err = pcall(innerZone, self, src, sx, sy)
+    g.rectangle = rectangle
+    self.activeBgp = had
+    if not ok then error(err, 0) end
+  end
+
   -- Black glyphs on grass are not readable; over a frosted panel measured
   -- dark they are not readable either, so they go white. Mapped rather than
   -- rewritten: the HUD sets pure black for its text and nothing else, and in
