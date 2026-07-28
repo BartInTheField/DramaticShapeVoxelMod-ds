@@ -278,6 +278,11 @@ end
 -- yet (the terrain mesh is still building, the driver has no depth support).
 -- nil is not a failure: the caller simply leaves the battle screen as the
 -- engine drew it for that frame.
+-- White, for the hit flash. The shader replaces the card's colour outright
+-- rather than multiplying it, so this is the sprite's own silhouette turned
+-- solid white -- not a lightened picture of itself.
+BattleScene.FLASH_COLOR = { 1, 1, 1 }
+
 function BattleScene.render(state, arena, textures, token)
   if not (state and state.map and arena) then return nil end
   if not Voxel3D.available() then return nil end
@@ -358,10 +363,18 @@ function BattleScene.render(state, arena, textures, token)
     -- front of it, and the alpha discard cuts the sprite's own outline out of
     -- the card. A small camera-ward pull keeps a card rooted to the ground
     -- plane from z-fighting the tile it is standing on.
+    -- The engine's hit flash is a full-screen white rectangle, which on a
+    -- white battle field is a flash and over a world is a whiteout of the
+    -- map, the HUD and the text box alike. It is dropped on the way past
+    -- (see OverworldBattle) and put back HERE, on the two things it was ever
+    -- about: the mons themselves go solid white for those frames.
+    local flashing = textures and textures.flash
+    if flashing then Voxel3D.flatten(BattleScene.FLASH_COLOR) end
     for _, card in ipairs(monCards(arena, groundY, textures)) do
       Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model,
                    BattleBillboard.PULL)
     end
+    if flashing then Voxel3D.flatten(nil) end
     -- grass and flowers ride the same camera-ward pull the free-roam pass
     -- gives them, measured against THIS camera's pitch rather than the
     -- orbit's -- there is no character here for them to overdraw, but the

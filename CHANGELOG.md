@@ -20,6 +20,15 @@
   Leaving it deliberately undoes nothing -- reverting would discard whatever
   had been changed since.
 
+### Fixed
+
+- **The hit flash whited out the whole screen.** The engine draws it as a
+  full-screen white rectangle, which is a flash on a white battle field and
+  a whiteout of the map, the HUD and the text box over a world. It is now
+  dropped on the way past and put back where it was ever about: the two
+  Pokemon go solid white for those frames, silhouette and all, and nothing
+  else in the frame moves.
+
 ### Changed
 
 - **Hotkey `3` walks the angle rungs only and steps over `FULL`.** The key is

@@ -1374,6 +1374,24 @@ T.check(math.abs(sx - px) < 0.2,
 -- arena floor out from under the two mons pinned to it
 T.eq(rig.curve, 0, "the battle camera switches the world curve off")
 
+-- ------- the hit flash belongs to the mons, not the screen
+--
+-- The engine draws it as a full-screen white rectangle, which is a flash on
+-- a white battle field and a whiteout of the map, the HUD and the text box
+-- over a world. It is dropped on the way past and put back on the two cards.
+local Battles = run.loader.exports.DRAMATIC_SHAPE.lib.require("OverworldBattle")
+T.eq(Battles.flashing(nil), false, "no battle, no flash")
+T.eq(Battles.flashing({ fx = {}, frame = 0 }), false,
+  "a battle with no flash counter is not flashing")
+T.eq(Battles.flashing({ fx = { flash = 0 }, frame = 0 }), false,
+  "nor one whose counter has run out")
+T.eq(Battles.flashing({ fx = { flash = 16 }, frame = 0 }), true,
+  "a live counter flashes on the frames the engine would")
+T.eq(Battles.flashing({ fx = { flash = 16 }, frame = 2 }), false,
+  "and is dark on the others, which is what makes it flicker")
+T.eq(Battles.flashing({ fx = { flash = 16 }, frame = 5 }), true,
+  "on a four-frame cycle")
+
 -- ------- the wireframe is forced on in a battle
 --
 -- A fight is a staged shot rather than the world being walked through, so it
