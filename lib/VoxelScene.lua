@@ -84,13 +84,25 @@ local function skyStrength(angleRad)
   return t
 end
 
-local function skyFor(map)
-  if not (map and map.def and Map.isOutdoor(map.def)) then return nil end
-  local t = skyStrength(Voxel.angle)
-  if t <= 0 then return nil end
+-- One shade off the sky ramp, transformed by the display mode, as an
+-- {r, g, b, a} in 0..1. `shade` picks the rung (SKY_SHADE is the sky
+-- proper; 4 is its darkest, which is what an indoor void wants).
+function VoxelScene.skyShade(shade, alpha)
   local shades = PaletteFX.effectiveColors(SKY_SHADES) or SKY_SHADES
-  local c = shades[SKY_SHADE] or SKY_SHADES[SKY_SHADE]
-  return { c[1] / 255, c[2] / 255, c[3] / 255, t }
+  local c = shades[shade] or SKY_SHADES[shade] or SKY_SHADES[SKY_SHADE]
+  return { c[1] / 255, c[2] / 255, c[3] / 255, alpha or 1 }
+end
+
+-- The sky `map` stands under at strength `t`, or nil where there is no sky
+-- to paint: indoors, or with the horizon out of frame.
+function VoxelScene.skyColor(map, t)
+  if not (map and map.def and Map.isOutdoor(map.def)) then return nil end
+  if not t or t <= 0 then return nil end
+  return VoxelScene.skyShade(SKY_SHADE, t)
+end
+
+local function skyFor(map)
+  return VoxelScene.skyColor(map, skyStrength(Voxel.angle))
 end
 
 VoxelScene._skyFor = skyFor           -- named for the suite
@@ -131,6 +143,9 @@ local function groundAt(map, cellX, cellY)
 end
 
 VoxelScene.YAW = YAW
+-- shared with the overworld battle, which stands its mons on map cells and
+-- needs the same answer about what height "the floor" is there
+VoxelScene.groundAt = groundAt
 
 -- Camera-ward pull distance for billboards (and the grass rows, which
 -- must keep their relative depth to feet): just enough that a leaned-back

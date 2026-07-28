@@ -1,6 +1,89 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
+
+### Added
+
+- **A `FULL` rung on the VOXEL row**, directly after `OFF`. One choice that
+  puts the whole mode in its intended state -- the 50-degree camera, the
+  miniature blur at maximum, the horizon flat, the view fitted, and battles
+  on the map -- rather than making a player assemble it from four rows.
+
+  While it is selected, every row it owns comes OFF the menu: V-GRID,
+  V-CURVE, 3D-BTL and T-SHIFT. A row that no longer decides anything is
+  worse than no row. Stepping onto or off `FULL` rebuilds the open menu in
+  place, so the rows leave and return under the cursor instead of waiting
+  for the menu to be reopened.
+
+  It applies its settings when the row ARRIVES at `FULL`, not every frame:
+  holding them would make the zoom keys and the wheel dead while it was on.
+  Leaving it deliberately undoes nothing -- reverting would discard whatever
+  had been changed since.
+
+### Changed
+
+- **Hotkey `3` walks the angle rungs only and steps over `FULL`.** The key is
+  a display-mode cycler -- it should change the camera and nothing else --
+  and `FULL` reaches in and rewrites four other settings. Landing on it
+  mid-walk would silently push the blur to maximum and flatten the horizon
+  with nothing on screen saying a keypress had done it. `FULL` stays on the
+  OPTIONS row, where a preset that changes other rows belongs.
+
+  A press FROM `FULL` goes to `75`. `FULL` is already the 50-degree camera,
+  so stepping to the rung of that name would look like the key had done
+  nothing.
+
+- **The mode's four options are one block in the menu.** The engine splices
+  a pipeline row in beside TILT and lands a mod's own rows at the end of the
+  list, which had these four in two places with unrelated engine rows
+  between them. The settings now follow the pipeline rows directly.
+
+## 1.1.0
+
+### Added
+
+- **Battles happen on the map you were standing on.** The battle screen's
+  white field is replaced by the world: the mod finds the nearest patch of
+  open ground, points a placed over-the-shoulder camera at it, and draws the
+  fight over that. New **3D-BTL** row and hotkey `8`, on by default.
+
+  The arena is a 3x6 clearing of cells the player could walk on, with the
+  two mons three cells apart down the middle column and a one-cell apron all
+  round so the camera looks across floor rather than into a wall. Where no
+  map has room for that -- a corridor, a cave, a shop -- the search relaxes
+  to a 1x4 corridor with the apron given up, and where even that will not
+  fit the battle draws exactly as it always did.
+
+  Everything else in the frame is the engine's own. The mon pics, HUDs, HP
+  bars, move animations, faint slides and text box are drawn by BattleState,
+  in its order, at its coordinates -- the GB's own layout, with the player's
+  mon low and left and the enemy's high and right, which is why the camera
+  is placed east of the arena axis rather than the layout being moved to
+  suit the camera. What changes is what is behind them.
+
+  Three things carry the shot. The overworld's cast is culled before the
+  wipe, so it plays over an empty map and no bystander is standing in the
+  arena. The camera drifts on a slow orbit about a point between the two
+  mons, which moves the near ground and the far ground by different amounts
+  -- parallax, not a sliding backdrop. And a depth-of-field pass holds the
+  band of frame the two mons stand in sharp and softens the middle distance
+  and the foreground; both mons are in focus by construction, because they
+  are drawn as the battle screen's own pics after the pass has run.
+
+  **Nobody moves.** The arena is where the CAMERA goes. Nothing here writes
+  a cell, a facing, a flag or a warp, so a trainer's post-battle dialogue is
+  still talking to someone standing in front of them, and the blackout path,
+  sight lines and every script find the player exactly where they left them.
+
+  The two HUD blocks gain the backing the white field used to be. Gen 1
+  draws them as black glyphs straight onto the background with no box round
+  them, and black-on-grass is not readable; the backing is painted inside
+  `drawHUDs`, so it lands in the same target and takes the same zone colour
+  as the HUD it sits under, in both the colorized and flat pipelines.
+
+  Declines cleanly at every step it cannot take: no depth support, no open
+  ground, the row switched off, or a terrain mesh still building all end at
+  the battle screen the engine has always drawn.
 
 ### Changed
 

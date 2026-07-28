@@ -10,7 +10,12 @@ local T = require("tests.modkit")
 local Pipelines = require("src.render.Pipelines")
 
 local Data = T.fixtures.load()
-local run = T.sdk.loadMod("mods/DRAMATIC_SHAPE", { data = Data })
+-- DS_MOD_PATH lets the suite run against a copy of the mod. The game holds
+-- an open handle on the live directory while it is running, and on Windows
+-- that is enough to make the headless loader's directory probe fail, so a
+-- run alongside a live session points at a copy instead.
+local MOD_PATH = os.getenv("DS_MOD_PATH") or "mods/DramaticShapeVoxelMod"
+local run = T.sdk.loadMod(MOD_PATH, { data = Data })
 
 T.eq(#run.errors, 0,
   "DRAMATIC_SHAPE loads clean: " .. table.concat(run.errors, "; "))
@@ -44,11 +49,13 @@ T.eq(defs._owners and defs._owners.voxel, "DRAMATIC_SHAPE",
 
 -- ------- the ladders the engine drives
 
-T.eq(#defs.voxel.levels, 5, "voxel exposes a five-rung ladder")
+T.eq(#defs.voxel.levels, 6, "voxel exposes a six-rung ladder")
 T.eq(defs.voxel.levels[1], "OFF", "rung 0 is OFF")
-T.eq(defs.voxel.levels[5], "75", "the top rung is the 75-degree camera")
-T.eq(Pipelines.maxLevel("voxel"), 4, "the engine reads the ladder height")
-T.eq(Pipelines.levelLabel("voxel", 2), "35", "the engine reads the rung labels")
+T.eq(defs.voxel.levels[2], "FULL",
+  "FULL is the first rung after OFF -- the order those two get used in")
+T.eq(defs.voxel.levels[6], "75", "the top rung is the 75-degree camera")
+T.eq(Pipelines.maxLevel("voxel"), 5, "the engine reads the ladder height")
+T.eq(Pipelines.levelLabel("voxel", 3), "35", "the engine reads the rung labels")
 
 -- ------- gating: inert until switched on, and inert without a GPU
 
@@ -96,23 +103,118 @@ local byLabel = {}
 for _, row in ipairs(rows) do byLabel[row.label] = row end
 T.check(byLabel.VOXEL ~= nil, "the VOXEL row is offered")
 T.check(byLabel["T-SHIFT"] ~= nil, "the T-SHIFT row is offered")
-T.eq(byLabel.VOXEL.value(), "15", "the row renders the current rung's label")
+T.eq(byLabel.VOXEL.value(), "FULL", "the row renders the current rung's label")
 
 -- ------- this mod's own settings
 --
--- Neither is a pipeline (they parameterise the voxel pass rather than
--- owning one), so they reach the same menu through the ui.options.rows
--- hook, and store themselves where the mod manager's settings page looks.
+-- None of them is a pipeline -- two parameterise the voxel pass rather than
+-- owning one, and the third decides what a BATTLE is drawn over, which is
+-- not a stage the registry has -- so they reach the same menu through the
+-- ui.options.rows hook, and store themselves where the mod manager's
+-- settings page looks.
 
 local Runtime = require("src.mods.Runtime")
+local VoxelState = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelState")
+
+-- ------- FULL is a preset that owns the other rows
+--
+-- While it is selected the settings it drives come OFF the menu -- including
+-- T-SHIFT, which is a pipeline row the engine spliced in. A row that no
+-- longer decides anything is worse than no row.
+Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
+local fullRows = Runtime.call("ui.options.rows", function(_, r) return r end,
+                              { data = Data },
+                              { { id = "tilt" }, { id = "pipeline:voxel" },
+                                { id = "pipeline:tiltshift" } })
+local fullIds = {}
+for _, row in ipairs(fullRows) do fullIds[row.id] = true end
+T.check(fullIds["pipeline:voxel"], "FULL keeps the VOXEL row it lives on")
+T.check(not fullIds["pipeline:tiltshift"],
+  "FULL takes T-SHIFT off the menu -- it owns the blur")
+T.check(not fullIds["DRAMATIC_SHAPE:grid"], "and V-GRID")
+T.check(not fullIds["DRAMATIC_SHAPE:curve"], "and V-CURVE")
+T.check(not fullIds["DRAMATIC_SHAPE:battles"], "and 3D-BTL")
+
+-- ------- and off FULL, the rows come back, grouped with the mode
+--
+-- The engine splices a pipeline row in beside TILT and lands a mod's own
+-- additions at the END of the list, which would leave this mode's four rows
+-- in two places with unrelated rows between them.
+Pipelines.setLevel("voxel", 2)
+local grouped = Runtime.call("ui.options.rows", function(_, r) return r end,
+                             { data = Data },
+                             { { id = "tilt" }, { id = "pipeline:voxel" },
+                               { id = "pipeline:tiltshift" },
+                               { id = "void_fill" } })
+local order = {}
+for i, row in ipairs(grouped) do order[row.id] = i end
+T.check(order["pipeline:tiltshift"] < order["DRAMATIC_SHAPE:grid"],
+  "the mode's settings follow its pipeline rows")
+T.eq(order["DRAMATIC_SHAPE:battles"] - order["pipeline:tiltshift"], 3,
+  "and sit in one unbroken block, not scattered to the end of the list")
+T.check(order["void_fill"] > order["DRAMATIC_SHAPE:battles"],
+  "with the engine's own later rows still after them")
+
+-- ------- the open menu notices when FULL is stepped onto or off
+--
+-- OptionsMenu reads its row list every frame but builds it once, so without
+-- a rebuild the rows FULL owns stay on screen until the menu is reopened --
+-- and stepping OFF FULL never brings them back.
+local OptionsMenu = require("src.ui.OptionsMenu")
+local pressed = {}
+local menuGame = {
+  data = Data,
+  save = { options = { pipelines = {}, modOptions = {} } },
+  mods = { modOptions = {} },
+  input = { wasPressed = function(_, k) return pressed[k] or false end },
+  stack = { pop = function() end },
+  writeOptions = function() end,
+}
+
+Pipelines.setLevel("voxel", 2)
+local menu = OptionsMenu.new(menuGame)
+local function rowIndex(m, id)
+  for i, row in ipairs(m.rows) do if row.id == id then return i end end
+end
+T.check(rowIndex(menu, "DRAMATIC_SHAPE:grid"),
+  "off FULL the menu opens with the mode's settings on it")
+
+-- step the VOXEL row from 15 down to FULL, the way the player would
+menu.index = rowIndex(menu, "pipeline:voxel")
+pressed = { left = true }
+menu:update(0)
+pressed = {}
+T.eq(Pipelines.level("voxel"), 1, "the step landed on FULL")
+T.check(not rowIndex(menu, "DRAMATIC_SHAPE:grid"),
+  "and the rows FULL owns left the OPEN menu at once")
+T.check(not rowIndex(menu, "pipeline:tiltshift"), "T-SHIFT with them")
+T.check(menu.index <= #menu.rows + 1, "the cursor stayed in range")
+
+-- and back off it again
+menu.index = rowIndex(menu, "pipeline:voxel")
+pressed = { right = true }
+menu:update(0)
+pressed = {}
+T.eq(Pipelines.level("voxel"), 2, "the step left FULL")
+T.check(rowIndex(menu, "DRAMATIC_SHAPE:grid"),
+  "and the rows came straight back without reopening the menu")
+T.check(rowIndex(menu, "pipeline:tiltshift"), "T-SHIFT too")
+
+-- level 2 is the "15" rung: any rung that is not FULL, so the settings the
+-- preset owns are back on the menu
+Pipelines.setLevel("voxel", 2)
 local hookedRows = Runtime.call("ui.options.rows", function(_, r) return r end,
                                { data = Data }, { { id = "text_speed" } })
-T.eq(#hookedRows, 3, "the options hook added a row per setting")
-local grid, curve = hookedRows[2], hookedRows[3]
+T.eq(#hookedRows, 4, "the options hook added a row per setting")
+local grid, curve, battles = hookedRows[2], hookedRows[3], hookedRows[4]
 T.eq(grid.label, "V-GRID", "the grid row carries its label")
 T.eq(grid.value(), "OFF", "the grid starts off")
 T.eq(curve.label, "V-CURVE", "the curve row carries its label")
 T.eq(curve.value(), "OFF", "the curve starts off")
+T.eq(battles.label, "3D-BTL", "the overworld-battle row carries its label")
+T.eq(battles.value(), "ON",
+  "overworld battles are on by default -- the mode's headline is the world "
+  .. "in 3D, and a battle is where the player spends half the game")
 
 -- stepping writes through to the one place both rows read
 local settingGame = { save = { options = {} }, mods = { modOptions = {} } }
@@ -694,13 +796,14 @@ T.eq(modeColors(nil), nil, "and a pipeline given no paletteFor at all is safe")
 --   5  V-GRID   toggle the wireframe
 --   6  T-SHIFT  cycle the blur ladder
 --   7  V-CURVE  cycle the horizon bend
+--   8  3D-BTL   toggle overworld battles
 --
 -- Only 6 reaches the pipeline registry the documented way. Game:keypressed
 -- answers the engine's own display keys first and returns -- 3 is TILT and
--- 5 is GBC FX -- expressly so a pipeline cannot shadow one, and 7 belongs
--- to settings that own no pass and so have no registry to claim from. The
--- mod therefore wraps Game:keypressed, and these pin what that wrapper is
--- allowed to take.
+-- 5 is GBC FX -- expressly so a pipeline cannot shadow one, and 7 and 8
+-- belong to settings that own no pass and so have no registry to claim
+-- from. The mod therefore wraps Game:keypressed, and these pin what that
+-- wrapper is allowed to take.
 
 local Game = require("src.core.Game")
 Pipelines.reset()
@@ -722,10 +825,33 @@ keyGame = {
 local VoxelGrid = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelGrid")
 local Curve = run.loader.exports.DRAMATIC_SHAPE.lib.require("WorldCurve")
 
+-- ------- 3 walks the ANGLE rungs and steps over FULL
+--
+-- The key is a display-mode cycler: it should change the camera and nothing
+-- else. FULL reaches in and rewrites four other settings, so landing on it
+-- mid-walk would silently turn the blur to maximum and flatten the horizon
+-- with nothing on screen saying a keypress had done it.
+Pipelines.setLevel("voxel", 0)
+local walk = {}
+for _ = 1, 6 do
+  Game.keypressed(keyGame, "3")
+  walk[#walk + 1] = Pipelines.levelLabel("voxel")
+end
+T.eq(table.concat(walk, ","), "15,35,50,75,OFF,15",
+  "3 walks OFF -> 15 -> 35 -> 50 -> 75 and wraps, never touching FULL")
+
+-- FULL is 50 degrees, so a press from it goes ON to 75 rather than back to
+-- the rung that shows the same camera -- the key never appears to do nothing
+Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
 Game.keypressed(keyGame, "3")
-T.eq(Pipelines.level("voxel"), 1, "3 cycles the voxel camera ladder")
+T.eq(Pipelines.levelLabel("voxel"), "75",
+  "a press from FULL goes to 75, since FULL already IS the 50 camera")
+
+Pipelines.setLevel("voxel", 0)
 Game.keypressed(keyGame, "3")
-T.eq(Pipelines.level("voxel"), 2, "and keeps climbing it")
+T.eq(Pipelines.level("voxel"), 2, "3 cycles the voxel camera ladder")
+Game.keypressed(keyGame, "3")
+T.eq(Pipelines.level("voxel"), 3, "and keeps climbing it")
 
 Game.keypressed(keyGame, "6")
 T.eq(Pipelines.level("tiltshift"), 1, "6 cycles the tilt-shift blur")
@@ -738,6 +864,13 @@ T.eq(VoxelGrid.setting:get(), false, "and off again")
 local curveBefore = Curve.setting:get()
 Game.keypressed(keyGame, "7")
 T.neq(Curve.setting:get(), curveBefore, "7 cycles V-CURVE")
+
+local Battles = run.loader.exports.DRAMATIC_SHAPE.lib.require("OverworldBattle")
+T.eq(Battles.setting:get(), true, "3D-BTL starts on")
+Game.keypressed(keyGame, "8")
+T.eq(Battles.setting:get(), false, "8 toggles overworld battles off")
+Game.keypressed(keyGame, "8")
+T.eq(Battles.setting:get(), true, "and back on")
 
 -- 3 also clears the two engine modes it displaced. Without this a player
 -- who left TILT or GBC FX on before enabling the mod has no key left to
@@ -761,7 +894,8 @@ T.eq(GBCFX.level, 0, "and on the live renderer")
 -- TILT with or without us. Park the ladder on its top rung and turn both
 -- back on, so the single press under test is the one that wraps to OFF --
 -- where nothing else is going to clear them.
-Pipelines.setLevel("voxel", Pipelines.maxLevel("voxel"))
+-- 5 is the "75" rung, the last one the key walks before it wraps to OFF
+Pipelines.setLevel("voxel", 5)
 Tilt.setLevel(3)
 GBCFX.setLevel(4)
 keyGame.save.options.tilt = 3
@@ -889,6 +1023,389 @@ T.check(skyRGB("gbc_inv")[3] ~= blue[3],
   "GBC INV does not paint the same sky as GBC")
 
 Voxel.angle = 0
+
+-- ------- overworld battles: where the fight is staged
+--
+-- The arena search is pure map arithmetic, so it is driven here against
+-- hand-drawn maps rather than a fixture: the shape it looks for, the order
+-- it relaxes in, and what it refuses are all things a picture can state
+-- exactly.
+--
+-- The stub answers the small surface BattleArena asks a Map for. `rows` are
+-- strings, one per cell row, "." open and anything else solid; "w" is water
+-- (open to a surfer only) and "d" a warp tile.
+
+local BattleArena = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattleArena")
+
+local function stubMap(rows)
+  local at = function(cx, cy)
+    local row = rows[cy + 1]
+    return row and row:sub(cx + 1, cx + 1) or "#"
+  end
+  return {
+    widthCells = #rows[1],
+    heightCells = #rows,
+    inBounds = function(_, cx, cy)
+      return cx >= 0 and cy >= 0 and cx < #rows[1] and cy < #rows
+    end,
+    warpAtCell = function() return nil end,
+    isWarpTileCell = function(_, cx, cy) return at(cx, cy) == "d" end,
+    isWalkableCell = function(_, cx, cy) return at(cx, cy) == "." end,
+    isWaterCell = function(_, cx, cy) return at(cx, cy) == "w" end,
+    isGrassCell = function(_, cx, cy) return at(cx, cy) == "g" end,
+  }
+end
+
+-- a field with room for the wide arena on its right-hand side only
+local field = stubMap({
+  "##########",
+  "#....#####",
+  "#....#####",
+  "#....#####",
+  "#....#####",
+  "#....#####",
+  "#....#####",
+  "##########",
+})
+
+local arena = BattleArena.find(field, 2, 3, false)
+T.check(arena ~= nil, "a field with a 3x6 clearing has an arena")
+T.eq(arena.shape, "wide", "and it is the wide shape, not the fallback")
+T.eq(arena.w, 3, "the wide arena is three cells across")
+T.eq(arena.h, 6, "and six deep")
+
+-- the two mons stand three cells apart down the middle column, which is
+-- what the picture in BattleArena says and what the camera is built around
+T.eq(arena.enemyCell[1], arena.playerCell[1],
+  "both mons stand in the arena's middle column")
+T.eq(arena.playerCell[2] - arena.enemyCell[2], 3,
+  "with three cells of ground between them")
+T.check(arena.enemyCell[2] < arena.playerCell[2],
+  "the enemy is the NORTH one -- the far end from a camera parked south")
+
+-- every cell of the shape is open, apron included: that one-cell margin is
+-- the difference between a staged shot and a fight in a doorway
+for cy = arena.y, arena.y + arena.h - 1 do
+  for cx = arena.x, arena.x + arena.w - 1 do
+    T.check(field:isWalkableCell(cx, cy),
+      ("arena cell (%d,%d) is open ground"):format(cx, cy))
+  end
+end
+
+-- world-pixel centres, which is the unit everything downstream works in
+T.eq(arena.player[1], arena.playerCell[1] * 16 + 8,
+  "the player's mark is the centre of its cell in world pixels")
+T.eq(arena.mid[2], (arena.enemy[2] + arena.player[2]) / 2,
+  "and the midpoint is halfway between the two")
+
+-- nearest, not first found: two clearings, and the one under the player wins.
+-- Wide enough that the battle camera -- which stands a few cells east and
+-- south of whatever it is aimed at -- is over real ground for BOTH of them,
+-- so this measures proximity rather than the clearance preference below.
+local twin = stubMap({
+  "########################",
+  "#.##########.###########",
+  "#.##########.###########",
+  "#.##########.###########",
+  "#.##########.###########",
+  "########################",
+  "########################",
+  "########################",
+  "########################",
+  "########################",
+})
+local near = BattleArena.find(twin, 12, 3, false)
+T.eq(near.shape, "narrow", "no 3x6 anywhere, so the search relaxes")
+T.eq(near.x, 12, "and takes the corridor the player is standing in")
+T.eq(BattleArena.find(twin, 1, 3, false).x, 1,
+  "the same map from the other side picks the other one")
+
+-- the wide shape wins even when a narrow one is closer: it is the shot this
+-- mode is framed for, so proximity does not get to overrule it
+local both = stubMap({
+  "#.#########",
+  "#.####...##",
+  "#.####...##",
+  "#.####...##",
+  "######...##",
+  "######...##",
+  "######...##",
+})
+T.eq(BattleArena.find(both, 1, 1, false).shape, "wide",
+  "a wide arena across the map beats a narrow one underfoot")
+
+-- water is ground for a surfer and nothing at all for anyone else
+local sea = stubMap({
+  "wwwwww",
+  "wwwwww",
+  "wwwwww",
+  "wwwwww",
+  "wwwwww",
+  "wwwwww",
+})
+T.eq(BattleArena.find(sea, 2, 2, false), nil,
+  "open water is not open ground to someone walking")
+T.check(BattleArena.find(sea, 2, 2, true) ~= nil,
+  "but it is to a surfer, who is standing on it")
+
+-- tall grass is walkable and is still not a stage: it is knee-high geometry
+-- standing between a nearly-level camera and the mon behind it
+local meadow = stubMap({
+  "########",
+  "#ggg..g#",
+  "#ggg..g#",
+  "#ggg..g#",
+  "#ggg..g#",
+  "#ggg..g#",
+  "#ggg..g#",
+  "########",
+})
+local mown = BattleArena.find(meadow, 2, 3, false)
+T.check(mown ~= nil, "a meadow with a bare strip still has an arena")
+for cy = mown.y, mown.y + mown.h - 1 do
+  for cx = mown.x, mown.x + mown.w - 1 do
+    T.check(not meadow:isGrassCell(cx, cy),
+      ("no cell of the arena is tall grass (%d,%d)"):format(cx, cy))
+  end
+end
+T.eq(BattleArena.find(stubMap({
+  "#####", "#ggg#", "#ggg#", "#ggg#", "#ggg#", "#ggg#", "#ggg#", "#####",
+}), 2, 3, false), nil,
+  "a map that is nothing but grass has nowhere to stand a fight")
+
+-- a doormat is walkable and is still not a stage
+local hall = stubMap({
+  "######",
+  "#..d.#",
+  "#....#",
+  "#....#",
+  "#....#",
+  "######",
+})
+local halled = BattleArena.find(hall, 2, 3, false)
+T.check(halled == nil or halled.shape == "narrow",
+  "a warp tile is excluded, so the room's only 3x6 does not qualify")
+
+T.eq(BattleArena.find(stubMap({ "###", "###" }), 1, 1, false), nil,
+  "a map with no room at all yields no arena, and the battle draws plainly")
+
+-- an authored refusal is honoured over the search: a map looked at and found
+-- to have nowhere a fight reads has to be able to say so, or the fallback
+-- goes and finds one of the spots that were already rejected by eye
+local roomy = stubMap({
+  "#####", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#####",
+})
+roomy.id = "TEST_REFUSED"
+T.check(BattleArena.find(roomy, 2, 3, false) ~= nil,
+  "a roomy map finds an arena by search when nothing is authored")
+BattleArena.setOverride("TEST_REFUSED", false)
+T.eq(BattleArena.find(roomy, 2, 3, false), nil,
+  "an authored false refuses the map outright, search and all")
+BattleArena.setOverride("TEST_REFUSED", nil)
+T.check(BattleArena.find(roomy, 2, 3, false) ~= nil,
+  "and dropping the refusal restores the search")
+
+-- ------- overworld battles: the over-the-shoulder framing
+--
+-- The claim the whole shot rests on. The two pics are PINNED to their cells,
+-- so the rig has to put those two patches of ground exactly where the GB's
+-- own battle screen puts its two pics -- the player's low and left at
+-- (40, 96), the enemy's high and right at (124, 56). Reprojected through the
+-- real camera rather than asserted about the constants, so the day someone
+-- retunes the rig this either still lands or says so.
+
+local BattleCam = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattleCam")
+local BattleScene = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattleScene")
+local Voxel3Dcam = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
+
+-- where a world point lands in the 160x144 frame, or nil behind the camera
+local function project(cam, point, w, h, fov)
+  local saved = cam.fov
+  if fov then cam.fov = fov end
+  Voxel3Dcam.camera = cam
+  local m = Voxel3Dcam.viewProjection(0, 0, w or 160, h or 144)
+  Voxel3Dcam.camera = nil
+  cam.fov = saved
+  local x = m[1] * point[1] + m[2] * 0 + m[3] * point[2] + m[4]
+  local y = m[5] * point[1] + m[6] * 0 + m[7] * point[2] + m[8]
+  local cw = m[13] * point[1] + m[14] * 0 + m[15] * point[2] + m[16]
+  if cw <= 1e-6 then return nil end
+  return (x / cw * 0.5 + 0.5) * (w or 160), (y / cw * 0.5 + 0.5) * (h or 144)
+end
+
+BattleCam.reset()
+local shot = BattleArena.find(field, 2, 3, false)
+local rig, pitch = BattleCam.rig(shot, 0)
+
+local px, py = project(rig, shot.player)
+local ex, ey = project(rig, shot.enemy)
+T.check(px ~= nil and ex ~= nil, "both marks are in front of the camera")
+T.check(math.abs(px - 26) < 1 and math.abs(py - 96) < 1,
+  ("the player's cell projects onto its pic's feet at (26, 96): got "
+   .. "(%.2f, %.2f)"):format(px, py))
+T.check(math.abs(ex - 124) < 1 and math.abs(ey - 56) < 1,
+  ("the enemy's cell projects onto its pic's feet at (124, 56): got "
+   .. "(%.2f, %.2f)"):format(ex, ey))
+T.check(px < ex, "which puts the player's mon LEFT of the enemy's")
+T.check(py > ey, "and lower in the frame -- nearer the camera")
+
+-- low and long: the eye is near the floor looking almost along it, which is
+-- what a 56-pixel sprite standing on a 16-pixel tile costs
+T.check(pitch > math.rad(60) and pitch < math.rad(85),
+  "the rig watches the arena from near ground level")
+
+-- ------- a mon covers its own square
+--
+-- The pics are drawn at INTEGER scales -- 56 pixels for a front pic at 1x, 64
+-- for a back pic at 2x -- so the only way a mon can stand in one overworld
+-- square is for the camera to make that square that big. This is the pair of
+-- equations the default rig was solved against alongside the two anchors, and
+-- it is the one that sets how far away the camera has to be.
+local function span(cam, point)
+  local a = project(cam, { point[1] - 8, point[2] })
+  local b = project(cam, { point[1] + 8, point[2] })
+  return math.abs(b - a)
+end
+
+T.check(math.abs(span(rig, shot.player) - 64) < 4,
+  ("the player's square is a back pic wide (64px at 2x): got %.2f")
+  :format(span(rig, shot.player)))
+T.check(math.abs(span(rig, shot.enemy) - 56) < 4,
+  ("the enemy's square is a front pic wide (56px at 1x): got %.2f")
+  :format(span(rig, shot.enemy)))
+
+-- ------- the close rig, for rooms the default cannot stand back from
+--
+-- Five blocks is further than a gym is wide, so on one the default eye lands
+-- outside the map and the border ring crosses the near mon. An arena asks for
+-- the short rig by name, and the two things that have to hold are that it
+-- really is close enough to sit in a room, and that it frames the SAME shot
+-- -- both marks still on their anchors -- so swapping rigs changes the lens
+-- and nothing about the composition.
+local function eyeDistance(cam)
+  local dx = cam.eye[1] - cam.focus[1]
+  local dy = cam.eye[2] - cam.focus[2]
+  local dz = cam.eye[3] - cam.focus[3]
+  return math.sqrt(dx * dx + dy * dy + dz * dz)
+end
+
+T.check(eyeDistance(rig) > 120,
+  "the default long lens stands well back -- that is what sizes the mons")
+
+BattleCam.reset()
+local snug = { mid = shot.mid, cam = "wide" }
+local closeRig = BattleCam.rig(snug, 0)
+local cd = eyeDistance(closeRig)
+T.check(cd < 80,
+  ("the wide lens is within five cells, so it fits inside a gym: got %.1f")
+  :format(cd))
+T.check(cd < eyeDistance(rig), "and is nearer than the default")
+
+local cpx, cpy = project(closeRig, shot.player)
+local cex, cey = project(closeRig, shot.enemy)
+T.check(math.abs(cpx - 26) < 1 and math.abs(cpy - 96) < 1,
+  ("the wide lens lands the player's mark on the same anchor: (%.2f, %.2f)")
+  :format(cpx, cpy))
+T.check(math.abs(cex - 124) < 1 and math.abs(cey - 56) < 1,
+  ("and the enemy's too: (%.2f, %.2f)"):format(cex, cey))
+T.check(span(closeRig, shot.player) < span(rig, shot.player),
+  "the mons render smaller on it, which is what it trades for fitting")
+
+-- an arena picks its rig by name, and anything unnamed gets the default
+T.eq(BattleCam.rigFor({ cam = "wide" }), BattleCam.RIGS.wide,
+  "an arena that asks for the wide lens gets it")
+T.eq(BattleCam.rigFor({}), BattleCam.RIGS.tele, "and one that asks for nothing")
+T.eq(BattleCam.rigFor({ cam = "nonsense" }), BattleCam.RIGS.tele,
+  "as does one that asks for a rig that does not exist")
+
+-- ------- the pins survive the window
+--
+-- The scene renders at the WINDOW's resolution, not the GB's, so the rig's
+-- field of view is widened by the ratio the window bears to the letterbox.
+-- What that has to buy is exactness: the letterbox sub-rectangle of the
+-- widened render must be the framing the rig asked for, or the pics come
+-- unpinned from the ground by however much it is out.
+
+for _, win in ipairs({ { 1920, 1080, 7 }, { 640, 576, 4 }, { 1280, 1024, 7 },
+                       { 800, 720, 5 } }) do
+  local pw, ph, s = win[1], win[2], win[3]
+  local lx = math.floor((pw - 160 * s) / 2)
+  local ly = math.floor((ph - 144 * s) / 2)
+  local wide = BattleScene.letterboxFov(rig.fov, ph, s)
+  T.check(wide >= rig.fov - 1e-9,
+    "a window taller than the letterbox needs a wider lens, never a tighter one")
+  local wx, wy = project(rig, shot.player, pw, ph, wide)
+  local gx, gy = (wx - lx) / s, (wy - ly) / s
+  T.check(math.abs(gx - px) < 0.01 and math.abs(gy - py) < 0.01,
+    ("%dx%d at scale %d reproduces the GB framing exactly: (%.3f, %.3f) vs "
+     .. "(%.3f, %.3f)"):format(pw, ph, s, gx, gy, px, py))
+end
+
+-- ------- the drift
+--
+-- With the pics pinned, the drift is not decoration on a backdrop -- it
+-- moves the mons themselves, and the whole reason it reads as depth is that
+-- it moves the near one and the far one by DIFFERENT amounts. A backdrop
+-- that merely slid would move them by the same one.
+BattleCam.update(BattleCam.PAN_PERIOD / 4)
+local rig2 = BattleCam.rig(shot, 0)
+local px2 = project(rig2, shot.player)
+local ex2 = project(rig2, shot.enemy)
+T.check(math.abs(px2 - px) > 0.5, "the drift moves the near mark")
+T.check((px2 - px) * (ex2 - ex) < 0,
+  "and the far one the OTHER WAY -- parallax about a point between them")
+T.check(math.abs(px2 - px) < 8 and math.abs(ex2 - ex) < 8,
+  "neither is flung across the frame: the mons drift, they do not travel")
+
+-- very slow: a quarter of the cycle is several seconds, and what it moves in
+-- one FRAME has to be imperceptible
+BattleCam.reset()
+BattleCam.update(1 / 60)
+local slow = BattleCam.rig(shot, 0)
+local sx = project(slow, shot.player)
+T.check(math.abs(sx - px) < 0.2,
+  "one frame of drift moves a mon by a fifth of a pixel")
+
+-- a placed camera declines the world curve outright: the bend exists to
+-- drop the horizon away from a walking player, and here it would tip the
+-- arena floor out from under the two mons pinned to it
+T.eq(rig.curve, 0, "the battle camera switches the world curve off")
+
+-- ------- the wireframe is forced on in a battle
+--
+-- A fight is a staged shot rather than the world being walked through, so it
+-- always wears the seams. The player's own V-GRID row must not be touched by
+-- that -- an override, not a write, or switching the mode off mid-battle
+-- would quietly rewrite a setting they chose.
+local Grid = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelGrid")
+Grid.override = nil
+local rowWas = Grid.setting:get()
+T.eq(Grid.enabled(), rowWas and true or false,
+  "with no override the wireframe follows the row")
+Grid.override = true
+T.eq(Grid.enabled(), true, "an override forces it on")
+T.eq(Grid.setting:get(), rowWas, "and leaves the player's row alone")
+Grid.override = false
+T.eq(Grid.enabled(), false, "an override can force it off too")
+Grid.override = nil
+T.eq(Grid.enabled(), rowWas and true or false,
+  "and clearing it hands the answer back to the row")
+
+-- ------- the depth of field is measured off the two marks
+--
+-- The slab held sharp is the one the mons are standing in, so the band has
+-- to be derived from where they landed rather than from a constant -- and it
+-- has to hold BOTH, which a band narrower than the gap between them would
+-- not.
+local BattleDOF = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattleDOF")
+local focusY, band, range = BattleDOF.bandFor(96, 56, 144)
+T.check(math.abs(focusY - 76 / 144) < 1e-9,
+  "the band centres between the two marks")
+T.check(focusY - band < 56 / 144 and focusY + band > 96 / 144,
+  "and is wide enough that both of them are inside it")
+T.check(range > 0, "with a ramp out of it, so the band edge has no seam")
+local wide = select(2, BattleDOF.bandFor(120, 30, 144))
+T.check(wide > band, "marks further apart hold a deeper slab in focus")
 
 Pipelines.reset()
 run.release()

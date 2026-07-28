@@ -77,6 +77,13 @@ local TiltShift = V.require("TiltShift")
 local ChunkMesher = V.require("ChunkMesher")
 local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
+local OverworldBattle = V.require("OverworldBattle")
+
+-- Forward declaration: the voxel pipeline's update hook (registered below)
+-- calls this, and it is defined further down with the settings it drives.
+-- Declared rather than left global -- a mod writing to _G would leak into
+-- every other mod's namespace.
+local applyFull
 
 -- The last VOID FILL the terrain was meshed under; see the update hook.
 -- The scene canvas's size, in FRAMEBUFFER PIXELS.
@@ -144,7 +151,21 @@ mod.content.render_pipelines:register("voxel", {
   -- pump slice -- so stepping out of a door lands on terrain that is
   -- already there instead of a flat flash.
   update = function(dt, level)
+    -- FULL is a preset, so it is applied ON THE PRESS rather than held every
+    -- frame: it SETS the other rows and then leaves them alone. Holding them
+    -- would make the zoom keys and the wheel dead while the mode was on, and
+    -- would fight anyone who changed one deliberately.
+    applyFull(level)
     Voxel.update(dt, level)
+    -- The overworld battle rides this hook rather than owning a pipeline of
+    -- its own, because it owns no pass of the FRAME: it draws under a battle
+    -- screen the engine composites, which is not a stage the registry has.
+    -- What it needs is a tick that keeps running once the overworld stops
+    -- being the top state, and this is one -- Game:update calls
+    -- Pipelines.update unconditionally, so it survives the transition wipe
+    -- and the whole battle. Ahead of the active() gate below, because a 3D
+    -- battle does not require the free-roam mode to be switched on.
+    OverworldBattle.update(dt)
     -- VOID FILL picks the block the border ring is made of, and in this
     -- mode that ring is BAKED INTO THE MESH rather than drawn each frame.
     -- So the option has to reach the cache or nothing happens on screen
@@ -186,6 +207,7 @@ mod.content.render_pipelines:register("voxel", {
 
   invalidate = function()
     Voxel3D.invalidate()
+    OverworldBattle.invalidate()
     ChunkMesher.invalidate()   -- no map id = every cached mesh
   end,
 })
@@ -222,10 +244,53 @@ mod.content.render_pipelines:register("tiltshift", {
 -- instead -- see ModSetting for where they persist and how the two rows
 -- each ends up on stay in step.
 
+-- ------- the FULL preset
+--
+-- Everything the mode wants switched to at once. Applied when the VOXEL row
+-- ARRIVES at FULL and not again, so the player can still move the camera or
+-- the zoom afterwards -- it is a starting point, not a lock.
+--
+-- Leaving FULL deliberately does NOT undo any of it. A preset that reverted
+-- would throw away whatever the player had changed since, and "put it back
+-- how it was" is not a thing this can know.
+local fullWas = nil
+
+applyFull = function(level)
+  local isFull = Voxel.isFull(level)
+  local was = fullWas
+  fullWas = isFull
+  if not isFull or was == true or was == nil then return end
+
+  local Game = require("src.core.Game")
+  local Pipelines = require("src.render.Pipelines")
+  local Zoom = require("src.render.Zoom")
+  local opts = Game.save and Game.save.options
+  if not opts then return end
+
+  -- the miniature blur at its strongest: FULL is the diorama look, and the
+  -- tilt-shift is most of what makes it read as a model
+  Pipelines.setLevel("tiltshift", Pipelines.maxLevel("tiltshift"))
+  Pipelines.syncOptions(opts)
+  -- the horizon flat. The curve bends the world away from a walking player,
+  -- which fights a fixed diorama framing
+  WorldCurve.setting:setIndex(1, Game)
+  -- and the view fitted to the window
+  opts.zoom = 0
+  Zoom.applyOptions(opts)
+  -- battles on the map too: FULL means the whole mode, and a fight is where
+  -- half of it is spent. Set rather than forced -- the row is gone from the
+  -- menu while FULL is on, but a save that already had it off gets it on.
+  OverworldBattle.setting:setIndex(1, Game)
+  if Game.writeOptions then pcall(Game.writeOptions, Game) end
+end
+
 local SETTINGS = {
   { VoxelGrid.setting, "One-pixel wireframe along every voxel edge." },
   { WorldCurve.setting,
     "Bend the world down over the horizon, Animal Crossing style." },
+  { OverworldBattle.setting,
+    "Fight on the map: the battle draws over the nearest clear ground, "
+    .. "shot over the shoulder with a slow parallax drift." },
 }
 
 local schema = {}
@@ -236,17 +301,18 @@ mod.options:define(schema)
 
 -- ------- this mod's hotkeys
 --
---   3  VOXEL    cycle the camera ladder      (was 6)
+--   3  VOXEL    cycle the camera ladder      (was 6; skips FULL)
 --   5  V-GRID   toggle the wireframe         (new)
 --   6  T-SHIFT  cycle the blur ladder        (was 9)
 --   7  V-CURVE  cycle the horizon bend       (new)
+--   8  3D-BTL   toggle overworld battles     (new)
 --
 -- Only 6 arrives by the documented route. Game:keypressed answers the
 -- engine's own display keys FIRST and returns -- 2 COLORS, 3 TILT, 4 ZOOM,
 -- 5 GBC FX -- and only then offers the key to Pipelines.hotkey, expressly
 -- so "a pipeline can never shadow one" (Schemas, render_pipelines.hotkey).
--- 3 and 5 are two of those, and 7 belongs to a pair of plain mod settings
--- that own no pass and so have no registry to claim a key from at all.
+-- 3 and 5 are two of those, and 7 and 8 belong to plain mod settings that
+-- own no pass and so have no registry to claim a key from at all.
 --
 -- So this wraps Game:keypressed. It is the invasive option and it is the
 -- only one: polling the keyboard in update() would fire alongside the
@@ -268,6 +334,7 @@ local HOTKEYS = {
   ["6"] = "pipeline",           -- tiltshift, likewise
   ["5"] = VoxelGrid.setting,
   ["7"] = WorldCurve.setting,
+  ["8"] = OverworldBattle.setting,
 }
 
 do
@@ -283,7 +350,20 @@ do
     -- render mode. Only free-roam presses are ours to take.
     if claim and not (top and top.onKeyPressed) then
       if claim == "pipeline" then
-        if Pipelines.hotkey(key, top, self.overworld) then
+        -- 3 walks the ANGLE rungs and steps over FULL (Voxel.HOTKEY_ORDER),
+        -- so the registry's plain "advance one and wrap" is not what it
+        -- wants; 6 still is. The gate is the registry's own either way.
+        local stepped = false
+        if key == "3" then
+          if Pipelines.canToggle("voxel", top, self.overworld) then
+            Pipelines.setLevel("voxel",
+              Voxel.nextHotkeyLevel(Pipelines.level("voxel")))
+            stepped = true
+          end
+        else
+          stepped = Pipelines.hotkey(key, top, self.overworld) and true
+        end
+        if stepped then
           Pipelines.syncOptions(self.save.options)
           -- 3 is the key that used to turn TILT on and sits next to the one
           -- that used to turn GBC FX on, and this mod has taken both away.
@@ -304,10 +384,14 @@ do
           return
         end
       elseif Pipelines.canToggle("voxel", top, self.overworld) then
-        -- Both settings parameterise the voxel pass, so they answer to the
-        -- same free-roam gate it does -- borrowed from the registry rather
-        -- than restated, so a press mid-warp or mid-cutscene is refused for
-        -- the wireframe exactly when it would be for the mode itself.
+        -- All three answer to the voxel pass's own free-roam gate --
+        -- borrowed from the registry rather than restated, so a press
+        -- mid-warp or mid-cutscene is refused for the wireframe exactly when
+        -- it would be for the mode itself. Two of them parameterise that
+        -- pass; the third (3D-BTL) decides what a battle is drawn over, and
+        -- wants the same gate for a different reason: the answer is read
+        -- when the fight starts, so flipping it from inside one would be a
+        -- switch that appeared to do nothing.
         claim:cycle(self)
         return
       end
@@ -316,15 +400,54 @@ do
   end
 end
 
+-- ------- the mode's rows, kept together
+--
+-- The engine splices a pipeline's row in beside TILT, because a display mode
+-- belongs with the other display modes; a mod's own ui.options.rows
+-- additions land at the END of the list. That left this mod's four rows in
+-- two places with unrelated engine rows between them, which reads as two
+-- unrelated features rather than one mode with settings.
+--
+-- So the plain settings are inserted directly after the last of this mod's
+-- PIPELINE rows instead of appended. Nothing else moves: the block lands
+-- where the engine already decided display modes go.
+local function insertGrouped(out, extra)
+  local anchor = nil
+  for i, row in ipairs(out) do
+    local id = type(row) == "table" and row.id
+    if id == "pipeline:voxel" or id == "pipeline:tiltshift" then anchor = i end
+  end
+  if not anchor then
+    for _, row in ipairs(extra) do out[#out + 1] = row end
+    return out
+  end
+  for i, row in ipairs(extra) do table.insert(out, anchor + i, row) end
+  return out
+end
+
+-- FULL owns every one of those settings, so while it is selected they are
+-- taken off the menu rather than left to be changed under it -- including
+-- T-SHIFT, which is a pipeline row the engine put there. A row that no
+-- longer decides anything is worse than no row.
+local function dropRow(out, id)
+  for i = #out, 1, -1 do
+    if type(out[i]) == "table" and out[i].id == id then table.remove(out, i) end
+  end
+  return out
+end
+
 -- call next() first and decorate what comes back, so every other mod's
 -- rows survive this one
 mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   local out = next(game, rows)
   if type(out) ~= "table" then return out end
-  for _, entry in ipairs(SETTINGS) do
-    out[#out + 1] = entry[1]:row()
+  local Pipelines = require("src.render.Pipelines")
+  if Voxel.isFull(Pipelines.level("voxel")) then
+    return dropRow(out, "pipeline:tiltshift")
   end
-  return out
+  local extra = {}
+  for _, entry in ipairs(SETTINGS) do extra[#extra + 1] = entry[1]:row() end
+  return insertGrouped(out, extra)
 end)
 
 -- The mod manager writes and persists on its own, so the only thing left
@@ -416,7 +539,88 @@ mod.events:on("map.reloaded", function(payload)
   if mapId then ChunkMesher.invalidate(mapId) end
 end)
 
-mod.exports.version = "1.0.6"
+-- ------- FULL takes rows off the menu, so the menu has to notice
+--
+-- OptionsMenu builds its row list ONCE, when it is opened, and then reads
+-- that list every frame. So stepping the VOXEL row onto or off FULL changed
+-- which rows the hook would return but not which rows were on screen -- the
+-- settings FULL owns stayed visible until the menu was closed and reopened,
+-- and a player who stepped off FULL could not see the rows come back.
+--
+-- Rebuilt in place, and only on a step that crosses FULL: every other rung
+-- returns the same list, and rebuilding on all of them would rerun every
+-- mod's ui.options.rows hook once per keypress. The cursor is clamped rather
+-- than reset, so it stays on the VOXEL row it was just used on instead of
+-- jumping to the top when the list below it shortens.
+do
+  local OptionsMenu = require("src.ui.OptionsMenu")
+  if not OptionsMenu.dramaticShapeFullHook then
+    local Pipelines = require("src.render.Pipelines")
+    local inner = OptionsMenu.update
+
+    function OptionsMenu:update(dt)
+      local before = Pipelines.level("voxel")
+      inner(self, dt)
+      local after = Pipelines.level("voxel")
+      if after ~= before
+         and (Voxel.isFull(before) or Voxel.isFull(after)) then
+        local rebuilt = OptionsMenu.new(self.game)
+        self.rows = rebuilt.rows
+        local cancel = #self.rows + 1
+        if (self.index or 1) > cancel then self.index = cancel end
+      end
+    end
+
+    OptionsMenu.dramaticShapeFullHook = true
+  end
+end
+
+-- ------- battles on the map
+--
+-- The wraps this needs -- OverworldState:pushBattle, BattleState:draw and
+-- BattleState:drawHUDs -- all live in lib/OverworldBattle.lua, which is
+-- where the reasoning for each one is written down. Installed once, here,
+-- so this file keeps naming every engine seam the mod touches.
+OverworldBattle.install()
+
+-- The overworld's own pushBattle is the choke point for a wild encounter or
+-- a trainer, and it is wrapped. A battle that arrives some other way -- a
+-- link battle, a script pushing a BattleState directly -- reaches this
+-- instead, which stages the arena from wherever the player is standing.
+-- Nothing visible is lost by being late: the cull only has to beat the
+-- battle screen, and the wipe those battles skip is where it would have
+-- shown.
+mod.events:on("battle.started", function(payload)
+  OverworldBattle.ensure(payload and payload.battle)
+end)
+
+-- Both mons face the camera, so the player's side wants its FRONT pic where
+-- the battle screen would have used the back one. The engine's own
+-- pokemon.sprite hook is the seam for exactly this: it is asked for every
+-- battle pic with the side it is resolving, so swapping one side's answer
+-- needs no battle code at all -- and every path that builds a battler goes
+-- through it, including a Transform mid-fight.
+--
+-- next() first, so a sprite-replacing mod loaded before this one still gets
+-- the last word on WHICH art is used; this only changes which SIDE is asked
+-- for.
+mod.hooks:wrap("pokemon.sprite", function(next, path, ctx)
+  local out = next(path, ctx)
+  if not (ctx and ctx.kind == "battle" and ctx.side == "back") then
+    return out
+  end
+  if not OverworldBattle.wantsFront() then return out end
+  local def = ctx.data and ctx.data.pokemon and ctx.data.pokemon[ctx.species]
+  return (def and def.spriteFront) or out
+end)
+
+-- Every ending path emits this, including a battle skipped before it drew,
+-- so this is where the map's cast comes back.
+mod.events:on("battle.ended", function()
+  OverworldBattle.finish()
+end)
+
+mod.exports.version = "1.2.0"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
 -- camera without reaching into this mod's file layout
 mod.exports.lib = V
