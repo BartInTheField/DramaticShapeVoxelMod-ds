@@ -232,7 +232,15 @@ local SHADER = [[
 -- Each entry is nil = untried, false = unavailable.
 local shaders = { [false] = nil, [true] = nil }
 local activeShader = nil      -- the variant this pass bound
-local canvas, canvasW, canvasH = nil, 0, 0
+
+-- Scene canvases, one per NAMED SLOT. There are exactly two callers and
+-- they want different sizes -- the free-roam pass renders at the window's
+-- pixel dimensions, the overworld battle at the GB's 160x144 -- and a
+-- single cached canvas made every battle entry and exit reallocate one.
+-- A slot reallocates only when its OWN size changes, which is a window
+-- resize, so the pair is stable for a session.
+local slots = {}
+local canvas, canvasW, canvasH = nil, 0, 0   -- the slot this pass bound
 local active = false
 
 local IDENTITY = Mat4.identity()
@@ -312,9 +320,44 @@ end
 
 -- ---------------------------------------------------------------- camera --
 
+-- An explicit camera, replacing the orbit below for as long as it is set:
+-- { eye = {x,y,z}, focus = {x,y,z}, fov = radians, curve = k or nil }.
+--
+-- The orbit is the free-roam camera and it is described entirely by ONE
+-- number, the pitch, because that is all a camera following the player over
+-- their own map ever needs. A staged shot -- the overworld battle's
+-- over-the-shoulder rig (see BattleCam) -- is a placed camera: it has a yaw,
+-- it does not sit above its focus, and its framing comes from the arena
+-- rather than from the view size. Rather than widen the orbit into
+-- something that could express both and be the wrong shape for each, a
+-- caller with a camera of its own simply hands it over.
+--
+-- Everything downstream is unchanged by this: the shader uniforms, project()
+-- and the overlay all read Voxel3D.vp / Voxel3D.eye, which are set the same
+-- way either way.
+Voxel3D.camera = nil
+
 -- View and projection for a `vw` x `vh` world-pixel view centred on
 -- (cx, cy) in world pixels. Returns the combined matrix.
 function Voxel3D.viewProjection(cx, cy, vw, vh)
+  local cam = Voxel3D.camera
+  if cam then
+    local eye, focus = cam.eye, cam.focus
+    Voxel3D.eye = eye
+    local dx = eye[1] - focus[1]
+    local dy = eye[2] - focus[2]
+    local dz = eye[3] - focus[3]
+    local dist = math.max(1, math.sqrt(dx * dx + dy * dy + dz * dz))
+    local proj = Mat4.perspective(cam.fov, vw / vh,
+                                  math.max(1, dist * 0.05), dist * 4 + 4096)
+    -- the same clip-space Y flip the orbit needs, for the same reason: we
+    -- bypass LOVE's transform_projection and canvas coordinates run Y down
+    proj = Mat4.mul(Mat4.scale(1, -1, 1), proj)
+    -- world up, so the horizon stays level -- a placed camera that rolled
+    -- with its own pitch would tip the whole arena
+    return Mat4.mul(proj, Mat4.lookAt(eye, focus, { 0, 1, 0 }))
+  end
+
   local a = Voxel.angle
   local focal = Voxel.FOCAL
   local dist = focal * vh
@@ -351,7 +394,9 @@ end
 -- `sky` is an optional {r, g, b, a} in 0..1 to clear the void to, for the
 -- pitch where the horizon is in frame (VoxelScene.skyFor). nil leaves the
 -- void transparent, which is what every rung below it wants.
-function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky)
+-- `slot` names which cached canvas to render into (see `slots` above);
+-- omitted is the free-roam world pass.
+function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
   -- the wireframe variant when the player has it on AND it built; either
   -- answer falls through to the plain scene rather than to no scene
   local grid = VoxelGrid.enabled()
@@ -360,12 +405,19 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky)
     grid, sh = false, Voxel3D.shader()
   end
   if not sh then return false end
-  if not canvas or canvasW ~= w or canvasH ~= h then
+  local name = slot or "world"
+  local held = slots[name]
+  if not (held and held.w == w and held.h == h) then
     local ok, c = pcall(love.graphics.newCanvas, w, h)
     if not ok then return false end
     c:setFilter("nearest", "nearest")
-    canvas, canvasW, canvasH = c, w, h
+    if held and held.canvas and held.canvas.release then
+      pcall(held.canvas.release, held.canvas)
+    end
+    held = { canvas = c, w = w, h = h }
+    slots[name] = held
   end
+  canvas, canvasW, canvasH = held.canvas, w, h
   -- a depth buffer is what makes occlusion real: walk behind a building and
   -- the building wins, with no y-sorting anywhere
   local ok = pcall(love.graphics.setCanvas,
@@ -411,8 +463,10 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky)
   pcall(sh.send, sh, "ghost", 0)
   pcall(sh.send, sh, "ghostColor", Voxel3D.GHOST_COLOR)
   -- the curved world bends about the camera's focus, so the horizon keeps
-  -- a fixed distance ahead of the player rather than sitting on the map
-  Voxel3D.curveK = WorldCurve.k(vh)
+  -- a fixed distance ahead of the player rather than sitting on the map.
+  -- A placed camera may decline it outright (Voxel3D.camera.curve = 0).
+  local placed = Voxel3D.camera
+  Voxel3D.curveK = (placed and placed.curve) or WorldCurve.k(vh)
   Voxel3D.curveX, Voxel3D.curveZ = cx, cy
   pcall(sh.send, sh, "curve", { cx, cy, Voxel3D.curveK })
   -- clip w at the focus point, the reference depth project() reports scale
@@ -658,6 +712,12 @@ end
 
 -- Drop the GPU objects (window resize, hot reload).
 function Voxel3D.invalidate()
+  for name, held in pairs(slots) do
+    if held.canvas and held.canvas.release then
+      pcall(held.canvas.release, held.canvas)
+    end
+    slots[name] = nil
+  end
   canvas, canvasW, canvasH = nil, 0, 0
   ShadowMap.invalidate()
 end

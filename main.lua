@@ -77,6 +77,7 @@ local TiltShift = V.require("TiltShift")
 local ChunkMesher = V.require("ChunkMesher")
 local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
+local OverworldBattle = V.require("OverworldBattle")
 
 -- The last VOID FILL the terrain was meshed under; see the update hook.
 -- The scene canvas's size, in FRAMEBUFFER PIXELS.
@@ -145,6 +146,15 @@ mod.content.render_pipelines:register("voxel", {
   -- already there instead of a flat flash.
   update = function(dt, level)
     Voxel.update(dt, level)
+    -- The overworld battle rides this hook rather than owning a pipeline of
+    -- its own, because it owns no pass of the FRAME: it draws under a battle
+    -- screen the engine composites, which is not a stage the registry has.
+    -- What it needs is a tick that keeps running once the overworld stops
+    -- being the top state, and this is one -- Game:update calls
+    -- Pipelines.update unconditionally, so it survives the transition wipe
+    -- and the whole battle. Ahead of the active() gate below, because a 3D
+    -- battle does not require the free-roam mode to be switched on.
+    OverworldBattle.update(dt)
     -- VOID FILL picks the block the border ring is made of, and in this
     -- mode that ring is BAKED INTO THE MESH rather than drawn each frame.
     -- So the option has to reach the cache or nothing happens on screen
@@ -186,6 +196,7 @@ mod.content.render_pipelines:register("voxel", {
 
   invalidate = function()
     Voxel3D.invalidate()
+    OverworldBattle.invalidate()
     ChunkMesher.invalidate()   -- no map id = every cached mesh
   end,
 })
@@ -226,6 +237,9 @@ local SETTINGS = {
   { VoxelGrid.setting, "One-pixel wireframe along every voxel edge." },
   { WorldCurve.setting,
     "Bend the world down over the horizon, Animal Crossing style." },
+  { OverworldBattle.setting,
+    "Fight on the map: the battle draws over the nearest clear ground, "
+    .. "shot over the shoulder with a slow parallax drift." },
 }
 
 local schema = {}
@@ -240,13 +254,14 @@ mod.options:define(schema)
 --   5  V-GRID   toggle the wireframe         (new)
 --   6  T-SHIFT  cycle the blur ladder        (was 9)
 --   7  V-CURVE  cycle the horizon bend       (new)
+--   8  3D-BTL   toggle overworld battles     (new)
 --
 -- Only 6 arrives by the documented route. Game:keypressed answers the
 -- engine's own display keys FIRST and returns -- 2 COLORS, 3 TILT, 4 ZOOM,
 -- 5 GBC FX -- and only then offers the key to Pipelines.hotkey, expressly
 -- so "a pipeline can never shadow one" (Schemas, render_pipelines.hotkey).
--- 3 and 5 are two of those, and 7 belongs to a pair of plain mod settings
--- that own no pass and so have no registry to claim a key from at all.
+-- 3 and 5 are two of those, and 7 and 8 belong to plain mod settings that
+-- own no pass and so have no registry to claim a key from at all.
 --
 -- So this wraps Game:keypressed. It is the invasive option and it is the
 -- only one: polling the keyboard in update() would fire alongside the
@@ -268,6 +283,7 @@ local HOTKEYS = {
   ["6"] = "pipeline",           -- tiltshift, likewise
   ["5"] = VoxelGrid.setting,
   ["7"] = WorldCurve.setting,
+  ["8"] = OverworldBattle.setting,
 }
 
 do
@@ -304,10 +320,14 @@ do
           return
         end
       elseif Pipelines.canToggle("voxel", top, self.overworld) then
-        -- Both settings parameterise the voxel pass, so they answer to the
-        -- same free-roam gate it does -- borrowed from the registry rather
-        -- than restated, so a press mid-warp or mid-cutscene is refused for
-        -- the wireframe exactly when it would be for the mode itself.
+        -- All three answer to the voxel pass's own free-roam gate --
+        -- borrowed from the registry rather than restated, so a press
+        -- mid-warp or mid-cutscene is refused for the wireframe exactly when
+        -- it would be for the mode itself. Two of them parameterise that
+        -- pass; the third (3D-BTL) decides what a battle is drawn over, and
+        -- wants the same gate for a different reason: the answer is read
+        -- when the fight starts, so flipping it from inside one would be a
+        -- switch that appeared to do nothing.
         claim:cycle(self)
         return
       end
@@ -416,7 +436,52 @@ mod.events:on("map.reloaded", function(payload)
   if mapId then ChunkMesher.invalidate(mapId) end
 end)
 
-mod.exports.version = "1.0.6"
+-- ------- battles on the map
+--
+-- The wraps this needs -- OverworldState:pushBattle, BattleState:draw and
+-- BattleState:drawHUDs -- all live in lib/OverworldBattle.lua, which is
+-- where the reasoning for each one is written down. Installed once, here,
+-- so this file keeps naming every engine seam the mod touches.
+OverworldBattle.install()
+
+-- The overworld's own pushBattle is the choke point for a wild encounter or
+-- a trainer, and it is wrapped. A battle that arrives some other way -- a
+-- link battle, a script pushing a BattleState directly -- reaches this
+-- instead, which stages the arena from wherever the player is standing.
+-- Nothing visible is lost by being late: the cull only has to beat the
+-- battle screen, and the wipe those battles skip is where it would have
+-- shown.
+mod.events:on("battle.started", function(payload)
+  OverworldBattle.ensure(payload and payload.battle)
+end)
+
+-- Both mons face the camera, so the player's side wants its FRONT pic where
+-- the battle screen would have used the back one. The engine's own
+-- pokemon.sprite hook is the seam for exactly this: it is asked for every
+-- battle pic with the side it is resolving, so swapping one side's answer
+-- needs no battle code at all -- and every path that builds a battler goes
+-- through it, including a Transform mid-fight.
+--
+-- next() first, so a sprite-replacing mod loaded before this one still gets
+-- the last word on WHICH art is used; this only changes which SIDE is asked
+-- for.
+mod.hooks:wrap("pokemon.sprite", function(next, path, ctx)
+  local out = next(path, ctx)
+  if not (ctx and ctx.kind == "battle" and ctx.side == "back") then
+    return out
+  end
+  if not OverworldBattle.wantsFront() then return out end
+  local def = ctx.data and ctx.data.pokemon and ctx.data.pokemon[ctx.species]
+  return (def and def.spriteFront) or out
+end)
+
+-- Every ending path emits this, including a battle skipped before it drew,
+-- so this is where the map's cast comes back.
+mod.events:on("battle.ended", function()
+  OverworldBattle.finish()
+end)
+
+mod.exports.version = "1.1.0"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
 -- camera without reaching into this mod's file layout
 mod.exports.lib = V
