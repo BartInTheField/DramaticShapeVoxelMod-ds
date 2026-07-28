@@ -278,10 +278,16 @@ end
 -- yet (the terrain mesh is still building, the driver has no depth support).
 -- nil is not a failure: the caller simply leaves the battle screen as the
 -- engine drew it for that frame.
--- White, for the hit flash. The shader replaces the card's colour outright
--- rather than multiplying it, so this is the sprite's own silhouette turned
--- solid white -- not a lightened picture of itself.
+-- White, for the hit flash, and how far toward it the card goes.
+--
+-- The shader replaces the card's colour rather than multiplying it, so at
+-- full strength this is the sprite turned into a solid white silhouette --
+-- which is what the effect is on a flat GB screen and far too much on a
+-- sprite standing in a lit world. Held well short of 1, the mon's own
+-- shading still reads through the flash: it looks struck rather than
+-- deleted.
 BattleScene.FLASH_COLOR = { 1, 1, 1 }
+BattleScene.FLASH_STRENGTH = 0.5
 
 function BattleScene.render(state, arena, textures, token)
   if not (state and state.map and arena) then return nil end
@@ -369,7 +375,9 @@ function BattleScene.render(state, arena, textures, token)
     -- (see OverworldBattle) and put back HERE, on the two things it was ever
     -- about: the mons themselves go solid white for those frames.
     local flashing = textures and textures.flash
-    if flashing then Voxel3D.flatten(BattleScene.FLASH_COLOR) end
+    if flashing then
+      Voxel3D.flatten(BattleScene.FLASH_COLOR, BattleScene.FLASH_STRENGTH)
+    end
     for _, card in ipairs(monCards(arena, groundY, textures)) do
       Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model,
                    BattleBillboard.PULL)

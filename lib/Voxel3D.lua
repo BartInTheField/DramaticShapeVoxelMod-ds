@@ -544,12 +544,15 @@ end
 -- simply wants to come out one colour, which is what a hit flash on a sprite
 -- is. beginScene resets the uniform every frame, so a pass that forgets to
 -- clear it cannot leak into the next one.
-function Voxel3D.flatten(color)
+-- `amount` is how far toward that colour, 0..1; omitted is all the way.
+-- Anything short of 1 leaves the sprite's own shading showing through, which
+-- is the difference between a hit flash and a white cut-out.
+function Voxel3D.flatten(color, amount)
   if not (active and activeShader) then return end
   local sh = activeShader
   if color then
     pcall(sh.send, sh, "ghostColor", color)
-    pcall(sh.send, sh, "ghost", 1)
+    pcall(sh.send, sh, "ghost", math.max(0, math.min(1, amount or 1)))
   else
     pcall(sh.send, sh, "ghost", 0)
   end

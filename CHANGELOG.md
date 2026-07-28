@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+
+- A move that shakes the screen no longer whites out the frame. The zone pass
+  fills each zone with its blank colour before drawing the shifted copy -- the
+  hardware showing empty BG in the strip the shake vacated -- and a shake
+  program alternates offset and no-offset frames, so over the map that read as
+  the whole battle screen, menu box included, flashing white a few times a
+  second. The fill is dropped while a battle is staged on the map; the shake
+  itself still moves the HUD.
+
 ## 1.2.0
 
 ### Added
