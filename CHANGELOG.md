@@ -5,7 +5,7 @@
 ### Added
 
 - **A `FULL` rung on the VOXEL row**, directly after `OFF`. One choice that
-  puts the whole mode in its intended state -- the 50-degree camera, the
+  puts the whole mode in its intended state -- the 35-degree camera, the
   miniature blur at maximum, the horizon flat, the view fitted, and battles
   on the map -- rather than making a player assemble it from four rows.
 
@@ -29,9 +29,9 @@
   with nothing on screen saying a keypress had done it. `FULL` stays on the
   OPTIONS row, where a preset that changes other rows belongs.
 
-  A press FROM `FULL` goes to `75`. `FULL` is already the 50-degree camera,
+  A press FROM `FULL` goes to `50`. `FULL` is already the 35-degree camera,
   so stepping to the rung of that name would look like the key had done
-  nothing.
+  nothing. Matched by angle, so it follows `FULL` if that is ever retuned.
 
 - **The mode's four options are one block in the menu.** The engine splices
   a pipeline row in beside TILT and lands a mod's own rows at the end of the
