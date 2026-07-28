@@ -29,10 +29,10 @@ local Voxel = {}
 -- it rather than assembling it from four rows. It sits directly after OFF
 -- because that is the order those two get used in.
 --
--- Its ANGLE is 50 degrees, the same as the rung of that name. The duplicate
+-- Its ANGLE is 35 degrees, the same as the rung of that name. The duplicate
 -- in the table is deliberate: the ladder is a list of what each rung LOOKS
 -- like, and two rungs may look the same while meaning different things.
-Voxel.ANGLES_DEG = { 0, 50, 15, 35, 50, 75 }
+Voxel.ANGLES_DEG = { 0, 35, 15, 35, 50, 75 }
 Voxel.ANGLE_LABELS = { "OFF", "FULL", "15", "35", "50", "75" }
 Voxel.MAX_LEVEL = #Voxel.ANGLES_DEG - 1
 
@@ -56,9 +56,10 @@ Voxel.HOTKEY_ORDER = { 0, 2, 3, 4, 5 }   -- OFF, 15, 35, 50, 75
 -- The rung a press moves to from `level`.
 --
 -- A level that is not on the key's path -- FULL, reached from the menu --
--- steps on from whichever rung shows the SAME camera it does. FULL is 50
--- degrees, so a press from it goes to 75 rather than back to 50, and the key
--- never appears to do nothing.
+-- steps on from whichever rung shows the SAME camera it does. FULL is 35
+-- degrees, so a press from it goes to 50 rather than back to 35, and the key
+-- never appears to do nothing. Matched by ANGLE rather than by a hardcoded
+-- rung, so retuning FULL moves the key's answer with it.
 function Voxel.nextHotkeyLevel(level)
   level = level or Voxel.level
   local order = Voxel.HOTKEY_ORDER

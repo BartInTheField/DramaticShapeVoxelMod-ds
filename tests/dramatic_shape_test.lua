@@ -840,12 +840,15 @@ end
 T.eq(table.concat(walk, ","), "15,35,50,75,OFF,15",
   "3 walks OFF -> 15 -> 35 -> 50 -> 75 and wraps, never touching FULL")
 
--- FULL is 50 degrees, so a press from it goes ON to 75 rather than back to
--- the rung that shows the same camera -- the key never appears to do nothing
+-- FULL is 35 degrees, so a press from it goes ON to 50 rather than back to
+-- the rung that shows the same camera -- the key never appears to do nothing.
+-- Matched by angle, so this follows FULL if it is ever retuned.
+T.eq(VoxelState.ANGLES_DEG[VoxelState.FULL_LEVEL + 1], 35,
+  "FULL is the 35-degree camera")
 Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
 Game.keypressed(keyGame, "3")
-T.eq(Pipelines.levelLabel("voxel"), "75",
-  "a press from FULL goes to 75, since FULL already IS the 50 camera")
+T.eq(Pipelines.levelLabel("voxel"), "50",
+  "a press from FULL goes to 50, since FULL already IS the 35 camera")
 
 Pipelines.setLevel("voxel", 0)
 Game.keypressed(keyGame, "3")
