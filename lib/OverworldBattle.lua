@@ -340,11 +340,21 @@ local function withoutBackgroundFill(battle, fn)
     if mode == "fill" and x == 0 and y == 0
        and w == BattleScene.GB_W and h == BattleScene.GB_H then
       local r, gr, b, a = g.getColor()
-      if r > 0.99 and gr > 0.99 and b > 0.99 and a > 0.99 then
-        local target = g.getCanvas()
-        if target ~= nil
-           and (target == battle.bgCanvas or target == battle.waveCanvas) then
-          g.clear(0, 0, 0, 0)
+      if r > 0.99 and gr > 0.99 and b > 0.99 then
+        -- Two different full-frame whites, both replaced rather than drawn.
+        --
+        -- OPAQUE is the battle's background, and on the offscreen canvases it
+        -- doubles as their clear, so there it becomes a transparent one.
+        --
+        -- TRANSLUCENT is the hit flash. Over a white field that reads as a
+        -- flash; over a world it whites out the map, the HUD and the text box
+        -- together. BattleScene puts it back on the mons alone.
+        if a > 0.99 then
+          local target = g.getCanvas()
+          if target ~= nil
+             and (target == battle.bgCanvas or target == battle.waveCanvas) then
+            g.clear(0, 0, 0, 0)
+          end
         end
         return
       end
@@ -471,6 +481,18 @@ function OverworldBattle.sideTexture(battle, side)
   return { canvas = canvas, ax = ax, ay = ay, trainer = trainer }
 end
 
+-- Whether the hit flash is showing this frame.
+--
+-- Mirrors BattleState:draw's own test, because the flash is a DRAW-time
+-- decision there (a counter plus the frame parity that makes it flicker) and
+-- there is no seam that reports it. Read-only, so the worst a future engine
+-- change can do is flash on a frame the engine would not have.
+function OverworldBattle.flashing(battle)
+  local fx = battle and battle.fx
+  if not (fx and fx.flash and fx.flash > 0) then return false end
+  return (battle.frame or 0) % 4 < 2
+end
+
 -- Both sides, or nil when neither has anything to show.
 function OverworldBattle.textures(battle)
   if not battle then return nil end
@@ -480,6 +502,7 @@ function OverworldBattle.textures(battle)
   out.enemy = okE and enemy or nil
   out.player = okP and player or nil
   if not (out.enemy or out.player) then return nil end
+  out.flash = OverworldBattle.flashing(battle)
   return out
 end
 

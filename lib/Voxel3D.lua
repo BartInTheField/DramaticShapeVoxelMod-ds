@@ -537,6 +537,24 @@ function Voxel3D.beginGhost()
   end
 end
 
+-- Flatten whatever is drawn next to one solid colour, or nil to stop.
+--
+-- The same `ghost` path the silhouette uses, WITHOUT beginGhost's inverted
+-- depth test and half alpha -- this is for something drawn normally that
+-- simply wants to come out one colour, which is what a hit flash on a sprite
+-- is. beginScene resets the uniform every frame, so a pass that forgets to
+-- clear it cannot leak into the next one.
+function Voxel3D.flatten(color)
+  if not (active and activeShader) then return end
+  local sh = activeShader
+  if color then
+    pcall(sh.send, sh, "ghostColor", color)
+    pcall(sh.send, sh, "ghost", 1)
+  else
+    pcall(sh.send, sh, "ghost", 0)
+  end
+end
+
 function Voxel3D.endGhost()
   if not active then return end
   pcall(love.graphics.setDepthMode, "lequal", true)
