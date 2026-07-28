@@ -291,7 +291,14 @@ function BattleArena.find(map, fromX, fromY, surfing)
       host = (ok and other) or nil
     end
     if shape and host then
-      local grid, gw = openGrid(host, surfing)
+      -- An authored spot is checked with WATER COUNTING AS GROUND, whatever
+      -- the player is doing. The surfing test exists to stop the automatic
+      -- search staging a walker's fight out at sea; an authored entry was
+      -- chosen and looked at by a person, so if it is on water that is the
+      -- point of it -- the surf routes fight in the middle of their own
+      -- ocean rather than on a scrap of beach at the edge of the map. Land
+      -- entries are unaffected: land passes the test either way.
+      local grid, gw = openGrid(host, true)
       if fits(grid, gw, pick.x, pick.y, shape.w, shape.h) then
         local arena = place(shape, pick.x, pick.y)
         arena.map = host

@@ -16,9 +16,11 @@
 --   POKEPORT_DRIVER=mods/DramaticShapeVoxelMod/tests/arena_pick.lua love .
 --
 -- ARENA_FROM / ARENA_COUNT slice the map list so several runs can share the
--- work; ARENA_MAPS=ID,ID,... does an explicit set instead. SHOT_DIR must
--- already exist -- the capture writes with io.open, which does not create
--- directories.
+-- work; ARENA_MAPS=ID,ID,... does an explicit set instead. ARENA_COUNT=0
+-- lists the maps and stops. ARENA_SURF=1 stages the fight out on the water,
+-- centred in the map's biggest body of it, which is what the surf routes
+-- want. SHOT_DIR must already exist -- the capture writes with io.open,
+-- which does not create directories.
 return function(game)
   local U = dofile("tests/drivers/util.lua")
   local DIR = os.getenv("SHOT_DIR") or ".scratchpad/arenas"
@@ -36,6 +38,51 @@ return function(game)
   end
   local Arena = lib.require("BattleArena")
   local Battles = lib.require("OverworldBattle")
+
+  -- ------- staging out on the water
+  --
+  -- A surf route's land is a rim of beach round the edge of the map, so the
+  -- ordinary search always picks the rim and the fight happens on sand at
+  -- the corner of a sea. ARENA_SURF=1 says stage this map afloat: water
+  -- counts as ground, and the search starts from the middle of the map's
+  -- BIGGEST body of water rather than the middle of the map, so the arena
+  -- lands out in the open sea instead of against the first shoreline it
+  -- finds.
+  --
+  -- Biggest body, not all water at once: a map with a lake and an ocean has
+  -- a centroid between them that is on neither, and the arena would be
+  -- pinned to whichever shore that landed nearest.
+  local function waterCentre(map)
+    local w, h = map.widthCells, map.heightCells
+    local seen, best = {}, nil
+    for y0 = 0, h - 1 do
+      for x0 = 0, w - 1 do
+        if not seen[y0 * w + x0] and map:isWaterCell(x0, y0) then
+          -- one connected body, flooded from this cell
+          local stack, n, sx, sy = { { x0, y0 } }, 0, 0, 0
+          seen[y0 * w + x0] = true
+          while #stack > 0 do
+            local cell = table.remove(stack)
+            local cx, cy = cell[1], cell[2]
+            n, sx, sy = n + 1, sx + cx, sy + cy
+            for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+              local nx, ny = cx + d[1], cy + d[2]
+              local key = ny * w + nx
+              if nx >= 0 and ny >= 0 and nx < w and ny < h and not seen[key]
+                 and map:isWaterCell(nx, ny) then
+                seen[key] = true
+                stack[#stack + 1] = { nx, ny }
+              end
+            end
+          end
+          if not best or n > best.n then
+            best = { n = n, x = sx / n, y = sy / n }
+          end
+        end
+      end
+    end
+    return best
+  end
 
   -- Which maps a battle can actually happen on: anything with a wild
   -- encounter table or an object that fights. Everything else -- a shop
@@ -134,9 +181,22 @@ return function(game)
           clear = any and Arena.clearance(any.map or map, any) or false
         end
       end
+      local surf = os.getenv("ARENA_SURF")
+      surf = surf ~= nil and surf ~= "" and surf ~= "0"
       if not any then
-        clear = Arena.search(map, cx, cy, false, true)
-        any = clear or Arena.search(map, cx, cy, false)
+        local ox, oy = cx, cy
+        if surf then
+          local sea = waterCentre(map)
+          if sea then
+            ox, oy = sea.x, sea.y
+            U.log(("SEA    %s: biggest body is %d cells, centre %.1f,%.1f")
+                  :format(id, sea.n, sea.x, sea.y))
+          else
+            U.log("SEA    " .. id .. ": no water on this map")
+          end
+        end
+        clear = Arena.search(map, ox, oy, surf, true)
+        any = clear or Arena.search(map, ox, oy, surf)
       end
       if not any then
         U.log(("NONE %s -- no arena of either shape"):format(id))

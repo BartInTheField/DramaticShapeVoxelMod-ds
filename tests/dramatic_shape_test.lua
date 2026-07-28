@@ -49,11 +49,13 @@ T.eq(defs._owners and defs._owners.voxel, "DRAMATIC_SHAPE",
 
 -- ------- the ladders the engine drives
 
-T.eq(#defs.voxel.levels, 5, "voxel exposes a five-rung ladder")
+T.eq(#defs.voxel.levels, 6, "voxel exposes a six-rung ladder")
 T.eq(defs.voxel.levels[1], "OFF", "rung 0 is OFF")
-T.eq(defs.voxel.levels[5], "75", "the top rung is the 75-degree camera")
-T.eq(Pipelines.maxLevel("voxel"), 4, "the engine reads the ladder height")
-T.eq(Pipelines.levelLabel("voxel", 2), "35", "the engine reads the rung labels")
+T.eq(defs.voxel.levels[2], "FULL",
+  "FULL is the first rung after OFF -- the order those two get used in")
+T.eq(defs.voxel.levels[6], "75", "the top rung is the 75-degree camera")
+T.eq(Pipelines.maxLevel("voxel"), 5, "the engine reads the ladder height")
+T.eq(Pipelines.levelLabel("voxel", 3), "35", "the engine reads the rung labels")
 
 -- ------- gating: inert until switched on, and inert without a GPU
 
@@ -101,7 +103,7 @@ local byLabel = {}
 for _, row in ipairs(rows) do byLabel[row.label] = row end
 T.check(byLabel.VOXEL ~= nil, "the VOXEL row is offered")
 T.check(byLabel["T-SHIFT"] ~= nil, "the T-SHIFT row is offered")
-T.eq(byLabel.VOXEL.value(), "15", "the row renders the current rung's label")
+T.eq(byLabel.VOXEL.value(), "FULL", "the row renders the current rung's label")
 
 -- ------- this mod's own settings
 --
@@ -112,6 +114,95 @@ T.eq(byLabel.VOXEL.value(), "15", "the row renders the current rung's label")
 -- settings page looks.
 
 local Runtime = require("src.mods.Runtime")
+local VoxelState = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelState")
+
+-- ------- FULL is a preset that owns the other rows
+--
+-- While it is selected the settings it drives come OFF the menu -- including
+-- T-SHIFT, which is a pipeline row the engine spliced in. A row that no
+-- longer decides anything is worse than no row.
+Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
+local fullRows = Runtime.call("ui.options.rows", function(_, r) return r end,
+                              { data = Data },
+                              { { id = "tilt" }, { id = "pipeline:voxel" },
+                                { id = "pipeline:tiltshift" } })
+local fullIds = {}
+for _, row in ipairs(fullRows) do fullIds[row.id] = true end
+T.check(fullIds["pipeline:voxel"], "FULL keeps the VOXEL row it lives on")
+T.check(not fullIds["pipeline:tiltshift"],
+  "FULL takes T-SHIFT off the menu -- it owns the blur")
+T.check(not fullIds["DRAMATIC_SHAPE:grid"], "and V-GRID")
+T.check(not fullIds["DRAMATIC_SHAPE:curve"], "and V-CURVE")
+T.check(not fullIds["DRAMATIC_SHAPE:battles"], "and 3D-BTL")
+
+-- ------- and off FULL, the rows come back, grouped with the mode
+--
+-- The engine splices a pipeline row in beside TILT and lands a mod's own
+-- additions at the END of the list, which would leave this mode's four rows
+-- in two places with unrelated rows between them.
+Pipelines.setLevel("voxel", 2)
+local grouped = Runtime.call("ui.options.rows", function(_, r) return r end,
+                             { data = Data },
+                             { { id = "tilt" }, { id = "pipeline:voxel" },
+                               { id = "pipeline:tiltshift" },
+                               { id = "void_fill" } })
+local order = {}
+for i, row in ipairs(grouped) do order[row.id] = i end
+T.check(order["pipeline:tiltshift"] < order["DRAMATIC_SHAPE:grid"],
+  "the mode's settings follow its pipeline rows")
+T.eq(order["DRAMATIC_SHAPE:battles"] - order["pipeline:tiltshift"], 3,
+  "and sit in one unbroken block, not scattered to the end of the list")
+T.check(order["void_fill"] > order["DRAMATIC_SHAPE:battles"],
+  "with the engine's own later rows still after them")
+
+-- ------- the open menu notices when FULL is stepped onto or off
+--
+-- OptionsMenu reads its row list every frame but builds it once, so without
+-- a rebuild the rows FULL owns stay on screen until the menu is reopened --
+-- and stepping OFF FULL never brings them back.
+local OptionsMenu = require("src.ui.OptionsMenu")
+local pressed = {}
+local menuGame = {
+  data = Data,
+  save = { options = { pipelines = {}, modOptions = {} } },
+  mods = { modOptions = {} },
+  input = { wasPressed = function(_, k) return pressed[k] or false end },
+  stack = { pop = function() end },
+  writeOptions = function() end,
+}
+
+Pipelines.setLevel("voxel", 2)
+local menu = OptionsMenu.new(menuGame)
+local function rowIndex(m, id)
+  for i, row in ipairs(m.rows) do if row.id == id then return i end end
+end
+T.check(rowIndex(menu, "DRAMATIC_SHAPE:grid"),
+  "off FULL the menu opens with the mode's settings on it")
+
+-- step the VOXEL row from 15 down to FULL, the way the player would
+menu.index = rowIndex(menu, "pipeline:voxel")
+pressed = { left = true }
+menu:update(0)
+pressed = {}
+T.eq(Pipelines.level("voxel"), 1, "the step landed on FULL")
+T.check(not rowIndex(menu, "DRAMATIC_SHAPE:grid"),
+  "and the rows FULL owns left the OPEN menu at once")
+T.check(not rowIndex(menu, "pipeline:tiltshift"), "T-SHIFT with them")
+T.check(menu.index <= #menu.rows + 1, "the cursor stayed in range")
+
+-- and back off it again
+menu.index = rowIndex(menu, "pipeline:voxel")
+pressed = { right = true }
+menu:update(0)
+pressed = {}
+T.eq(Pipelines.level("voxel"), 2, "the step left FULL")
+T.check(rowIndex(menu, "DRAMATIC_SHAPE:grid"),
+  "and the rows came straight back without reopening the menu")
+T.check(rowIndex(menu, "pipeline:tiltshift"), "T-SHIFT too")
+
+-- level 2 is the "15" rung: any rung that is not FULL, so the settings the
+-- preset owns are back on the menu
+Pipelines.setLevel("voxel", 2)
 local hookedRows = Runtime.call("ui.options.rows", function(_, r) return r end,
                                { data = Data }, { { id = "text_speed" } })
 T.eq(#hookedRows, 4, "the options hook added a row per setting")
@@ -734,10 +825,33 @@ keyGame = {
 local VoxelGrid = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelGrid")
 local Curve = run.loader.exports.DRAMATIC_SHAPE.lib.require("WorldCurve")
 
+-- ------- 3 walks the ANGLE rungs and steps over FULL
+--
+-- The key is a display-mode cycler: it should change the camera and nothing
+-- else. FULL reaches in and rewrites four other settings, so landing on it
+-- mid-walk would silently turn the blur to maximum and flatten the horizon
+-- with nothing on screen saying a keypress had done it.
+Pipelines.setLevel("voxel", 0)
+local walk = {}
+for _ = 1, 6 do
+  Game.keypressed(keyGame, "3")
+  walk[#walk + 1] = Pipelines.levelLabel("voxel")
+end
+T.eq(table.concat(walk, ","), "15,35,50,75,OFF,15",
+  "3 walks OFF -> 15 -> 35 -> 50 -> 75 and wraps, never touching FULL")
+
+-- FULL is 50 degrees, so a press from it goes ON to 75 rather than back to
+-- the rung that shows the same camera -- the key never appears to do nothing
+Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
 Game.keypressed(keyGame, "3")
-T.eq(Pipelines.level("voxel"), 1, "3 cycles the voxel camera ladder")
+T.eq(Pipelines.levelLabel("voxel"), "75",
+  "a press from FULL goes to 75, since FULL already IS the 50 camera")
+
+Pipelines.setLevel("voxel", 0)
 Game.keypressed(keyGame, "3")
-T.eq(Pipelines.level("voxel"), 2, "and keeps climbing it")
+T.eq(Pipelines.level("voxel"), 2, "3 cycles the voxel camera ladder")
+Game.keypressed(keyGame, "3")
+T.eq(Pipelines.level("voxel"), 3, "and keeps climbing it")
 
 Game.keypressed(keyGame, "6")
 T.eq(Pipelines.level("tiltshift"), 1, "6 cycles the tilt-shift blur")
@@ -780,7 +894,8 @@ T.eq(GBCFX.level, 0, "and on the live renderer")
 -- TILT with or without us. Park the ladder on its top rung and turn both
 -- back on, so the single press under test is the one that wraps to OFF --
 -- where nothing else is going to clear them.
-Pipelines.setLevel("voxel", Pipelines.maxLevel("voxel"))
+-- 5 is the "75" rung, the last one the key walks before it wraps to OFF
+Pipelines.setLevel("voxel", 5)
 Tilt.setLevel(3)
 GBCFX.setLevel(4)
 keyGame.save.options.tilt = 3
@@ -1255,6 +1370,26 @@ T.check(math.abs(sx - px) < 0.2,
 -- drop the horizon away from a walking player, and here it would tip the
 -- arena floor out from under the two mons pinned to it
 T.eq(rig.curve, 0, "the battle camera switches the world curve off")
+
+-- ------- the wireframe is forced on in a battle
+--
+-- A fight is a staged shot rather than the world being walked through, so it
+-- always wears the seams. The player's own V-GRID row must not be touched by
+-- that -- an override, not a write, or switching the mode off mid-battle
+-- would quietly rewrite a setting they chose.
+local Grid = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelGrid")
+Grid.override = nil
+local rowWas = Grid.setting:get()
+T.eq(Grid.enabled(), rowWas and true or false,
+  "with no override the wireframe follows the row")
+Grid.override = true
+T.eq(Grid.enabled(), true, "an override forces it on")
+T.eq(Grid.setting:get(), rowWas, "and leaves the player's row alone")
+Grid.override = false
+T.eq(Grid.enabled(), false, "an override can force it off too")
+Grid.override = nil
+T.eq(Grid.enabled(), rowWas and true or false,
+  "and clearing it hands the answer back to the row")
 
 -- ------- the depth of field is measured off the two marks
 --

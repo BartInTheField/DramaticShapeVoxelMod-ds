@@ -139,8 +139,10 @@ return {
 
   -- ------- the remaining routes
   ["ROUTE_19"] = { x = 8, y = 6, shape = "narrow" },
-  ["ROUTE_20"] = { x = 53, y = 3, shape = "wide" },
-  ["ROUTE_21"] = { x = 16, y = 4, shape = "wide" },
+  -- the two surf routes fight AFLOAT, in the middle of their own sea rather
+  -- than on the rim of beach the land search would otherwise find
+  ["ROUTE_20"] = { x = 23, y = 7, shape = "wide" },
+  ["ROUTE_21"] = { x = 8, y = 46, shape = "wide" },
   ["ROUTE_22"] = { x = 35, y = 7, shape = "wide" },
   ["ROUTE_23"] = { x = 4, y = 36, shape = "wide" },
   ["ROUTE_24"] = { x = 13, y = 15, shape = "wide" },

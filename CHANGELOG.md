@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.2.0
+
+### Added
+
+- **A `FULL` rung on the VOXEL row**, directly after `OFF`. One choice that
+  puts the whole mode in its intended state -- the 50-degree camera, the
+  miniature blur at maximum, the horizon flat, the view fitted, and battles
+  on the map -- rather than making a player assemble it from four rows.
+
+  While it is selected, every row it owns comes OFF the menu: V-GRID,
+  V-CURVE, 3D-BTL and T-SHIFT. A row that no longer decides anything is
+  worse than no row. Stepping onto or off `FULL` rebuilds the open menu in
+  place, so the rows leave and return under the cursor instead of waiting
+  for the menu to be reopened.
+
+  It applies its settings when the row ARRIVES at `FULL`, not every frame:
+  holding them would make the zoom keys and the wheel dead while it was on.
+  Leaving it deliberately undoes nothing -- reverting would discard whatever
+  had been changed since.
+
+### Changed
+
+- **Hotkey `3` walks the angle rungs only and steps over `FULL`.** The key is
+  a display-mode cycler -- it should change the camera and nothing else --
+  and `FULL` reaches in and rewrites four other settings. Landing on it
+  mid-walk would silently push the blur to maximum and flatten the horizon
+  with nothing on screen saying a keypress had done it. `FULL` stays on the
+  OPTIONS row, where a preset that changes other rows belongs.
+
+  A press FROM `FULL` goes to `75`. `FULL` is already the 50-degree camera,
+  so stepping to the rung of that name would look like the key had done
+  nothing.
+
+- **The mode's four options are one block in the menu.** The engine splices
+  a pipeline row in beside TILT and lands a mod's own rows at the end of the
+  list, which had these four in two places with unrelated engine rows
+  between them. The settings now follow the pipeline rows directly.
+
 ## 1.1.0
 
 ### Added
