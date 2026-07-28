@@ -38,5 +38,5 @@ return {
   credits = {
     { who = "pret/pokered", for_ = "the tile and sprite data the geometry is derived from" },
   },
-  compat = { engine = ">=0.1.28 <2.0.0", modApi = 2 },
+  compat = { engine = ">=0.1.32 <2.0.0", modApi = 2 },
 }
