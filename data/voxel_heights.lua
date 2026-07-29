@@ -817,12 +817,61 @@ return {
     -- boxed the two free-standing shelf racks into one 4-tile-deep
     -- monolith.
     MART = {
-      -- the wall band stays one 16px face: the trim and case tops
-      -- (40/90/91), the SALE cases (78/79) with their feet (23/29), and
-      -- the glass drink fridges (44-47) with their feet (62/63) -- all
-      -- drawn built INTO the back wall, exactly like the Center's
-      -- healing consoles
-      wall = { 23, 29, 40, 44, 45, 46, 47, 62, 63, 78, 79, 90, 91 },
+      -- THE BACK WALL.  It is drawn FOUR tile rows tall -- trim (40, or
+      -- the fridge tops 90/91), the SALE signs (78/79) or glass upper
+      -- (44/45), the black display niche (76/77) or glass lower (46/47),
+      -- and the cases' base and goods (23/29, 62/63) -- which is 32px of
+      -- artwork depicting ONE wall, not four things at four depths.
+      --
+      -- Pinned `wall` that is exactly what it became: every row got its
+      -- own 16px box marching north, so the only face you ever saw was
+      -- the southmost row (the cases' base), the signs and the niche hid
+      -- behind it, and the trim ended up lying flat as a gold shelf on
+      -- the roofs of the boxes behind.  Laid out in depth instead of
+      -- stacked up.
+      --
+      -- `bookcase` is the class that collapses a tall drawing onto a
+      -- one-cell-deep box at its real drawn height, so the run of four
+      -- rows becomes a single 32px wall: bands from the south are base,
+      -- niche, sign, trim, its top face wears the trim, and the three
+      -- rows behind become hidden floor.  Same treatment the shelf racks
+      -- below already get -- a Mart's back wall IS a wall of display
+      -- cases, and the geometry does not care which we call it.
+      bookcase = { 23, 29, 40, 44, 45, 46, 47, 62, 63, 76, 77, 78, 79,
+                   90, 91,
+                   -- the free-standing shelf racks: TALL drawings, not
+                   -- deep ones -- each rank collapses onto a
+                   -- one-cell-deep shelf at its drawn height (the
+                   -- Dojo/Red's-house treatment). 64/65/67 and 80/81/83
+                   -- are the bottle rows the clerk's booth also wears as
+                   -- its top display; 68/69/71 and 84/85/87 the goods
+                   -- rows below
+                   64, 65, 67, 68, 69, 71, 80, 81, 83, 84, 85, 87 },
+      -- The wall's own tiles are reused elsewhere, and the back wall is
+      -- the one place they are drawn on the map's TOP EDGE.  So `bookcase`
+      -- is their default and this hands every other use back to `wall`,
+      -- which is what all of them were before: 40 is also the clerk's
+      -- booth back panel (under the shelf rows 80/81 or under itself), and
+      -- 40/76/77/90/91 all recur in INDIGO_PLATEAU_LOBBY, the ninth map on
+      -- this id, where they draw the hall and the lift bank.
+      --
+      -- NEVER put 0 in an `above` set.  Map:tileAt does not answer nil off
+      -- the top of a map -- it border-extends, so row 0 reads the map's
+      -- borderBlock, which indoors is the black void block 0.  Listing 0
+      -- to catch the Lobby's void-backed 90/91 fired the rule on every
+      -- Mart's fridge row as well: row 0 dropped out of the bookcase run,
+      -- the fridges came out 24px against the SALE cases' 32px, and their
+      -- trim row stood as a separate box BEHIND the wall instead of on top
+      -- of it.  Nothing can separate those two cases from above -- both
+      -- see void -- so the Lobby (already out of scope here) gets the
+      -- bookcase reading too, and the Marts come out right.
+      when_above = {
+        [40] = { { above = { 40, 80, 81, 83, 90, 91 }, class = "wall" } },
+        [76] = { { above = { 74, 75 }, class = "wall" } },
+        [77] = { { above = { 74, 75 }, class = "wall" } },
+        [90] = { { above = { 17 }, class = "wall" } },
+        [91] = { { above = { 27 }, class = "wall" } },
+      },
       -- the clerk's counter, half a cell high like every service
       -- counter.  It is a C wrapping the alcove the clerk stands in: the
       -- south arm's drawn front (24/25) under its top band (8/56), the
@@ -836,18 +885,13 @@ return {
       -- part of that same work surface now that the machine has been cut
       -- off them as a sprite -- see `figures` below.
       counter = { 8, 14, 15, 16, 24, 25, 30, 31, 41, 56, 89 },
-      -- the free-standing shelf racks: TALL drawings, not deep ones --
-      -- each rank collapses onto a one-cell-deep shelf at its drawn
-      -- height (the Dojo/Red's-house treatment). 64/65/67 and 80/81/83
-      -- are the bottle rows the clerk's booth also wears as its top
-      -- display; 68/69/71 and 84/85/87 the goods rows below
-      bookcase = { 64, 65, 67, 68, 69, 71, 80, 81, 83, 84, 85, 87 },
       -- Left to the derived default on purpose: the floor checker and
       -- its shadowed variants (1/11/17/26/27/54) and the exit mat
       -- (12/28) all sit in cells the ROM marks walkable, so the cell
-      -- rule lays them flat unaided; 76/77 is the SALE case's black
-      -- interior, which the volume path recesses half a course into the
-      -- band -- a dark display niche, which is what it is drawn as.
+      -- rule lays them flat unaided.  (76/77, the SALE case's black
+      -- interior, used to be left to the volume path here; it is now the
+      -- back wall's third band, because a run of four rows has to be
+      -- contiguous for the wall to collapse into one box at all.)
       -- THE CASH REGISTER: a keypad and a curl of receipt paper drawn
       -- face-on across two tile rows in the middle of the counter's east
       -- arm.  Like the Center's seated man it is a FIGURE drawn into the
