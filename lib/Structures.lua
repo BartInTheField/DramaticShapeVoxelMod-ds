@@ -268,6 +268,14 @@ function Structures.forMap(map)
   -- ---- bookcases: pinned shelves collapsed to one cell of depth ----
   Structures.buildBookcases(S, map, x0, x1, y0, y1)
 
+  -- ---- figures: a person drawn INTO furniture, lifted off it ----
+  -- Before the region flood and the volume pass, so everything after this
+  -- reads the tiles the profile says are there once the figure is gone.
+  -- (Its own tiles are authored furniture or walkable floor either way, so
+  -- no pass below would have claimed them -- but the repaint is what those
+  -- passes should see, and this needs no pixel access to do it.)
+  Structures.buildFigures(S, map, x0, x1, y0, y1)
+
   -- ---- flood-fill regions of structural tiles ----
   local seen = {}
   local regions = {}
@@ -2114,6 +2122,141 @@ function Structures.buildObject(S, map, region, cluster,
     end
   end
   return true
+end
+
+-- ---- figures: a person drawn INTO furniture, cut out and stood up ----
+
+-- One authored figure at one matched position.
+--
+-- The mask IS the classification: no flood, no shade segmentation, no
+-- validation gate.  Every automatic route in this file asks the art where
+-- the object ends, and a figure painted into its own furniture has no
+-- answer to give -- so the profile answers instead, and this only has to
+-- believe it.  Which also means figures build HEADLESS: unlike every
+-- other standee here, nothing below reads a pixel.
+local function buildFigure(S, map, fig, tx, ty, perRow)
+  local bw, bh = fig.w * 8, fig.h * 8
+
+  local function at(lx, ly)
+    if lx < 0 or lx >= bw or ly < 0 or ly >= bh then return false end
+    return fig.mask[ly * bw + lx] or false
+  end
+
+  -- his feet: the lowest drawn row, which is what lands on the support
+  local lowY = 0
+  for ly = bh - 1, 0, -1 do
+    local any = false
+    for lx = 0, bw - 1 do
+      if at(lx, ly) then any = true break end
+    end
+    if any then lowY = ly break end
+  end
+
+  -- He stands ON the furniture he was drawn into -- the same lift a pinned
+  -- prop above a pinned box takes (see buildObject), and gated the same
+  -- way: a thing set down on furniture occupies a BLOCKED cell, while a
+  -- seat you merely walk up to is in a walkable one.
+  local baseY, support = 0, nil
+  local bs = S.shapeAt[keyOf(tx, ty + fig.h)]
+  local blocked = not map:isWalkableCell(math.floor(tx / 2),
+                                         math.floor((ty + fig.h - 1) / 2))
+  if blocked and bs and bs.authored and bs.art == "upright"
+     and (bs.h or 0) > 0 then
+    baseY, support = bs.h, bs
+  end
+
+  local depth = PINNED_DEPTH[fig.class] or PINNED_DEPTH.billboard
+  local z0 = ty * 8 + math.floor(lowY / 8) * 8
+             + (support and 8 or 0) + (8 - depth) / 2
+  local z1 = z0 + depth
+
+  -- ONE object by construction: the figure keeps its drawn proportions
+  -- whatever the mask's connectivity, so an overhang (his hair crossing
+  -- the tile seam) stays at its drawn height instead of being dropped to
+  -- the floor as a component of its own.
+  local atlasW = map.tileset.imageWidth or 128
+  local atlasH = map.tileset.imageHeight or 48
+  local quads = S.objectQuads
+  local wx0 = tx * 8
+  for ly = 0, bh - 1 do
+    Budget.tick()
+    for lx = 0, bw - 1 do
+      if at(lx, ly) then
+        local tile = fig.tiles[math.floor(ly / 8) * fig.w
+                               + math.floor(lx / 8) + 1]
+        local u = ((tile % perRow) * 8 + lx % 8 + 0.5) / atlasW
+        local v = (math.floor(tile / perRow) * 8 + ly % 8 + 0.5) / atlasH
+        local x, y = wx0 + lx, baseY + lowY - ly
+        local function quad(c1, c2, c3, c4, shade)
+          quads[#quads + 1] = { c1, c2, c3, c4, u = u, v = v, shade = shade }
+        end
+        quad({ x, y, z1 }, { x + 1, y, z1 }, { x + 1, y + 1, z1 },
+             { x, y + 1, z1 }, OBJ_SHADE.front)
+        quad({ x + 1, y, z0 }, { x, y, z0 }, { x, y + 1, z0 },
+             { x + 1, y + 1, z0 }, OBJ_SHADE.back)
+        if not at(lx, ly - 1) then
+          quad({ x, y + 1, z0 }, { x + 1, y + 1, z0 }, { x + 1, y + 1, z1 },
+               { x, y + 1, z1 }, OBJ_SHADE.top)
+        end
+        if y > baseY and not at(lx, ly + 1) then
+          quad({ x, y, z1 }, { x + 1, y, z1 }, { x + 1, y, z0 },
+               { x, y, z0 }, OBJ_SHADE.bottom)
+        end
+        if not at(lx - 1, ly) then
+          quad({ x, y, z0 }, { x, y, z1 }, { x, y + 1, z1 },
+               { x, y + 1, z0 }, OBJ_SHADE.side)
+        end
+        if not at(lx + 1, ly) then
+          quad({ x + 1, y, z1 }, { x + 1, y, z0 }, { x + 1, y + 1, z0 },
+               { x + 1, y + 1, z1 }, OBJ_SHADE.side)
+        end
+      end
+    end
+  end
+
+  -- What each covered tile wears now that he is off it.  Only the ART
+  -- changes: the couch tiles keep their `counter` box (they ARE the
+  -- couch) and the floor tiles he overhung stay flat floor -- the
+  -- profile just names the version of each drawing without him in it,
+  -- so nothing has to be synthesized or repainted from a neighbour vote.
+  for i = 1, #fig.tiles do
+    local dx, dy = (i - 1) % fig.w, math.floor((i - 1) / fig.w)
+    S.tileAt[keyOf(tx + dx, ty + dy)] = fig.under[i]
+  end
+end
+
+-- Every authored figure, wherever the map draws it.
+--
+-- Matched by TILE PATTERN rather than by coordinates: one blockset entry
+-- places this couch once in each of the eleven Pokemon Centers (and the
+-- Celadon Hotel), so the pattern finds all of them without the profile
+-- naming a single map or cell.  The repaint above replaces the pattern's
+-- own tiles, so a match can never fire twice on the same drawing.
+function Structures.buildFigures(S, map, x0, x1, y0, y1)
+  local figures = TileShape.figures(map.tileset.id)
+  print("[fig] map", map.id, "tileset", map.tileset.id, "figures",
+        figures and #figures or "nil")
+  if not figures then return end
+  local perRow = map.tileset.tilesPerRow or 16
+  for _, fig in ipairs(figures) do
+    for ty = y0, y1 - fig.h + 1 do
+      for tx = x0, x1 - fig.w + 1 do
+        Budget.tick()
+        local hit = true
+        for i = 1, #fig.tiles do
+          local dx, dy = (i - 1) % fig.w, math.floor((i - 1) / fig.w)
+          if S.tileAt[keyOf(tx + dx, ty + dy)] ~= fig.tiles[i] then
+            hit = false
+            break
+          end
+        end
+        if hit then
+          print("[fig] MATCH at", tx, ty)
+          buildFigure(S, map, fig, tx, ty, perRow)
+        end
+      end
+    end
+  end
 end
 
 -- ---- tall grass ----

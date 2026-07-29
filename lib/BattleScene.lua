@@ -378,10 +378,16 @@ function BattleScene.render(state, arena, textures, token)
     if flashing then
       Voxel3D.flatten(BattleScene.FLASH_COLOR, BattleScene.FLASH_STRENGTH)
     end
+    -- and no voxel wireframe on the pair. Everything else in this frame is
+    -- built a unit per voxel and wears the seams that fall out of that; a
+    -- mon's card is one quad wearing the battle screen (see
+    -- BattleBillboard), so it is off the grid and has no seams to draw.
+    Voxel3D.seams(false)
     for _, card in ipairs(monCards(arena, groundY, textures)) do
       Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model,
                    BattleBillboard.PULL)
     end
+    Voxel3D.seams(true)
     if flashing then Voxel3D.flatten(nil) end
     -- grass and flowers ride the same camera-ward pull the free-roam pass
     -- gives them, measured against THIS camera's pitch rather than the

@@ -168,6 +168,7 @@ local ART = {
 
 local spec = nil          -- the loaded data file, or false when absent
 local cache = {}          -- tileset id -> resolved shape list
+local figCache = {}       -- tileset id -> parsed figure masks, or false
 
 -- The shape profile ships with the mod (data/voxel_heights.lua) and is read
 -- through the mod's own file loader rather than package.path: a mod's
@@ -369,11 +370,84 @@ function TileShape.at(map, shapes, tile, tx, ty)
   return s
 end
 
+-- Hand-authored FIGURES for one tileset: a drawing painted INTO furniture,
+-- cut out by an explicit pixel mask and stood up on top of it.
+--
+-- Every other route in this file resolves a whole 8x8 TILE, which is
+-- exactly why none of them can reach a figure that shares its tiles with
+-- the thing it sits on -- and the detector's segmentation cannot either
+-- when the drawing has no background margin to flood from and wears the
+-- same shades as its furniture.  So the profile authors the silhouette
+-- pixel by pixel (see data/voxel_heights.lua):
+--
+--   figures = { { class  = <standee pool, for its depth>,
+--                 w      = <tiles across>,
+--                 tiles  = { ...w*h tile ids, row-major... },
+--                 under  = { ...w*h ids: what each tile wears once the
+--                            figure is lifted off it... },
+--                 pixels = { ...h*8 strings of w*8 chars, "." = not the
+--                            figure... } } }
+--
+-- Returned normalized: `mask` as a set keyed by ly * (w * 8) + lx, so
+-- Structures can read it as a bitmap without re-parsing per position.
+-- A malformed entry is dropped rather than half-applied -- a typo in a
+-- mask should leave the couch alone, not carve a hole in it.
+function TileShape.figures(tilesetId)
+  local hit = figCache[tilesetId]
+  if hit ~= nil then return hit or nil end
+
+  local s = load()
+  local entry = s and s.tilesets and s.tilesets[tilesetId]
+  local list = entry and entry.figures
+  local out = {}
+  if type(list) == "table" then
+    for _, f in ipairs(list) do
+      local ok = type(f) == "table" and type(f.w) == "number"
+                 and type(f.tiles) == "table" and type(f.under) == "table"
+                 and type(f.pixels) == "table"
+      local w = ok and math.floor(f.w) or 0
+      local h = (w >= 1) and (#f.tiles / w) or 0
+      ok = ok and w >= 1 and h >= 1 and h == math.floor(h)
+           and #f.under == #f.tiles and #f.pixels == h * 8
+      if ok then
+        for i = 1, h * 8 do
+          local row = f.pixels[i]
+          if type(row) ~= "string" or #row ~= w * 8 then
+            ok = false
+            break
+          end
+        end
+      end
+      if ok then
+        local mask, n = {}, 0
+        for ly = 0, h * 8 - 1 do
+          local row = f.pixels[ly + 1]
+          for lx = 0, w * 8 - 1 do
+            if row:sub(lx + 1, lx + 1) ~= "." then
+              mask[ly * (w * 8) + lx] = true
+              n = n + 1
+            end
+          end
+        end
+        if n > 0 then
+          out[#out + 1] = { class = f.class or "billboard",
+                            w = w, h = h, n = n, mask = mask,
+                            tiles = f.tiles, under = f.under }
+        end
+      end
+    end
+  end
+
+  figCache[tilesetId] = (#out > 0) and out or false
+  return figCache[tilesetId] or nil
+end
+
 -- Drop the cache: a mod that shadows data/voxel_heights.lua or a tileset
 -- record needs the next lookup to re-resolve (hot reload, mod toggle).
 function TileShape.invalidate()
   spec = nil
   cache = {}
+  figCache = {}
 end
 
 return TileShape

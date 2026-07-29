@@ -558,6 +558,31 @@ function Voxel3D.flatten(color, amount)
   end
 end
 
+-- Whether what is drawn next carries the voxel wireframe. false for the
+-- length of a draw, true to put it back.
+--
+-- The wireframe reads a mesh's OWN model space and darkens its integer
+-- planes (see VoxelGrid), which is only a wireframe because every mesh in
+-- this mode is built ONE UNIT PER VOXEL: terrain in world pixels, a
+-- character card in the sprite's own pixels. A mesh whose model space does
+-- not mean that gets no wireframe out of the same shader -- it gets
+-- whichever of its integer planes happen to fall inside it, which is a
+-- stray line rather than a seam.
+--
+-- So this is not a style switch. It is how a mesh that is not on the voxel
+-- grid says so, and the alternative -- rescaling such a mesh until its
+-- units happen to be voxels -- would change what it IS to satisfy a
+-- shading pass.
+--
+-- Sent rather than branched because the plain scene shader has no such
+-- uniform, and the send simply does not take there -- which is right: with
+-- no wireframe compiled in there is nothing to suppress.
+function Voxel3D.seams(on)
+  if not (active and activeShader) then return end
+  pcall(activeShader.send, activeShader, "gridDark",
+        on and VoxelGrid.DARK or 0)
+end
+
 function Voxel3D.endGhost()
   if not active then return end
   pcall(love.graphics.setDepthMode, "lequal", true)

@@ -70,6 +70,15 @@
 -- pinned prop, overriding the flat-neighbour vote -- the cuttable bush
 -- stands on the grass Cut leaves behind, whatever borders it.
 --
+-- And it may carry `figures` (not a class either): hand-drawn pixel masks
+-- that lift a FIGURE PAINTED INTO furniture off it and stand it up as a
+-- standee, leaving the furniture its own geometry.  A pin resolves a
+-- whole 8x8 tile, so it can never separate two things that share one --
+-- and nothing automatic can either when the figure has no background
+-- margin to flood from and wears the same shades as what it sits on.
+-- The Pokemon Center's seated man is the case; see POKECENTER below for
+-- the format.
+--
 -- Whole BUILDINGS are not tile pins -- one drawing packs a roof seen from
 -- above, a facade seen face-on and sloped ends as diagonal silhouettes,
 -- and no single class covers that.  They live in the `buildings` list at
@@ -694,22 +703,17 @@ return {
       -- bodies so they stand ON them) and the PC (66/70/82/86), which
       -- stands on its pinned desk
       billboard = { 58, 59, 66, 70, 74, 75, 82, 86 },
-      -- Why the man on the couch rides the top face instead of standing
-      -- up.  He is drawn across two tile rows (skin pixels appear in
-      -- rows 8 and 9 and stop dead at the row 9/10 seam), and folding
-      -- two rows upright requires both to share a class, which makes the
-      -- box two tiles deep -- and a fully folded box repeats its north
-      -- row across its whole top face.  So every upright arrangement
-      -- puts his head on screen two or three times: as a 16px seat-back
-      -- his head lands on the front AND twice on the top; as a 32px
-      -- bookcase he becomes a cabinet taller than the room's walls.
-      -- Dropping the seat to floor level to clear his face does not help
-      -- either, it only moves which copy you see.  He also cannot be a
-      -- standee: the drawing has no floor margin, so all three non-black
-      -- shades touch the cluster rim and the mask drains 307 of its 420
-      -- interior pixels -- 46% of him even segmented alone, because his
-      -- skin is the same light shade as the couch behind him.  Riding
-      -- the top face is the one arrangement that draws him exactly once.
+      -- The man on the couch, cut out by hand and stood up (see `figures`
+      -- below).  Nothing automatic reaches him.  A class pin resolves a
+      -- whole 8x8 tile and he SHARES his tiles with the couch, so pinning
+      -- them stands the furniture up with him; riding the couch's top
+      -- face (what this did before) draws him lying flat on the cushion;
+      -- and he cannot be segmented into a standee either, because the
+      -- drawing has no background margin for a flood to enter by and his
+      -- skin is the same light shade as the couch -- the mask drained 307
+      -- of his 420 interior pixels, 46% of him, even segmented alone.
+      -- An authored mask is the only thing that can tell a man from the
+      -- sofa he is painted into, so that is what `figures` carries.
       -- the PC's desk body, which the PC stands on
       table = { 9, 88 },
       -- the potted plants: bush (32/33/48/49) over pot (34/35/50/51,
@@ -721,6 +725,49 @@ return {
       -- them; the standee reads darker than the flat art, which is the
       -- accepted trade for a real plant silhouette
       prop = { 32, 33, 34, 35, 48, 49, 50, 51 },
+      -- THE MAN ON THE COUCH.  He is drawn INTO the lounge furniture --
+      -- tiles 37 (head) and 53 (face and body) are his, and his hair and
+      -- his foot spill one tile east onto the floor (57 and 60 are the
+      -- plain floor tiles 1 and 26 with those pixels painted over him).
+      -- `pixels` is the hand-drawn line between the man and the couch;
+      -- `under` is what each tile wears once he is lifted off it: the
+      -- couch's own cushion (39) where he sat, and 1 / 26, the clean
+      -- floor the artist had already drawn.  So the couch keeps its
+      -- polygonal box and he stands on top of it, at NPC scale.
+      --
+      -- The mask keeps the couch's east rule (column 7) wherever it is
+      -- drawn dark, because that is where his hair crosses the tile seam
+      -- -- without it the overhang would float free of his head.  The
+      -- cushion wedge under his legs and the two floor pixels above his
+      -- head are the only interior pixels it gives back.
+      figures = {
+        {
+          class = "billboard",
+          w = 2,
+          tiles = { 37, 57,
+                    53, 60 },
+          under = { 39,  1,
+                    39, 26 },
+          pixels = {
+            "..XXXXX.........",
+            "XXXXXXXX........",
+            "XXXXXXXXX.......",
+            "XXXXXXXXXX......",
+            "XXXXXXXXXX......",
+            "XXXXXXX.X.......",
+            "XXXXXXX.X.......",
+            "XXXXXXX.X.......",
+            "XXXXXXX.X.......",
+            "XXXXXXXX........",
+            "XXXXXXXX........",
+            "XXXXXXXX........",
+            "XXXXXXXXX.......",
+            ".XXXXXXXXX......",
+            "...XXXXXX.......",
+            "......XX........",
+          },
+        },
+      },
     },
 
     -- The Poke Marts (one 4x4 layout serves every city; the tileset
