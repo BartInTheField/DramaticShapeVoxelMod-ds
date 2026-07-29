@@ -143,6 +143,11 @@ T.check(not fullIds["DRAMATIC_SHAPE:battles"], "and 3D-BTL")
 -- lays the same battle out on a 304x144 surface and moves every one of them. So
 -- the value is set and the ENGINE's row comes off the menu -- the one row this
 -- mod takes away that is not its own.
+--
+-- Scoped in a block of its own, like the sections below: this file is one Lua
+-- chunk and a chunk has 200 local slots, so a section that wants half a dozen
+-- borrows them rather than spending them for the rest of the run.
+do
 local Battles = run.loader.exports.DRAMATIC_SHAPE.lib.require("OverworldBattle")
 T.eq(Battles.enabled(), true, "3D-BTL is on by default, which is what pins it")
 
@@ -190,6 +195,7 @@ Runtime.call("ui.options.rows", function(_, r) return r end, layoutGame,
 T.eq(layoutGame.save.options.battleLayout, "og",
   "FULL pins the layout on its own, because it owns the row that would")
 Battles.setting:setIndex(1, layoutGame)
+end
 
 -- ------- and off FULL, the rows come back, grouped with the mode
 --
@@ -262,6 +268,8 @@ T.check(rowIndex(menu, "pipeline:tiltshift"), "T-SHIFT too")
 -- follow the row it was ON rather than the slot it was in -- otherwise the very
 -- press that switched staged battles on would leave the cursor a row further
 -- down than the player left it.
+do
+local Battles = run.loader.exports.DRAMATIC_SHAPE.lib.require("OverworldBattle")
 Battles.setting:setIndex(2, menuGame)             -- staged battles off
 menuGame.save.options.battleLayout = "wide"
 Pipelines.setLevel("voxel", 2)
@@ -278,6 +286,7 @@ T.check(not rowIndex(layoutMenu, "battleLayout"),
 T.eq(menuGame.save.options.battleLayout, "og", "pinned to OG on the way out")
 T.eq(layoutMenu.index, rowIndex(layoutMenu, "DRAMATIC_SHAPE:battles"),
   "with the cursor still on the row the player just used")
+end
 
 -- level 2 is the "15" rung: any rung that is not FULL, so the settings the
 -- preset owns are back on the menu
@@ -1046,15 +1055,16 @@ local outside = { def = { id = "PALLET_TOWN", tileset = "OVERWORLD" } }
 local inside = { def = { id = "REDS_HOUSE_1F", tileset = "HOUSE" } }
 local TOP = math.rad(Voxel.ANGLES_DEG[Voxel.MAX_LEVEL + 1])
 
--- the ladder, by angle: only the top rung paints anything
+-- the ladder, by angle: every rung that tilts at all paints a sky
 for level = 0, Voxel.MAX_LEVEL do
   Voxel.angle = math.rad(Voxel.ANGLES_DEG[level + 1])
   local sky = skyFor(outside)
-  if level == Voxel.MAX_LEVEL then
-    T.check(sky ~= nil, "the 75-degree rung paints a sky outdoors")
-    T.eq(sky[4], 1, "and paints it at full strength")
+  if level == 0 then
+    T.eq(sky, nil, "rung 0 is the flat camera: no tilt, no void, no sky")
   else
-    T.eq(sky, nil, "rung " .. level .. " leaves the void alone")
+    T.check(sky ~= nil, "rung " .. level .. " paints a sky outdoors")
+    T.eq(sky[4], 1, "and paints it at full strength")
+    T.check(sky.bands ~= nil, "with its bands on it")
   end
 end
 
@@ -1070,14 +1080,18 @@ T.eq(skyFor(inside), nil, "not even at 75 degrees, where outdoors would")
 T.eq(skyFor(nil), nil, "no map, no sky")
 T.eq(skyFor({}), nil, "a map with no def is not an outdoor map")
 
--- it fades in with the camera tween rather than popping on the keypress
-T.eq(skyStrength(math.rad(50)), 0, "the rung below the top is still skyless")
-T.eq(skyStrength(TOP), 1, "the top rung is full sky")
-local mid = skyStrength(math.rad(62.5))
-T.check(mid > 0 and mid < 1, "and the tween between them is partial")
-T.check(skyStrength(math.rad(70)) > skyStrength(math.rad(60)),
-  "strengthening as the camera pitches over")
-T.eq(skyStrength(math.rad(15)), 0, "a shallow pitch paints nothing at all")
+-- full strength at every rung, with the ramp left only for the ARRIVAL: the
+-- camera eases up from flat when the mode is switched on, and the sky comes up
+-- with it rather than appearing whole on the keypress
+T.eq(skyStrength(math.rad(15)), 1, "the shallowest rung is full sky")
+T.eq(skyStrength(math.rad(50)), 1, "so is the one below the top")
+T.eq(skyStrength(TOP), 1, "and the top rung")
+T.eq(skyStrength(0), 0, "a camera that has not tilted at all paints none")
+local rising = skyStrength(math.rad(4))
+T.check(rising > 0 and rising < 1,
+  "and the first few degrees off flat are the fade-in")
+T.check(skyStrength(math.rad(6)) > skyStrength(math.rad(3)),
+  "which strengthens as the camera lifts")
 
 -- the colour answers to the display mode, exactly as the terrain does: a
 -- hardcoded blue would sit wrong in the modes that are not colour modes
@@ -1103,6 +1117,221 @@ T.check(green[2] > green[1] and green[2] > green[3],
 
 T.check(skyRGB("gbc_inv")[3] ~= blue[3],
   "GBC INV does not paint the same sky as GBC")
+
+-- ------- and the sky is a banded gradient, with no picture behind it
+--
+-- One flat blue was enough while the void was a sliver; with the horizon a
+-- quarter of the way down the frame it is a wall of paint. So the sky is the
+-- 8-bit skybox recipe: a short palette of blues painted as flat bands, deepest
+-- overhead, with a checkerboard of the next band dithered into the bottom of
+-- each. Nothing is baked to a fixed size and upscaled -- the bands fill the
+-- window and the dither grid is cut to the diorama's own pixel scale.
+do
+local Sky = run.loader.exports.DRAMATIC_SHAPE.lib.require("Sky")
+local Voxel3D = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
+
+local function luma(c) return 0.299 * c[1] + 0.587 * c[2] + 0.114 * c[3] end
+
+-- the palette is the band list: add a colour and the sky gains a band
+for i, c in ipairs(Sky.PALETTE) do
+  T.check(c[1] % 8 == 0 and c[2] % 8 == 0 and c[3] % 8 == 0,
+    "palette entry " .. i .. " is a colour a Game Boy Color could show -- five "
+    .. "bits a channel, so every one is a multiple of 8")
+  T.check(c[3] > c[1], "and it is blue: more blue than red")
+end
+T.eq(#Sky.PALETTE, 4, "four of them, which is one GBC background palette")
+
+Voxel.angle = TOP
+local skyGrad = skyRGB("gbc")
+T.eq(#(skyGrad.bands or {}), #Sky.PALETTE,
+  "the sky arrives with one band per palette entry")
+
+for i, band in ipairs(skyGrad.bands) do
+  if i > 1 then
+    T.check(luma(band) > luma(skyGrad.bands[i - 1]),
+      "band " .. i .. " is lighter than the one above it: the sky pales toward "
+      .. "the horizon")
+  end
+end
+-- read backwards out of the palette, which is stored in shade order (lightest
+-- first) so a display mode's own four colours drop straight in
+local deepest = Sky.PALETTE[#Sky.PALETTE]
+T.check(math.abs(skyGrad.bands[1][1] - deepest[1] / 255) < 1e-9,
+  "the top band is the palette's deep rung, unmixed")
+
+-- the fill a caller clears to IS the palest band, so the haze below the horizon
+-- and the bottom of the sky are one colour and the horizon has no seam
+local palest = skyGrad.bands[#skyGrad.bands]
+T.check(math.abs(skyGrad[1] - palest[1]) < 1e-9
+        and math.abs(skyGrad[2] - palest[2]) < 1e-9
+        and math.abs(skyGrad[3] - palest[3]) < 1e-9,
+  "the flat fill is the palest band, so the horizon line has no seam of its own")
+T.eq(skyGrad[4], 1, "and the tween strength still rides on the descriptor")
+
+-- the gradient belongs to the VOXEL 75 rung and the walking camera on it. The
+-- arena shot asks for the sky by the flat route (VoxelScene.skyColor) and gets
+-- exactly the sky it always had -- its placed camera's horizon is above the
+-- frame, so there would be no gradient to see from down there anyway.
+local flat = VoxelScene.skyColor(outside, 1)
+T.eq(flat.bands, nil, "a battle's arena sky is the flat fill, not the gradient")
+T.check(luma(flat) < luma(palest),
+  "and it is the ramp's own sky rung, unchanged: not the gradient's pale end")
+
+-- the same call, the same numbers, and the same TABLE: the bands are memoised
+-- per display mode, so a frame that paints the sky allocates nothing to do it
+local again = Sky.bands()
+T.eq(Sky.bands(), again, "the bands are computed once and held, not rebuilt")
+
+local greyBands = skyRGB("og").bands
+for i, band in ipairs(greyBands) do
+  T.check(math.abs(band[1] - band[2]) < 1e-9
+          and math.abs(band[2] - band[3]) < 1e-9,
+    "GRAY gets four greys, not four blues (band " .. i .. ")")
+end
+T.check(luma(greyBands[#greyBands]) > luma(greyBands[1]),
+  "and they still climb toward the horizon")
+
+-- ------- where the bands go is the camera's own answer
+--
+-- The pale end has to meet the horizon at any pitch, fov or window shape, so it
+-- is placed on the ground plane's vanishing line -- which is what projecting a
+-- direction ALONG the ground through the scene matrix gives. Checked against the
+-- limit of projecting real ground points further and further away, so a retuned
+-- camera either still agrees with this or says so.
+local function groundY(h, dist)
+  local m = Voxel3D.vp
+  local y = m[5] * 0 + m[7] * -dist + m[8]
+  local w = m[13] * 0 + m[15] * -dist + m[16]
+  return (y / w * 0.5 + 0.5) * h
+end
+
+Voxel.angle = TOP
+local vh = 288
+Voxel3D.vp = Voxel3D.viewProjection(0, 0, 320, vh)
+local horizon = Voxel3D.horizonY(vh)
+T.check(horizon and horizon > 0 and horizon < vh,
+  "at the top rung the horizon is inside the frame, which is why there is a sky")
+T.check(math.abs(groundY(vh, 200000) - horizon) < 0.5,
+  ("ground at infinity converges on it: %.2f vs %.2f")
+  :format(groundY(vh, 200000), horizon))
+T.check(groundY(vh, 200) > groundY(vh, 2000)
+        and groundY(vh, 2000) > horizon,
+  "and nearer ground is always below it, never above")
+T.check(horizon < vh / 2,
+  "the horizon sits in the upper half: the sky is a band across the top, not "
+  .. "half the picture")
+
+-- the fraction is a property of the camera, not of the canvas
+Voxel3D.vp = Voxel3D.viewProjection(0, 0, 320, vh)
+local tall = Voxel3D.horizonY(vh * 3)
+T.check(math.abs(tall / (vh * 3) - horizon / vh) < 1e-9,
+  "a taller canvas puts it at the same fraction, so the bands scale with it")
+
+Voxel.angle = 0
+Voxel3D.vp = Voxel3D.viewProjection(0, 0, 320, vh)
+T.eq(Voxel3D.horizonY(vh), nil,
+  "a camera looking straight down has no horizon to find, and paints no bands")
+
+-- ------- where the sky's bottom edge goes at each rung
+--
+-- The camera's own horizon when that is in frame -- which is the top rung -- and
+-- otherwise a fixed slice of the frame, because at the steeper rungs the void
+-- that shows is where the ground runs OUT rather than what is above the horizon.
+-- One sky across the whole ladder either way.
+T.check(math.abs(Sky.region(288, 66.83) - 66.83) < 1e-9,
+  "a horizon in frame is where the sky ends")
+T.eq(Sky.region(288, -930), 288 * Sky.SPAN,
+  "a horizon above the frame falls back to a fixed slice of it")
+T.eq(Sky.region(288, nil), 288 * Sky.SPAN, "and so does no horizon at all")
+T.eq(Sky.region(288, 4000), 288, "a horizon below the frame fills it")
+T.eq(Sky.region(0, 40), nil, "and a canvas with no height paints nothing")
+T.check(Sky.SPAN > 0.1 and Sky.SPAN < 0.5,
+  "the fallback slice is a band across the top, not half the picture")
+
+-- ------- the pass, as it is actually issued
+--
+-- One rectangle through one shader: no texture, no baked image, nothing being
+-- resampled -- which is the whole reason it is drawn this way rather than
+-- generated once and scaled. Every pixel answers from its own canvas coordinate,
+-- so it is computed at the size it is shown at.
+--
+-- And the depth mode is put back to what it was, which is the piece that would
+-- break the frame: a rectangle drawn under the pass's own ("lequal", true) stamps
+-- itself across the depth buffer at the near plane and hides the whole world
+-- behind the sky.
+local realGraphics = love.graphics
+local rects, depthCalls, sent, shaderUses = {}, {}, {}, 0
+local fakeShader = {
+  send = function(_, name, a, b, c, d)
+    sent[name] = { a, b, c, d }
+  end,
+}
+love.graphics = {
+  getShader = function() return nil end,
+  setShader = function(sh) if sh then shaderUses = shaderUses + 1 end end,
+  getDepthMode = function() return "lequal", true end,
+  setDepthMode = function(cmp, write)
+    depthCalls[#depthCalls + 1] = tostring(cmp) .. "/" .. tostring(write)
+  end,
+  setColor = function() end,
+  newShader = function() return fakeShader end,
+  rectangle = function(_, x, y, w, h)
+    rects[#rects + 1] = { x = x, y = y, w = w, h = h }
+  end,
+}
+
+-- 320x288 canvas, horizon at 66.83, diorama pixels 7 canvas pixels square
+local painted = Sky.paint(320, 288, skyGrad, 66.83, 7)
+love.graphics = realGraphics
+
+T.eq(painted, true, "the sky paints")
+T.eq(shaderUses, 1, "through one shader")
+T.eq(#rects, 1, "over one rectangle -- not one per band, and not one per cell")
+T.eq(rects[1].x, 0, "from the left edge")
+T.eq(rects[1].w, 320, "across the full width of the frame")
+T.eq(rects[1].y, 0, "and from the top edge")
+T.eq(rects[1].h, 67, "down to the horizon")
+
+T.eq(sent.count[1], #skyGrad.bands, "the band count goes to the shader")
+T.check(math.abs(sent.edge[1] - 66.83) < 1e-9, "with the sky's bottom edge")
+T.eq(sent.cell[1], 7,
+  "and the diorama's pixel size, which is what puts the bands and the dither "
+  .. "cells on the world's own grid")
+T.eq(sent.start[1], Sky.DITHER_START, "and where in a band the checker begins")
+T.eq(sent.alpha[1], 1, "and the tween strength")
+T.check(sent.bands[1] and sent.bands[1][1] ~= nil,
+  "the palette goes as one array rather than a send per band")
+
+T.eq(depthCalls[1], "always/false", "the sky is drawn with depth writes OFF")
+T.eq(depthCalls[#depthCalls], "lequal/true",
+  "and the pass's own depth mode is handed straight back")
+
+-- ------- and it follows the zoom, in the frame the zoom changed
+--
+-- The cell size is handed in every frame rather than cached, so a ZOOM keypress
+-- -- which is what changes the diorama's pixels-per-world-pixel -- lands in the
+-- next frame with nothing to rebuild and nothing left over at the old scale.
+local zoomed = {}
+love.graphics = {
+  getShader = function() return nil end, setShader = function() end,
+  getDepthMode = function() return "lequal", true end,
+  setDepthMode = function() end,
+  setColor = function() end,
+  newShader = function() return fakeShader end,
+  rectangle = function(_, _, _, w, h) zoomed.rect = { w = w, h = h } end,
+}
+sent = {}
+Sky.paint(1920, 1080, skyGrad, 250.6, 12)
+love.graphics = realGraphics
+T.eq(zoomed.rect.w, 1920, "a bigger window is filled to its own width")
+T.eq(zoomed.rect.h, 251, "and its own horizon")
+T.eq(sent.cell[1], 12, "with the cell size that came in with it, not a cached one")
+
+T.eq(Sky.paint(320, 288, { 0, 0, 1, 1 }, 40, 7), false,
+  "a descriptor with no bands on it is the old flat sky, untouched")
+T.eq(Sky.paint(320, 0, skyGrad, 40, 7), false,
+  "and a frame with no height paints nothing at all")
+end
 
 Voxel.angle = 0
 
@@ -1515,6 +1744,7 @@ T.check(wide > band, "marks further apart hold a deeper slab in focus")
 -- foe's to the left edge, the player's to the right. Measured in world-canvas
 -- pixels, because that is the surface they are composited into -- the GB canvas
 -- they are drawn in cannot reach past its own 160 columns.
+do
 local hudShot = { lx = 100, ly = 12, scale = 3, pw = 1000, ph = 500 }
 local hudRects, bandX = Battles.snapRects(hudShot)
 local hudRect = Battles.HUD_RECT
@@ -1566,6 +1796,7 @@ T.check(e[2] + e[4] <= hudRect.player[2],
   "the split falls between the two blocks, so neither is cut in half")
 T.eq(e[1], 0, "the bands are full width")
 T.eq(e[3], 160, "so a shaken HUD or a long name is carried out with its block")
+end
 
 -- ------- the way out of a battle is a fade, not a cut
 --
@@ -1577,6 +1808,7 @@ T.eq(e[3], 160, "so a shaken HUD or a long name is carried out with its block")
 -- The pop ORDER is the part that has to be right: BattleState:finish pops
 -- whatever is on top, which is the fade while it is up, so the fade has to be
 -- off the stack before the battle finishes and back on it afterwards.
+do
 local Exit = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattleExit")
 
 T.eq(Data.transitions and Data.transitions[Exit.ID] and
@@ -1668,6 +1900,7 @@ while exitGame.stack:top() ~= exitOw do exitGame.stack:pop() end
 T.eq(Exit.veil(), nil, "and a fade popped from under itself veils nothing")
 
 Exit.modeOn = realModeOn
+end
 
 Pipelines.reset()
 run.release()

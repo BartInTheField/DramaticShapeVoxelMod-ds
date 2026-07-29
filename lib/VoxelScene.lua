@@ -20,6 +20,7 @@ local SpriteBillboards = V.require("SpriteBillboards")
 local TileShape = V.require("TileShape")
 local TerrainAtlas = V.require("TerrainAtlas")
 local Voxel = V.require("VoxelState")
+local Sky = V.require("Sky")
 local PaletteFX = require("src.render.PaletteFX")
 local Map = require("src.world.Map")
 
@@ -49,12 +50,16 @@ VoxelScene._modeColors = modeColors   -- named for the suite
 
 -- ------------------------------------------------------------------ sky --
 --
--- At the top rung the camera is pitched far enough over that the horizon
--- comes into frame and a good part of the picture is void -- so the void
--- becomes the sky, and the diorama reads as standing under something
--- rather than floating on a black plate. Below that rung the camera looks
--- down steeply enough that the horizon is off-screen, and painting the
--- void only tints the gaps between meshes, so it stays transparent.
+-- The void behind the diorama is SKY, at every rung -- so the world reads as
+-- standing under something rather than floating on a black plate.
+--
+-- What is up there differs by rung, and the sky follows it rather than being
+-- retuned for each. At 75 degrees the camera is pitched far enough over that
+-- the horizon is genuinely in frame, and the bands run down to meet it. At the
+-- steeper rungs the horizon is above the top edge and the void that shows is
+-- where the ground runs OUT -- past the map edge, past the curve -- so the
+-- bands take a fixed slice of the frame instead (lib/Sky.lua, Sky.SPAN) and the
+-- haze below them fills the rest.
 --
 -- INDOORS THERE IS NO SKY. A house, a cave or a gym is a room with a
 -- ceiling, and the void past its walls is the outside of a box, not open
@@ -67,42 +72,71 @@ VoxelScene._modeColors = modeColors   -- named for the suite
 -- CLASSIC a green one, GBC INV a dark one, and the colour modes the blue.
 -- A hardcoded blue would sit wrong in every non-colour mode -- the same
 -- mismatch the terrain bake had.
+--
+-- This ramp is the FLAT sky -- what a caller clears the void to. The free-roam
+-- camera's banded sky has a palette of its own (lib/Sky.lua), transformed the
+-- same way by the same seam; they are separate because the flat one also has to
+-- serve an indoor void and a battle's arena, which want a colour rather than a
+-- sky.
 local SKY_SHADES = { { 222, 242, 255 }, { 135, 196, 240 },
                      { 64, 120, 192 }, { 16, 40, 80 } }
 local SKY_SHADE = 2       -- the ramp's "sky" proper; 1 is its highlight
 
--- fade across the approach to the top rung, so the sky arrives with the
--- camera tween instead of popping in on the keypress
+-- the ramp as the display mode has it, which is the only form anything here
+-- should be reading it in
+local function skyRamp()
+  return PaletteFX.effectiveColors(SKY_SHADES) or SKY_SHADES
+end
+
+-- Full strength at every rung: the sky is painted wherever the diorama is.
+--
+-- The ramp that is left is for ARRIVAL alone. Switching the mode on eases the
+-- camera up from flat, and the sky comes up with it over the first few degrees
+-- rather than appearing whole on the keypress -- which is also what keeps a
+-- top-down camera, where there is no void worth speaking of, from painting one.
+local SKY_FADE_DEG = 8
+
 local function skyStrength(angleRad)
   local deg = math.deg(angleRad or 0)
-  local from = Voxel.ANGLES_DEG[Voxel.MAX_LEVEL] or 50      -- the rung below
-  local to = Voxel.ANGLES_DEG[Voxel.MAX_LEVEL + 1] or 75    -- the top rung
-  if to <= from then return deg >= to and 1 or 0 end
-  local t = (deg - from) / (to - from)
-  if t < 0 then return 0 end
-  if t > 1 then return 1 end
-  return t
+  if deg <= 0 then return 0 end
+  local t = deg / SKY_FADE_DEG
+  return t < 1 and t or 1
 end
 
 -- One shade off the sky ramp, transformed by the display mode, as an
 -- {r, g, b, a} in 0..1. `shade` picks the rung (SKY_SHADE is the sky
 -- proper; 4 is its darkest, which is what an indoor void wants).
 function VoxelScene.skyShade(shade, alpha)
-  local shades = PaletteFX.effectiveColors(SKY_SHADES) or SKY_SHADES
+  local shades = skyRamp()
   local c = shades[shade] or SKY_SHADES[shade] or SKY_SHADES[SKY_SHADE]
   return { c[1] / 255, c[2] / 255, c[3] / 255, alpha or 1 }
 end
 
 -- The sky `map` stands under at strength `t`, or nil where there is no sky
 -- to paint: indoors, or with the horizon out of frame.
+--
+-- One flat colour, which is what a caller that only needs something to clear the
+-- void to wants -- the overworld battle's arena shot is one of those. The
+-- gradient is added on top of this by skyFor, for the free-roam camera alone.
 function VoxelScene.skyColor(map, t)
   if not (map and map.def and Map.isOutdoor(map.def)) then return nil end
   if not t or t <= 0 then return nil end
   return VoxelScene.skyShade(SKY_SHADE, t)
 end
 
+-- The free-roam sky: the flat one above, dressed with the banded gradient
+-- (lib/Sky.lua).
+--
+-- Only here, and deliberately. This is the sky the walking camera stands under,
+-- where the horizon is a quarter of the way down the frame at the top rung and
+-- one flat blue reads as a wall of paint. A battle is a staged shot with its own
+-- placed camera whose horizon sits above the frame entirely, so it keeps the
+-- flat fill it has always had -- there is no gradient to see from down there,
+-- and the arena's look is not this rung's to change.
 local function skyFor(map)
-  return VoxelScene.skyColor(map, skyStrength(Voxel.angle))
+  local sky = VoxelScene.skyColor(map, skyStrength(Voxel.angle))
+  if not sky then return nil end
+  return Sky.dress(sky)
 end
 
 VoxelScene._skyFor = skyFor           -- named for the suite

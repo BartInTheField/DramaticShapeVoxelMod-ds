@@ -16,6 +16,46 @@
 
 ### Added
 
+- **A gradient sky behind the diorama, on every `VOXEL` rung.** The void behind
+  the world used to be a black plate at every rung but the top, where it became
+  one flat blue -- enough while that void was a sliver, and a wall of paint once
+  the horizon came into frame.
+
+  It is the 8-bit skybox recipe now: four blues painted as flat horizontal bands,
+  deepest overhead and palest at the bottom, with a CHECKERBOARD of the next band
+  dithered into the bottom 40% of each one. Alternating two colours on a pixel
+  grid is how a machine with four to a palette got a fifth, sixth and seventh out
+  of them, and it is what keeps four bands reading as a gradient rather than as
+  four stripes. Every channel of the palette is a multiple of 8 -- where a
+  five-bit GBC channel lands -- so no colour in it is one the hardware could not
+  have shown. No clouds, nothing moving.
+
+  Where the bands END is the camera's own answer. At `75` the ground plane's
+  vanishing line is genuinely in frame -- projected through the same matrix the
+  geometry is drawn with -- and the pale end meets it. At the steeper rungs that
+  line is above the top edge, and what shows up there is the ground running OUT
+  past the map edge instead, so the bands take a fixed slice of the frame and the
+  haze fills the rest. One sky across the whole ladder either way.
+
+  **Nothing is resampled**, which is why it is drawn the way it is: no baked
+  160x144 image scaled up to the window, no downsized buffer blown back up, no
+  texture at all. One rectangle through a shader answers every pixel from its own
+  canvas coordinate, so a pixel of sky is computed at the size it is displayed
+  at and there is nothing for a filter to soften. The band edges and the dither
+  cells are measured in the pass's own pixels-per-world-pixel, handed in fresh
+  every frame -- so a `ZOOM` keypress is reflected in the frame that follows it,
+  with nothing cached at the old scale, and the sky's grid is the same grid the
+  world's own texels sit on.
+
+  The palette goes through the display-mode transform like every other palette in
+  this mod, so GRAY gets four greys and CLASSIC four greens. Below the bands the
+  void is filled with the palest of them -- which is also what the bottom band
+  ends on -- so the join has no seam, and a driver that cannot compile the shader
+  gets flat bands and a logged line rather than a wrong sky.
+
+  The overworld only. A battle is a staged shot whose placed camera has the
+  horizon above the frame, so the arena keeps exactly the flat sky it had.
+
 - **A fade out of a battle, where there used to be a hard cut.** The engine
   wipes INTO a fight with one of the original's eight transitions and cuts
   straight out of it: `BattleState:finish` pops itself and the map is simply

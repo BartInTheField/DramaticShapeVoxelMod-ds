@@ -30,6 +30,7 @@ local Voxel = V.require("VoxelState")
 local ShadowMap = V.require("ShadowMap")
 local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
+local Sky = V.require("Sky")
 
 local Voxel3D = {}
 
@@ -344,6 +345,9 @@ function Voxel3D.viewProjection(cx, cy, vw, vh)
   if cam then
     local eye, focus = cam.eye, cam.focus
     Voxel3D.eye = eye
+    -- kept beside the eye for horizonY: where the sky's pale end goes is a
+    -- question about which way this camera looks, and only these two answer it
+    Voxel3D.focus = focus
     local dx = eye[1] - focus[1]
     local dy = eye[2] - focus[2]
     local dz = eye[3] - focus[3]
@@ -369,6 +373,7 @@ function Voxel3D.viewProjection(cx, cy, vw, vh)
   local eye = { cx, dist * math.cos(a), cy + dist * math.sin(a) }
   -- exposed for camera-facing billboards (VoxelScene yaws sprites at it)
   Voxel3D.eye = eye
+  Voxel3D.focus = focus
   -- perpendicular to the view direction in the YZ plane: north is screen-up
   -- when looking straight down, +Y is screen-up when looking level. Never
   -- parallel to the view direction, so there is no degenerate a = 0 case.
@@ -384,6 +389,42 @@ function Voxel3D.viewProjection(cx, cy, vw, vh)
   -- draws with culling off.
   proj = Mat4.mul(Mat4.scale(1, -1, 1), proj)
   return Mat4.mul(proj, Mat4.lookAt(eye, focus, up))
+end
+
+-- ------- the horizon
+--
+-- Where the ground plane's vanishing line lands, in canvas pixels down from the
+-- top edge, or nil when this camera has no horizon to find.
+--
+-- Not a fraction picked by eye. A direction ALONG the ground is a point at
+-- infinity, and putting one through the same matrix the geometry is drawn with
+-- gives the line every ground plane in the scene converges on -- so the sky's
+-- pale end meets the horizon at any pitch, fov, window shape or zoom, and rides
+-- the camera tween instead of having to be retuned against it.
+--
+-- The world CURVE is not in it, and cannot be: it bends distant ground down in
+-- the vertex shader, so the ground's apparent edge sits BELOW this line by
+-- however much the bend took. What shows in between is the haze the sky's fill
+-- already is, which is what a curved-away horizon should look like.
+--
+-- nil in two cases, both meaning "no horizon in this frame": a camera looking
+-- straight down, whose forward direction has no horizontal part to send to
+-- infinity, and one whose vanishing line is behind it.
+function Voxel3D.horizonY(h)
+  local m, eye, focus = Voxel3D.vp, Voxel3D.eye, Voxel3D.focus
+  if not (m and eye and focus and h and h > 0) then return nil end
+  local dx = focus[1] - eye[1]
+  local dz = focus[3] - eye[3]
+  local len = math.sqrt(dx * dx + dz * dz)
+  if len < 1e-6 then return nil end
+  dx, dz = dx / len, dz / len
+  -- a DIRECTION, so its w is zero and the matrix's translation column drops
+  -- out; the clip-space Y flip is already baked into m, so this comes out in
+  -- canvas coordinates rather than needing one
+  local y = m[5] * dx + m[7] * dz
+  local w = m[13] * dx + m[15] * dz
+  if w <= 1e-6 then return nil end
+  return (y / w * 0.5 + 0.5) * h
 end
 
 -- ----------------------------------------------------------------- scene --
@@ -426,8 +467,20 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
     pcall(love.graphics.setCanvas)
     return false
   end
+  -- Ahead of the clear, because the sky's bands are placed off the ground
+  -- plane's vanishing line and that is a property of this matrix.
+  Voxel3D.vp = Voxel3D.viewProjection(cx, cy, vw, vh)
   if sky then
     love.graphics.clear(sky[1], sky[2], sky[3], sky[4] or 1, true, true)
+    -- The sky goes down here, in the one window in this function where a
+    -- rectangle is just a rectangle: the depth mode and the scene shader are
+    -- both set below. Sky.paint puts them aside anyway -- beginScene is not the
+    -- only thing that has ever left a shader bound.
+    --
+    -- w / vw is this frame's pixels per WORLD pixel, which is the size a diorama
+    -- pixel is on screen: the sky's dither grid is cut to that, so its squares
+    -- are the same size as the world's own and follow every resize and zoom.
+    Sky.paint(w, h, sky, Voxel3D.horizonY(h), w / math.max(1, vw or w))
   else
     love.graphics.clear(0, 0, 0, 0, true, true)
   end
@@ -438,7 +491,6 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
   love.graphics.setMeshCullMode("none")
   love.graphics.setShader(sh)
   love.graphics.setColor(1, 1, 1, 1)
-  Voxel3D.vp = Voxel3D.viewProjection(cx, cy, vw, vh)
   pcall(sh.send, sh, "vp", "row", Voxel3D.vp)
   pcall(sh.send, sh, "eye", Voxel3D.eye)
   -- the sun's frame, filled by ShadowMap just before this pass opened.
@@ -766,6 +818,8 @@ function Voxel3D.invalidate()
   end
   canvas, canvasW, canvasH = nil, 0, 0
   ShadowMap.invalidate()
+  -- the sky is part of this pass and holds a shader of its own
+  Sky.invalidate()
 end
 
 return Voxel3D

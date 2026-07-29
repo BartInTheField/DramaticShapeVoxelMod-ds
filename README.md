@@ -38,6 +38,32 @@ menu.
 **3D-BTL** is on by default and is independent of **VOXEL**: battles draw
 on the world whether or not the free-roam camera is pitched over.
 
+The void behind the diorama is a **gradient sky** at every **VOXEL** rung:
+four blues as flat horizontal bands, deepest overhead and palest at the
+bottom, with a checkerboard of the next band dithered into the bottom of each
+one — the 8-bit way to get more colours out of a palette than it holds. Every
+channel is a multiple of 8, where a five-bit GBC channel lands. No clouds, and
+no image asset.
+
+At `75` the camera is pitched far enough over that the ground plane's vanishing
+line is in frame, and the pale end meets it; at the steeper rungs that line is
+above the top edge, so the bands take a fixed slice of the frame and the haze
+below them fills the void where the ground runs out. Nothing is resampled —
+no baked 160×144 picture scaled up, no texture at all, just one rectangle
+through a shader that answers each pixel from its own coordinate — and the
+band edges and dither cells are measured in the diorama's own pixels, handed
+in every frame, so a `ZOOM` change lands immediately and stays crisp at any
+window size. The palette goes through the display-mode transform like
+everything else here, so GRAY gets four greys and CLASSIC four greens.
+Overworld only — a battle's placed camera looks up from under the horizon and
+keeps its flat sky.
+
+Tunables live at the top of `lib/Sky.lua`: `Sky.PALETTE` (lightest first; its
+length is the band count), `Sky.DITHER`, `Sky.DITHER_START` (how far down each
+band the checker begins — lower is a wider blend, `1` switches it off), and
+`Sky.SPAN` (how much of the frame the bands cover on the rungs whose horizon is
+off-screen).
+
 While a battle can be staged on the map — **3D-BTL** on, or **VOXEL** on
 `FULL`, which owns that row — the engine's **BATTLE LAYOUT** row is set to
 `OG` and taken off the OPTIONS menu. The staged shot is composed in the Game
