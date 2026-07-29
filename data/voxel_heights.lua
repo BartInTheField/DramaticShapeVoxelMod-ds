@@ -70,6 +70,12 @@
 -- pinned prop, overriding the flat-neighbour vote -- the cuttable bush
 -- stands on the grass Cut leaves behind, whatever borders it.
 --
+-- And `prop_bg` (not a class either): which GB shades count as BACKGROUND
+-- when a pinned per-pixel prop is cut out, for the drawings whose own body
+-- reaches the edge of their bounding box and so vote themselves away.
+-- Keyed by tile, because two props sharing an atlas can want opposite
+-- answers on the same shade.
+--
 -- And it may carry `figures` (not a class either): hand-drawn pixel masks
 -- that lift a FIGURE PAINTED INTO furniture off it and stand it up as a
 -- standee, leaving the furniture its own geometry.  A pin resolves a
@@ -725,53 +731,79 @@ return {
       -- them; the standee reads darker than the flat art, which is the
       -- accepted trade for a real plant silhouette
       prop = { 32, 33, 34, 35, 48, 49, 50, 51 },
-      -- THE MAN ON THE COUCH.  He is drawn INTO the lounge furniture --
-      -- tiles 37 (head) and 53 (face and body) are his, and his hair and
-      -- his foot spill one tile east onto the floor (57 and 60 are the
-      -- plain floor tiles 1 and 26 with those pixels painted over him).
-      -- `pixels` is the hand-drawn line between the man and the couch;
-      -- `under` is what each tile wears once he is lifted off it: the
-      -- couch's own cushion (39) where he sat, and 1 / 26, the clean
-      -- floor the artist had already drawn.  So the couch keeps its
-      -- polygonal box and he stands on top of it, at NPC scale.
+      -- ...but the POTS were draining outright.  The plant pair is drawn
+      -- as one 4x4-tile block and the pot's olive base is flush on that
+      -- block's bottom row, so the background vote -- which reads the
+      -- shades touching the drawing's own bounding box -- came back with
+      -- "dark" in it, and every dark pixel in the plant left with the
+      -- floor.  The pots rendered as hollow black frames around one or
+      -- two surviving pixels while the flat art has solid olive bodies.
       --
-      -- The mask keeps ALL of column 7, the couch's east edge.  Where that
-      -- column is drawn dark it is the couch's own rule -- but it is also
-      -- where his hair crosses the tile seam, so dropping it floats the
-      -- overhang free of his head.  And where it is drawn WHITE it is the
-      -- right side of his face, so dropping it opens a slit down his cheek
-      -- (rows 5-8, which is exactly what the first cut did).  Keeping the
-      -- rule twice costs nothing: tile 39 redraws it on the couch beneath
-      -- him either way.  The background corners around his head and the
+      -- So name the background outright for these eight tiles: the floor
+      -- IS light and white here, and nothing else is.  That restores 152
+      -- pixels of the block (55% -> 69% of it kept) and cannot move any
+      -- other prop, which matters -- the same call tileset-wide would pull
+      -- the dark wall band into the healing consoles' screens and strip
+      -- three pixels off the PC, because those two want the opposite
+      -- answer on the very same shades.
+      prop_bg = {
+        { tiles = { 32, 33, 34, 35, 48, 49, 50, 51 },
+          shades = { "light", "white" } },
+      },
+      -- THE MAN ON THE COUCH.  He is drawn INTO the lounge furniture and
+      -- spills out of it in BOTH directions, which is why he needs three
+      -- tile columns:
+      --
+      --   36 / 52   the couch's west arm.  36's two RIGHTMOST columns are
+      --             the back of his head; 52 is the plain arm, and is also
+      --             what 36 wears once his hair comes off it
+      --   37 / 53   him: head, then face and body
+      --   57 / 60   the floor east of the couch, which his hair and his
+      --             foot overhang.  1 and 26 are those same two floor
+      --             tiles as the artist drew them WITHOUT him -- 8 and 5
+      --             pixels apart respectively -- so lifting him off is
+      --             lossless there
+      --
+      -- `pixels` is the hand-drawn line between the man and the furniture;
+      -- `under` is what each tile wears once he is lifted off it.  The
+      -- couch keeps its polygonal box and he stands on top of it.
+      --
+      -- The mask keeps ALL of 37/53's column 7, the couch's east edge.
+      -- Where that column is drawn dark it is the couch's own rule -- but
+      -- it is also where his hair crosses the tile seam, so dropping it
+      -- floats the overhang free of his head.  And where it is drawn WHITE
+      -- it is the right side of his face, so dropping it opens a slit down
+      -- his cheek (rows 5-8, which is exactly what the first cut did).
+      -- Keeping the rule twice costs nothing: tile 39 redraws it on the
+      -- couch beneath him either way.  Repainting 36 as 52 does cost one
+      -- row -- 36's top trim band, which 52 does not carry -- and that is
+      -- the accepted price for not leaving a second copy of his head lying
+      -- on the arm.  The background corners around his head and the
       -- cushion wedge under his legs are the only pixels given back.
       figures = {
         {
-          -- the `cutout` pool: one voxel, a flat card -- the same thing
-          -- the walking NPCs are, so the man reads as a person and not
-          -- as a ten-voxel wedge of furniture
-          class = "cutout",
-          w = 2,
-          tiles = { 37, 57,
-                    53, 60 },
-          under = { 39,  1,
-                    39, 26 },
+          w = 3,
+          tiles = { 36, 37, 57,
+                    52, 53, 60 },
+          under = { 52, 39,  1,
+                    52, 39, 26 },
           pixels = {
-            "..XXXXX.........",
-            "XXXXXXXX........",
-            "XXXXXXXXX.......",
-            "XXXXXXXXXX......",
-            "XXXXXXXXXX......",
-            "XXXXXXXXX.......",
-            "XXXXXXXXX.......",
-            "XXXXXXXXX.......",
-            "XXXXXXXXX.......",
-            "XXXXXXXX........",
-            "XXXXXXXX........",
-            "XXXXXXXX........",
-            "XXXXXXXXX.......",
-            ".XXXXXXXXX......",
-            "...XXXXXX.......",
-            "......XX........",
+            "..........XXXXX.........",
+            "........XXXXXXXX........",
+            ".......XXXXXXXXXX.......",
+            "......XXXXXXXXXXXX......",
+            "......XXXXXXXXXXXX......",
+            "......XXXXXXXXXXX.......",
+            "......XXXXXXXXXXX.......",
+            "......XXXXXXXXXXX.......",
+            "........XXXXXXXXX.......",
+            "........XXXXXXXX........",
+            "........XXXXXXXX........",
+            "........XXXXXXXX........",
+            "........XXXXXXXXX.......",
+            ".........XXXXXXXXX......",
+            "...........XXXXXX.......",
+            "..............XX........",
           },
         },
       },

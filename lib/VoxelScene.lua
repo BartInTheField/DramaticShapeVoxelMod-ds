@@ -205,6 +205,36 @@ local function billboardPull()
   return VoxelScene.pull(math.max(Voxel.angle, 0.05))
 end
 
+-- An authored FIGURE's card -- a person the tileset draws INTO a piece of
+-- furniture, cut out by the profile's mask (Structures.buildFigures). It is
+-- a sprite, so it gets the sprite treatment: the mesh arrives in its own
+-- local space with its feet on y = 0, and this stands it at its drawn
+-- position and tips it back by exactly the camera's pitch -- the same
+-- pivot-at-the-feet lean billboardMatrix gives a character, so the man on
+-- the Pokemon Center couch reads face-on at every tilt like the NPCs
+-- around him. No cell centring: unlike a character he is not standing on a
+-- cell, he is standing where he was drawn, which may straddle two.
+local function figureMatrix(f, offX, offZ)
+  local Voxel = V.require("VoxelState")
+  return Mat4.mul(Mat4.translate(f.wx + (offX or 0), f.y, f.wz + (offZ or 0)),
+                  Mat4.rotateX(Voxel.angle - math.pi / 2))
+end
+
+-- What the sun sees: the same card UNLEANED and flattened, exactly as
+-- Voxel3D.casterMatrix does it for a character.
+local function figureCaster(f, offX, offZ)
+  return Mat4.mul(
+    Mat4.translate(f.wx + (offX or 0), f.y, f.wz + (offZ or 0)),
+    Mat4.scale(1, 1, 0))
+end
+
+-- Every figure on `map`, drawn with `draw(mesh, model, caster)`.
+local function eachFigure(map, offX, offZ, draw)
+  for _, f in ipairs(ChunkMesher.figures(map) or {}) do
+    draw(f.mesh, figureMatrix(f, offX, offZ), figureCaster(f, offX, offZ))
+  end
+end
+
 -- Draw one posed entity. Returns true if 3D geometry carried it, false
 -- when nothing could be built and the caller should fall back.
 -- `colors` is the 4-color world palette the entity stands under in the SGB
@@ -448,6 +478,16 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
     ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
                    Mat4.translate(nb.ox, 0, nb.oy))
   end
+  -- authored figures cast too, for the same reason the flowers do: a
+  -- handful of cards per map, and a person with no shadow reads as pasted on
+  eachFigure(state.map, 0, 0, function(mesh, _, caster)
+    ShadowMap.draw(mesh, atlasFor(state.map), caster)
+  end)
+  for _, nb in ipairs(state.neighbors or {}) do
+    eachFigure(nb.map, nb.ox, nb.oy, function(mesh, _, caster)
+      ShadowMap.draw(mesh, atlasFor(nb.map), caster)
+    end)
+  end
   for _, p in ipairs(posed) do
     local def = p.sprite.def
     local frame, mirror = frameFor(def, p.facing, p.phase, p.flip)
@@ -533,6 +573,20 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   for _, p in ipairs(posed) do
     drawEntity(p.sprite, p.px, p.py, p.facing, p.phase, p.flip, p.gh,
                p.colors, p.lift)
+  end
+  -- Authored figures, alongside the characters and with the same lean and
+  -- the same camera-ward pull -- they ARE characters as far as the artwork
+  -- is concerned, just ones the tileset draws instead of a sprite sheet.
+  -- Drawn after the walkers so a player standing in front of the couch
+  -- wins the overlap, which is the order the flat game draws them in.
+  local figPull = billboardPull()
+  eachFigure(state.map, 0, 0, function(mesh, model, caster)
+    Voxel3D.draw(mesh, atlasFor(state.map), model, figPull, caster)
+  end)
+  for _, nb in ipairs(state.neighbors or {}) do
+    eachFigure(nb.map, nb.ox, nb.oy, function(mesh, model, caster)
+      Voxel3D.draw(mesh, atlasFor(nb.map), model, figPull, caster)
+    end)
   end
   -- tall grass last, pulled camera-ward exactly as far as the characters
   -- were (same per-vertex shader bias, so grass never drifts either):

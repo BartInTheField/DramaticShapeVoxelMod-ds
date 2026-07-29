@@ -169,6 +169,7 @@ local ART = {
 local spec = nil          -- the loaded data file, or false when absent
 local cache = {}          -- tileset id -> resolved shape list
 local figCache = {}       -- tileset id -> parsed figure masks, or false
+local bgCache = {}        -- tileset id -> prop background shades, or false
 
 -- The shape profile ships with the mod (data/voxel_heights.lua) and is read
 -- through the mod's own file loader rather than package.path: a mod's
@@ -380,13 +381,15 @@ end
 -- same shades as its furniture.  So the profile authors the silhouette
 -- pixel by pixel (see data/voxel_heights.lua):
 --
---   figures = { { class  = <standee pool, for its depth>,
---                 w      = <tiles across>,
+--   figures = { { w      = <tiles across>,
 --                 tiles  = { ...w*h tile ids, row-major... },
 --                 under  = { ...w*h ids: what each tile wears once the
 --                            figure is lifted off it... },
 --                 pixels = { ...h*8 strings of w*8 chars, "." = not the
 --                            figure... } } }
+--
+-- No class: a figure is always a flat sprite card, drawn the way
+-- SpriteBillboards draws a character (see Structures.buildFigures).
 --
 -- Returned normalized: `mask` as a set keyed by ly * (w * 8) + lx, so
 -- Structures can read it as a bitmap without re-parsing per position.
@@ -430,8 +433,7 @@ function TileShape.figures(tilesetId)
           end
         end
         if n > 0 then
-          out[#out + 1] = { class = f.class or "billboard",
-                            w = w, h = h, n = n, mask = mask,
+          out[#out + 1] = { w = w, h = h, n = n, mask = mask,
                             tiles = f.tiles, under = f.under }
         end
       end
@@ -442,12 +444,65 @@ function TileShape.figures(tilesetId)
   return figCache[tilesetId] or nil
 end
 
+-- Which GB shades count as BACKGROUND for a pinned per-pixel prop, per tile
+-- (a tileset entry's prop_bg). Returns tile id -> set of shade names, or nil.
+--
+-- Structures normally votes on this by reading the shades that touch the
+-- drawing's own bounding box, which is right whenever the drawing has a
+-- margin of floor around it and wrong when it does not: a prop whose body
+-- reaches its own edge votes itself out. Naming the shades is the override,
+-- and it is keyed by TILE because the answer is per drawing rather than per
+-- tileset -- two props in one atlas can want opposite calls on the same
+-- shade (see the POKECENTER entry).
+--
+--   prop_bg = { { tiles = { ...ids... }, shades = { "light", "white" } } }
+--
+-- Only the four GB shade names exist; anything else is dropped, so a typo
+-- degrades to the ordinary vote rather than emptying the background.
+local SHADES = { black = true, dark = true, light = true, white = true }
+
+function TileShape.propBg(tilesetId)
+  local hit = bgCache[tilesetId]
+  if hit ~= nil then return hit or nil end
+
+  local s = load()
+  local entry = s and s.tilesets and s.tilesets[tilesetId]
+  local list = entry and entry.prop_bg
+  local out, any = {}, false
+  if type(list) == "table" then
+    for _, rule in ipairs(list) do
+      if type(rule) == "table" and type(rule.tiles) == "table"
+         and type(rule.shades) == "table" then
+        local set, n = {}, 0
+        for _, name in ipairs(rule.shades) do
+          if SHADES[name] then
+            set[name] = true
+            n = n + 1
+          end
+        end
+        if n > 0 then
+          for _, t in ipairs(rule.tiles) do
+            if type(t) == "number" then
+              out[t] = set
+              any = true
+            end
+          end
+        end
+      end
+    end
+  end
+
+  bgCache[tilesetId] = any and out or false
+  return bgCache[tilesetId] or nil
+end
+
 -- Drop the cache: a mod that shadows data/voxel_heights.lua or a tileset
 -- record needs the next lookup to re-resolve (hot reload, mod toggle).
 function TileShape.invalidate()
   spec = nil
   cache = {}
   figCache = {}
+  bgCache = {}
 end
 
 return TileShape

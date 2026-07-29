@@ -55,31 +55,49 @@ T.check(type(figs) == "table" and #figs == 1,
   "POKECENTER carries exactly one figure")
 
 local fig = figs[1]
-T.eq(fig.w, 2, "the figure is two tiles across")
+T.eq(fig.w, 3, "the figure is three tiles across")
 T.eq(fig.h, 2, "the figure is two tiles tall")
-T.eq(fig.n, 128, "the mask claims 128 pixels of the 256 it spans")
+T.eq(fig.n, 139, "the mask claims 139 pixels of the 384 it spans")
+T.check(fig.class == nil,
+  "a figure carries no class -- it is always a flat sprite card")
 
--- no holes in him: his tiles' column 7 is the couch's east rule AND the
--- right side of his face, and masking it out by shade slit his cheek open
+local W = fig.w * 8
+local function on(lx, ly) return fig.mask[ly * W + lx] == true end
+
+-- the BACK OF HIS HEAD, in the two rightmost columns of tile 36 (the
+-- couch's west arm): rows 0-1 are the arm, row 2 is his hair in column 7
+-- only, rows 3-7 are his hair in both
+T.check(not on(6, 0) and not on(7, 0) and not on(6, 1) and not on(7, 1),
+  "the arm's own top rows stay with the couch")
+T.check(not on(6, 2) and on(7, 2), "his hair starts in column 7 at row 2")
+for ly = 3, 7 do
+  T.check(on(6, ly) and on(7, ly),
+    "the back of his head fills both columns at row " .. ly)
+end
+
+-- no holes in him: 37/53's column 7 (local 15) is the couch's east rule AND
+-- the right side of his face, and masking it out by shade slit his cheek
 for ly = 5, 8 do
-  T.check(fig.mask[ly * (fig.w * 8) + 7] == true,
+  T.check(on(15, ly),
     "his cheek is solid at row " .. ly .. " (the column-7 slit)")
 end
-T.eq(fig.tiles[1], 37, "it starts at the tile his head is drawn in")
-T.eq(fig.under[1], 39, "which wears the couch's own cushion once he is off")
-T.eq(fig.under[2], 1, "and the floor tiles wear the clean art (57 -> 1)")
-T.eq(fig.under[4], 26, "and (60 -> 26)")
+
+T.eq(fig.tiles[1], 36, "it starts at the couch's west arm")
+T.eq(fig.tiles[2], 37, "then the tile his head is drawn in")
+T.eq(fig.under[1], 52, "the arm wears the plain strip once his hair is off")
+T.eq(fig.under[2], 39, "his head tile wears the couch's own cushion")
+T.eq(fig.under[3], 1, "and the floor tiles wear the clean art (57 -> 1)")
+T.eq(fig.under[6], 26, "and (60 -> 26)")
 
 -- the mask is one connected figure: an overhang that floats free of him
 -- is the failure this feature exists to avoid
-local W = fig.w * 8
 local seen, first = {}, nil
 for i in pairs(fig.mask) do first = first or i end
-local stack, n = { first }, 0
+local stack, reached = { first }, 0
 seen[first] = true
 while #stack > 0 do
   local i = table.remove(stack)
-  n = n + 1
+  reached = reached + 1
   local x, y = i % W, math.floor(i / W)
   for dy = -1, 1 do
     for dx = -1, 1 do
@@ -93,7 +111,7 @@ while #stack > 0 do
     end
   end
 end
-T.eq(n, fig.n, "the mask is a single connected figure")
+T.eq(reached, fig.n, "the mask is a single connected figure")
 
 -- ------- the couch block, as the Centers place it
 
@@ -112,7 +130,7 @@ local COUCH = { [36] = true, [37] = true, [38] = true, [39] = true,
                 [42] = true, [43] = true, [52] = true, [53] = true }
 
 local function scene()
-  local S = { shapeAt = {}, tileAt = {}, objectQuads = {}, skip = {},
+  local S = { shapeAt = {}, tileAt = {}, figures = {}, skip = {},
               ground = {}, runs = {} }
   for i = 1, 16 do
     local tx, ty = (i - 1) % 4, 8 + math.floor((i - 1) / 4)
@@ -136,14 +154,17 @@ local map = {
 local S = scene()
 Structures.buildFigures(S, map, 0, 3, 8, 11)
 
-T.check(#S.objectQuads > 0, "the figure built geometry")
+T.eq(#S.figures, 1, "one figure card was built")
+local card = S.figures[1]
+T.eq(#card.quads, fig.n, "one quad per masked pixel, and nothing else")
 
+T.eq(S.tileAt[keyOf(0, 8)], 52, "the arm wears the plain strip now")
 T.eq(S.tileAt[keyOf(1, 8)], 39, "his head tile now wears the cushion")
 T.eq(S.tileAt[keyOf(1, 9)], 39, "his body tile too")
 T.eq(S.tileAt[keyOf(2, 8)], 1, "the floor he overhung is clean floor again")
 T.eq(S.tileAt[keyOf(2, 9)], 26, "both rows of it")
-T.eq(S.tileAt[keyOf(0, 8)], 36, "the west wall strip beside him is untouched")
-T.eq(S.tileAt[keyOf(1, 10)], 39, "and the couch's own cushion row is too")
+T.eq(S.tileAt[keyOf(1, 10)], 39, "the couch's own cushion row is untouched")
+T.eq(S.tileAt[keyOf(1, 11)], 43, "and so is its drawn base")
 
 -- the couch keeps its box: a figure changes ART, never class
 T.eq(S.shapeAt[keyOf(1, 8)].class, "counter",
@@ -151,10 +172,10 @@ T.eq(S.shapeAt[keyOf(1, 8)].class, "counter",
 T.check(S.skip[keyOf(1, 8)] ~= true,
   "and are not skipped -- the couch still renders there")
 
--- ------- where he stands
+-- ------- the card is flat, and stands at its feet
 
 local minX, maxX, minY, maxY, minZ, maxZ
-for _, q in ipairs(S.objectQuads) do
+for _, q in ipairs(card.quads) do
   for c = 1, 4 do
     local p = q[c]
     minX = math.min(minX or p[1], p[1]); maxX = math.max(maxX or p[1], p[1])
@@ -163,43 +184,62 @@ for _, q in ipairs(S.objectQuads) do
   end
 end
 
-T.eq(minY, 8, "his feet are on the couch's top face, not the floor")
-T.eq(maxY, 24, "and he stands his drawn 16px tall from there")
-T.eq(minX, 8, "he starts at the tile column he is drawn in")
-T.eq(maxX, 18, "and reaches his hair's overhang, two pixels east of it")
-T.eq(maxZ - minZ, 1, "a flat card, one voxel deep, like the walking NPCs")
+T.eq(minZ, 0, "the card is a single plane at z = 0 (no thickness)")
+T.eq(maxZ, 0, "on both sides -- it is a sprite, not a slab")
+T.eq(minY, 0, "local space: his feet are the card's origin")
+T.eq(maxY, 16, "and he is his drawn 16px tall")
+T.eq(minX, 0, "his west edge is the card's origin too")
+T.eq(maxX, 12, "and he is 12px wide -- arm hair to floor overhang")
 
--- and he stands in the depth band of the row he is DRAWN in -- the couch's
--- northern cell (tile row 9 spans z 72..80), not shifted onto its southern
--- half the way a supported prop is
-T.check(minZ >= 72 and maxZ <= 80,
-  "he stands on his own cell, not the couch's southern half")
+-- ------- and where VoxelScene stands it
 
--- the cushion wedge under his legs stayed with the couch: his lowest row
--- is his foot alone, not the whole tile width
-local footMinX
-for _, q in ipairs(S.objectQuads) do
-  for c = 1, 4 do
-    if q[c][2] == 8 then footMinX = math.min(footMinX or q[c][1], q[c][1]) end
-  end
-end
-T.eq(footMinX, 14, "the couch cushion beside his foot was left behind")
+T.eq(card.y, 8, "his feet stand on the couch's top face, not the floor")
+T.eq(card.wx, 6, "anchored at the back of his head, in tile 36's column 6")
+T.eq(card.wz, 76,
+  "and pivoting at the middle of the tile row his feet are drawn in")
 
 -- ------- a map that does not draw him builds nothing
 
 local other = scene()
 other.tileAt[keyOf(1, 8)] = 40
 Structures.buildFigures(other, map, 0, 3, 8, 11)
-T.eq(#other.objectQuads, 0, "no match, no figure")
+T.eq(#other.figures, 0, "no match, no figure")
 T.eq(other.tileAt[keyOf(2, 8)], 57, "and nothing repainted")
 
 -- ------- and it never fires twice on the same drawing
 
 local twice = scene()
 Structures.buildFigures(twice, map, 0, 3, 8, 11)
-local once = #twice.objectQuads
 Structures.buildFigures(twice, map, 0, 3, 8, 11)
-T.eq(#twice.objectQuads, once,
+T.eq(#twice.figures, 1,
   "the repaint replaces the pattern, so a rescan cannot match it again")
+
+-- ------- prop_bg: the shades a pinned prop treats as background
+--
+-- The potted plants needed this: their pot's olive base is drawn flush on
+-- the bottom of the plant block, so the ordinary vote (shades touching the
+-- drawing's own bounding box) read "dark" as background and drained every
+-- olive pixel in the plant.
+
+local bgRules = TileShape.propBg("POKECENTER")
+T.check(type(bgRules) == "table", "POKECENTER names prop background shades")
+for _, tile in ipairs({ 32, 33, 34, 35, 48, 49, 50, 51 }) do
+  local set = bgRules and bgRules[tile]
+  T.check(type(set) == "table" and set.light and set.white
+          and not set.dark and not set.black,
+    "plant tile " .. tile .. ": light/white are background, dark is the pot")
+end
+
+-- and it is scoped: the healing consoles' screens and the PC keep the
+-- ordinary vote, because they want the opposite call on those same shades
+for _, tile in ipairs({ 58, 59, 66, 70, 74, 75, 82, 86 }) do
+  T.check(bgRules[tile] == nil,
+    "tile " .. tile .. " keeps the ordinary background vote")
+end
+
+-- a tileset with no prop_bg at all answers nil rather than an empty table,
+-- so Structures can skip the lookup entirely
+T.check(TileShape.propBg("CAVERN") == nil,
+  "a tileset that names none answers nil")
 
 T.finish("DRAMATIC_SHAPE figures")

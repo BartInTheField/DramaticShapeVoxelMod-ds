@@ -193,7 +193,7 @@ function Structures.forMap(map)
   -- terrain.)
   S = { shapeAt = shapeAt, tileAt = tileAt, outdoor = Map.isOutdoor(def),
         runs = {}, skip = {}, ground = {}, doorFold = {}, objectQuads = {},
-        grassQuads = {}, flowerQuads = {}, roundStamps = {} }
+        grassQuads = {}, flowerQuads = {}, roundStamps = {}, figures = {} }
   Buildings.build(S, map, pixels(tileset), perRow)
 
   -- Fold doors into their buildings. A door cell is WALKABLE (the player
@@ -1708,18 +1708,44 @@ function Structures.extractObjects(S, map, region, data, perRow, force)
       local fs = S.shapeAt[keyOf(region.tiles[1][1], region.tiles[1][2])]
       strict = fs ~= nil and fs.class == "cutout"
     end
+    -- The rim vote reads the shades on the DRAWING'S OWN bounding box, so a
+    -- prop whose body reaches its own edge votes itself out. The Center's
+    -- potted plants are the case: the pot's olive base is drawn flush on the
+    -- bottom row of the block, so "dark" came back as background and every
+    -- dark pixel in the whole plant drained with it -- the pots rendered as
+    -- hollow black frames while the 2D art has solid olive bodies.
+    --
+    -- Where the vote misreads the art, the profile can name the background
+    -- shades outright (a tileset entry's prop_bg). Keyed BY TILE rather than
+    -- per tileset, because the answer is per drawing: the healing consoles'
+    -- screens really do stand on a dark wall band and really do need dark
+    -- voted out, and the PC really does need light kept.
     local bg = {}
-    for iy = 0, H - 1 do
-      for ix = 0, W - 1 do
-        local px, py = ix - 1, iy - 1
-        local edge = px == 0 or px == bw - 1 or py == 0 or py == bh - 1
-        local st = state[iy * W + ix]
-        if edge and (st == "dark" or st == "light" or st == "white") then
-          bg[st] = true
+    do
+      local named = TileShape.propBg(map.tileset.id)
+      if named then
+        for _, c in ipairs(region.tiles) do
+          local rule = named[S.tileAt[keyOf(c[1], c[2])]]
+          if rule then
+            for shadeName in pairs(rule) do bg[shadeName] = true end
+            break
+          end
         end
       end
     end
-    if not (bg.dark or bg.light or bg.white) then bg.white = true end
+    if not next(bg) then
+      for iy = 0, H - 1 do
+        for ix = 0, W - 1 do
+          local px, py = ix - 1, iy - 1
+          local edge = px == 0 or px == bw - 1 or py == 0 or py == bh - 1
+          local st = state[iy * W + ix]
+          if edge and (st == "dark" or st == "light" or st == "white") then
+            bg[st] = true
+          end
+        end
+      end
+      if not (bg.dark or bg.light or bg.white) then bg.white = true end
+    end
     for i, st in pairs(state) do
       if strict then
         if st == "dark" or st == "light" then
@@ -2134,6 +2160,23 @@ end
 -- answer to give -- so the profile answers instead, and this only has to
 -- believe it.  Which also means figures build HEADLESS: unlike every
 -- other standee here, nothing below reads a pixel.
+--
+-- A figure is a SPRITE, not a prop.  It gets exactly the treatment
+-- SpriteBillboards gives a character: one flat plane of the drawing's own
+-- pixels, no thickness, standing at its feet and leaned back by the
+-- camera's pitch at draw time so it always reads face-on -- because that
+-- is what the artwork is.  A seated man drawn face-on is a 2D icon like
+-- every other Gen 1 figure; extruding him into a slab reconstructs a body
+-- nobody drew (the ten-voxel version read as a wedge of furniture, and
+-- even one voxel showed an edge the sprites never show).
+--
+-- So the quads are emitted in the card's OWN LOCAL SPACE -- x from the
+-- mask's west edge, y from his feet, all at z = 0 -- and the placement
+-- (`wx`, `wz`, `y`) rides along for VoxelScene to build the lean matrix
+-- from.  One quad per pixel rather than one alpha-keyed texture: the
+-- tileset atlas has no alpha to key on, and per-pixel quads cut the exact
+-- same silhouette straight out of the live atlas, so every palette bake
+-- (SGB, RED++ per-tile groups, a mod's own art) textures him for free.
 local function buildFigure(S, map, fig, tx, ty, perRow)
   local bw, bh = fig.w * 8, fig.h * 8
 
@@ -2142,47 +2185,33 @@ local function buildFigure(S, map, fig, tx, ty, perRow)
     return fig.mask[ly * bw + lx] or false
   end
 
-  -- his feet: the lowest drawn row, which is what lands on the support
-  local lowY = 0
-  for ly = bh - 1, 0, -1 do
-    local any = false
+  -- his feet and his west edge: the card's own origin
+  local lowY, minX = 0, bw - 1
+  for ly = 0, bh - 1 do
     for lx = 0, bw - 1 do
-      if at(lx, ly) then any = true break end
+      if at(lx, ly) then
+        if ly > lowY then lowY = ly end
+        if lx < minX then minX = lx end
+      end
     end
-    if any then lowY = ly break end
   end
 
   -- He stands ON the furniture he was drawn into -- the same lift a pinned
   -- prop above a pinned box takes (see buildObject), and gated the same
   -- way: a thing set down on furniture occupies a BLOCKED cell, while a
   -- seat you merely walk up to is in a walkable one.
-  local baseY, support = 0, nil
+  local baseY = 0
   local bs = S.shapeAt[keyOf(tx, ty + fig.h)]
   local blocked = not map:isWalkableCell(math.floor(tx / 2),
                                          math.floor((ty + fig.h - 1) / 2))
   if blocked and bs and bs.authored and bs.art == "upright"
      and (bs.h or 0) > 0 then
-    baseY, support = bs.h, bs
+    baseY = bs.h
   end
 
-  -- He stands in the depth band of the tile row he is DRAWN in, centred.
-  -- No south shift: buildObject nudges a supported prop one row back
-  -- because a monitor is drawn in the rows ABOVE the desk it stands on,
-  -- so its drawn row is not its standing row.  A figure's mask already
-  -- says exactly which row is his -- shifting it walked him off his own
-  -- cell and onto the couch's southern half.
-  local depth = PINNED_DEPTH[fig.class] or PINNED_DEPTH.billboard
-  local z0 = ty * 8 + math.floor(lowY / 8) * 8 + (8 - depth) / 2
-  local z1 = z0 + depth
-
-  -- ONE object by construction: the figure keeps its drawn proportions
-  -- whatever the mask's connectivity, so an overhang (his hair crossing
-  -- the tile seam) stays at its drawn height instead of being dropped to
-  -- the floor as a component of its own.
   local atlasW = map.tileset.imageWidth or 128
   local atlasH = map.tileset.imageHeight or 48
-  local quads = S.objectQuads
-  local wx0 = tx * 8
+  local quads = {}
   for ly = 0, bh - 1 do
     Budget.tick()
     for lx = 0, bw - 1 do
@@ -2191,33 +2220,25 @@ local function buildFigure(S, map, fig, tx, ty, perRow)
                                + math.floor(lx / 8) + 1]
         local u = ((tile % perRow) * 8 + lx % 8 + 0.5) / atlasW
         local v = (math.floor(tile / perRow) * 8 + ly % 8 + 0.5) / atlasH
-        local x, y = wx0 + lx, baseY + lowY - ly
-        local function quad(c1, c2, c3, c4, shade)
-          quads[#quads + 1] = { c1, c2, c3, c4, u = u, v = v, shade = shade }
-        end
-        quad({ x, y, z1 }, { x + 1, y, z1 }, { x + 1, y + 1, z1 },
-             { x, y + 1, z1 }, OBJ_SHADE.front)
-        quad({ x + 1, y, z0 }, { x, y, z0 }, { x, y + 1, z0 },
-             { x + 1, y + 1, z0 }, OBJ_SHADE.back)
-        if not at(lx, ly - 1) then
-          quad({ x, y + 1, z0 }, { x + 1, y + 1, z0 }, { x + 1, y + 1, z1 },
-               { x, y + 1, z1 }, OBJ_SHADE.top)
-        end
-        if y > baseY and not at(lx, ly + 1) then
-          quad({ x, y, z1 }, { x + 1, y, z1 }, { x + 1, y, z0 },
-               { x, y, z0 }, OBJ_SHADE.bottom)
-        end
-        if not at(lx - 1, ly) then
-          quad({ x, y, z0 }, { x, y, z1 }, { x, y + 1, z1 },
-               { x, y + 1, z0 }, OBJ_SHADE.side)
-        end
-        if not at(lx + 1, ly) then
-          quad({ x + 1, y, z1 }, { x + 1, y, z0 }, { x + 1, y + 1, z0 },
-               { x + 1, y + 1, z1 }, OBJ_SHADE.side)
-        end
+        local x, y = lx - minX, lowY - ly
+        quads[#quads + 1] = { { x, y, 0 }, { x + 1, y, 0 },
+                              { x + 1, y + 1, 0 }, { x, y + 1, 0 },
+                              u = u, v = v, shade = 1 }
       end
     end
   end
+
+  -- Where the card stands.  `wz` is the MIDDLE of the tile row his feet are
+  -- drawn in, which is the same convention a character card uses (its feet
+  -- plane sits at its cell's middle) -- so he sorts against the couch and
+  -- against a player walking past exactly the way an NPC standing there
+  -- would.
+  S.figures[#S.figures + 1] = {
+    quads = quads,
+    wx = tx * 8 + minX,
+    wz = ty * 8 + math.floor(lowY / 8) * 8 + 4,
+    y = baseY,
+  }
 
   -- What each covered tile wears now that he is off it.  Only the ART
   -- changes: the couch tiles keep their `counter` box (they ARE the
