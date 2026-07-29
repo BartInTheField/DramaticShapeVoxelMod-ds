@@ -16,6 +16,28 @@
 
 ### Added
 
+- **A fade out of a battle, where there used to be a hard cut.** The engine
+  wipes INTO a fight with one of the original's eight transitions and cuts
+  straight out of it: `BattleState:finish` pops itself and the map is simply
+  there on the next frame. Between a white field and a tile map the original got
+  away with that; between a placed camera looking across an arena and a diorama
+  looking down on a walking player it reads as a glitch. The battle now fades to
+  black, closes behind it, and the map fades up out of it -- twelve frames each
+  way, registered as a `voxel_battle_exit` transitions record so the timing is
+  retunable in data like the wipes it answers.
+
+  Only while voxel mode is on, and then for EVERY battle, including one that
+  found no arena and drew on the flat battle screen: what is being smoothed over
+  is the return to the map, and the map is a diorama either way. With the mode
+  off, the vanilla cut is untouched.
+
+  One black rectangle over the FINISHED composite does the fading, so the world,
+  the letterbox bars and the battle's own text box all darken by the same amount
+  -- the renderer's existing warp-fade overlay is painted between the world and
+  the UI, which would have left the text box bright over the black. A blackout's
+  own warp fade or an evolution prompt still owns the way out when it takes the
+  screen: the fade stops at the cut rather than fading in over the top of it.
+
 - **A `FULL` rung on the VOXEL row**, directly after `OFF`. One choice that
   puts the whole mode in its intended state -- the 35-degree camera, the
   miniature blur at maximum, the horizon flat, the view fitted, and battles

@@ -78,6 +78,7 @@ local ChunkMesher = V.require("ChunkMesher")
 local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
 local OverworldBattle = V.require("OverworldBattle")
+local BattleExit = V.require("BattleExit")
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
 -- calls this, and it is defined further down with the settings it drives.
@@ -671,6 +672,23 @@ end)
 mod.events:on("battle.ended", function()
   OverworldBattle.finish()
 end)
+
+-- ------- and the way back out
+--
+-- The engine wipes INTO a battle with one of the original's eight transitions
+-- and cuts straight OUT of it. That cut is between two very different cameras
+-- in this mode, so while voxel mode is on the battle fades out, closes behind
+-- the black, and the map fades up. The two seams it needs -- BattleState:finish
+-- and Renderer:endFrame -- and the reasoning for each live in lib/BattleExit.lua.
+--
+-- Declared as a transitions record rather than a constant in that file, so the
+-- fade is retunable in data exactly like the eight wipes it answers, and a total
+-- conversion can make it as long or as short as its own pacing wants.
+mod.content.transitions:register(BattleExit.ID, {
+  frames = BattleExit.FRAMES,
+})
+
+BattleExit.install()
 
 mod.exports.version = "1.1.1"
 -- exposed so a companion mod can pin its own tiles' shapes or read the

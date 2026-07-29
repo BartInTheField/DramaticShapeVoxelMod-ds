@@ -2134,7 +2134,8 @@ function Structures.buildObject(S, map, region, cluster,
   end
   for _, c in ipairs(cluster.tiles) do
     local k = keyOf(c[1], c[2])
-    if support and support.class == "wall" then
+    if support and (support.class == "wall" or support.class == "cliff"
+                    or support.art == "bookcase") then
       -- a figure drawn above a FULL-HEIGHT block (the gym statue on its
       -- plinth) is a statue on a pillar with ONE cell of footprint: the
       -- block below already carries the whole base, so the drawn cell
@@ -2142,6 +2143,13 @@ function Structures.buildObject(S, map, region, cluster,
       -- the base backwards. Furniture supports (a monitor on its desk)
       -- keep the box-extension below -- their drawn cell is the
       -- furniture's own upper rows, and floor there would amputate it.
+      --
+      -- STRUCTURE, not height, decides which: `cliff` and `bookcase` are
+      -- full-height blocks like `wall` and belong here, while `desk` is
+      -- 24px and still furniture.  The Plateau's statues on stacked
+      -- pilasters found this -- taking the furniture branch turned each
+      -- statue's own two rows into a 32px box wearing the pilaster's art,
+      -- so every one of them stood inside a slab of its own plinth.
       S.skip[k] = true
       S.ground[k] = best
     elseif support then

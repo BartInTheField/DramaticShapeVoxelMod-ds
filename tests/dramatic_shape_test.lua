@@ -1567,6 +1567,108 @@ T.check(e[2] + e[4] <= hudRect.player[2],
 T.eq(e[1], 0, "the bands are full width")
 T.eq(e[3], 160, "so a shaken HUD or a long name is carried out with its block")
 
+-- ------- the way out of a battle is a fade, not a cut
+--
+-- The engine wipes INTO a battle and cuts straight out of it. While voxel mode
+-- is on that cut is between a placed camera looking across an arena and a
+-- diorama looking down on a walking player, so the battle fades out, closes
+-- behind the black, and the map fades up.
+--
+-- The pop ORDER is the part that has to be right: BattleState:finish pops
+-- whatever is on top, which is the fade while it is up, so the fade has to be
+-- off the stack before the battle finishes and back on it afterwards.
+local Exit = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattleExit")
+
+T.eq(Data.transitions and Data.transitions[Exit.ID] and
+     Data.transitions[Exit.ID].frames, Exit.FRAMES,
+  "the fade's timing is a registered transitions record, retunable in data")
+
+local function fakeStack(...)
+  local s = { states = { ... } }
+  function s:top() return self.states[#self.states] end
+  function s:push(state) self.states[#self.states + 1] = state end
+  function s:pop() return table.remove(self.states) end
+  return s
+end
+
+-- headless has no depth buffer, so the real gate answers no on every rung;
+-- pin it, which is what the seam is there for
+local realModeOn = Exit.modeOn
+Exit.modeOn = function() return true end
+
+T.eq(Exit.wanted(nil), false, "no battle, no fade")
+T.eq(Exit.wanted({ game = { stack = {} } }), true, "a battle in voxel mode fades")
+T.eq(Exit.wanted({ game = { stack = {} }, payDay = 100, result = "win" }), false,
+  "but not on an unpaid PAY DAY -- that finish() prints a message and comes "
+  .. "back, so the fade belongs to the call that really leaves")
+Exit.modeOn = function() return false end
+T.eq(Exit.wanted({ game = { stack = {} } }), false,
+  "and with voxel mode off the battle keeps the cut it always had")
+Exit.modeOn = function() return true end
+
+local exitOw = { isOverworld = true }
+local exitGame = { data = Data, overworld = exitOw }
+local exitBattle = { game = exitGame }
+exitGame.stack = fakeStack(exitOw, exitBattle)
+
+local finished = 0
+local fade = Exit.start(exitBattle, function()
+  finished = finished + 1
+  exitGame.stack:pop()          -- what BattleState:finish does: pops itself
+end)
+T.eq(exitGame.stack:top(), fade, "the fade goes on top of the battle it closes")
+T.eq(Exit.veil(), 0, "and starts on the battle's own last live frame")
+
+for _ = 1, fade.frames - 1 do fade:update() end
+T.check(Exit.veil() > 0.5, "the veil climbs while the battle is still up")
+T.eq(exitGame.stack:top(), fade, "which is a frozen battle: the fade is on top")
+T.eq(finished, 0, "and nothing has finished yet")
+
+fade:update()                    -- the frame the cut lands on
+T.eq(finished, 1, "at full black the battle finishes for real")
+T.eq(Exit.veil(), 1, "with the screen fully black over the swap")
+T.eq(#exitGame.stack.states, 2, "the battle left the stack")
+T.eq(exitGame.stack.states[1], exitOw, "the map is under it")
+T.eq(exitGame.stack:top(), fade,
+  "and the fade went back on top of the map to bring it up")
+
+for _ = 1, fade.frames - 1 do fade:update() end
+T.check(Exit.veil() < 0.5, "the veil falls away over the map")
+fade:update()
+T.eq(Exit.veil(), nil, "and the fade is done -- no veil left on the screen")
+T.eq(exitGame.stack:top(), exitOw, "with the map back on top, playable")
+T.eq(finished, 1, "the battle finished exactly once")
+
+-- ------- a blackout (or an evolution prompt) owns the way out itself
+--
+-- Those push their own transition on the way through onFinish, so this fade
+-- stops at the cut rather than fading in over the top of somebody else's.
+local other = { isSomeoneElse = true }
+local blackout = { game = exitGame }
+exitGame.stack = fakeStack(exitOw, blackout)
+local warpFade = Exit.start(blackout, function()
+  exitGame.stack:pop()                     -- the battle leaves
+  exitGame.stack:push(other)               -- and a warp fade takes the screen
+end)
+for _ = 1, warpFade.frames do warpFade:update() end
+T.eq(exitGame.stack:top(), other, "the state that took over is on top")
+T.eq(Exit.veil(), nil, "and this fade let go of the screen at the cut")
+T.eq(blackout.dramaticShapeLeaving, nil,
+  "with the flag cleared, so a finish() that really leaves fades again")
+
+-- ------- a stack cleared from under a fade cannot black the game out
+--
+-- A script (or the shot driver) pops down to the overworld without asking. The
+-- fade is gone, so the veil has to go with it -- nothing is left to fade it in.
+exitGame.stack = fakeStack(exitOw, exitBattle)
+local orphan = Exit.start(exitBattle, function() end)
+orphan:update()
+T.check(Exit.veil() > 0, "a live fade veils the frame")
+while exitGame.stack:top() ~= exitOw do exitGame.stack:pop() end
+T.eq(Exit.veil(), nil, "and a fade popped from under itself veils nothing")
+
+Exit.modeOn = realModeOn
+
 Pipelines.reset()
 run.release()
 

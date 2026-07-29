@@ -46,6 +46,14 @@ of the two pics' feet, and `WIDE` re-lays that screen out on a 304x144
 surface, which moves every anchor it is solved against. Switching **3D-BTL**
 off hands the row straight back with `WIDE` selectable again.
 
+Leaving a battle fades rather than cuts while **VOXEL** is on: the battle
+screen fades to black, closes behind it, and the map fades up out of it. The
+engine wipes *into* a fight and cut straight out of one, which is a big jump
+between the arena's placed camera and the walking diorama. It applies to every
+battle while the mode is on — including one that found no arena and drew on
+the flat battle screen — and not at all while the mode is off. The timing is a
+`voxel_battle_exit` transitions record, so a data pack can retune it.
+
 The two HP boxes snap to the window's own edges while a battle is staged —
 the foe's to the left, yours to the right — instead of huddling in the middle
 of the frame with map showing either side of them. Same tiles, same size,
