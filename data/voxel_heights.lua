@@ -832,31 +832,10 @@ return {
       -- cash register, pinned it `billboard`, and got a bare black
       -- outline standing on the counter with the tile's own art replaced
       -- by its neighbour's.
-      counter = { 8, 16, 24, 25, 41, 56, 89 },
-      -- The CASH REGISTER (14/15 over 30/31), a keypad and a curl of
-      -- receipt paper drawn face-on across two tile rows in the middle of
-      -- the counter's east arm.  Pinned `counter` it was just paint on
-      -- the work surface.  In the `billboard` pool it is a standing
-      -- per-pixel cutout ten voxels deep -- the flower-and-vase treatment
-      -- of Red's house, but with a machine's body rather than a stem --
-      -- and the support rule lifts it onto the counter automatically,
-      -- because the tile drawn directly BELOW it (16/41) is a pinned 8px
-      -- box.  Its own pool, so the counter can never absorb it.  The art
-      -- has a clean light margin on three sides and a black outline all
-      -- round, so the shade flood drains the work surface away and leaves
-      -- the machine whole.
-      --
-      -- `console`, not `billboard`, for the two vertical black rules the
-      -- COUNTER draws down the outer edges of those same tiles (columns
-      -- 0 and 15 of the pair, full height).  They are the counter's own
-      -- edging, not the register, but black always survives the shade
-      -- flood, so the billboard pool extruded them too and the machine
-      -- stood flanked by a pair of tall black slabs.  A white column
-      -- separates them from the register body, so they are their own
-      -- connected components -- and `console` carries the same
-      -- one-object contract `cutout` has, which keeps the largest
-      -- drawing and drops them, at ten voxels of body rather than one.
-      console = { 14, 15, 30, 31 },
+      -- ...and the register's own two tile rows (14/15 over 30/31) are
+      -- part of that same work surface now that the machine has been cut
+      -- off them as a sprite -- see `figures` below.
+      counter = { 8, 14, 15, 16, 24, 25, 30, 31, 41, 56, 89 },
       -- the free-standing shelf racks: TALL drawings, not deep ones --
       -- each rank collapses onto a one-cell-deep shelf at its drawn
       -- height (the Dojo/Red's-house treatment). 64/65/67 and 80/81/83
@@ -869,6 +848,55 @@ return {
       -- rule lays them flat unaided; 76/77 is the SALE case's black
       -- interior, which the volume path recesses half a course into the
       -- band -- a dark display niche, which is what it is drawn as.
+      -- THE CASH REGISTER: a keypad and a curl of receipt paper drawn
+      -- face-on across two tile rows in the middle of the counter's east
+      -- arm.  Like the Center's seated man it is a FIGURE drawn into the
+      -- furniture, so it gets the same treatment -- a flat sprite card
+      -- standing on the counter -- and for the same reason: no class pin
+      -- can separate it from the counter, because the counter draws its
+      -- own edging down columns 0 and 15 of the very same tiles.
+      --
+      -- That edging is what defeated every automatic reading. Black
+      -- always survives the shade flood, so the standee pools extruded
+      -- the two rules along with the machine and it stood flanked by a
+      -- pair of tall black slabs; `console`'s keep-the-largest-drawing
+      -- rule dropped them, but only by throwing away the receipt curl
+      -- too whenever the flood happened to cut it loose.  The mask just
+      -- says where the machine is: columns 2-13, plus the curl climbing
+      -- to the top right, and the counter keeps its edging and its light
+      -- work surface.
+      --
+      -- `under` is 16/41 twice -- the plain work surface, which already
+      -- carries the west edging (black over white) and the east (dark
+      -- over black), so the counter closes up behind the machine with no
+      -- synthesis at all.
+      figures = {
+        {
+          w = 2,
+          tiles = { 14, 15,
+                    30, 31 },
+          under = { 16, 41,
+                    16, 41 },
+          pixels = {
+            ".........XX.....",
+            "........XXXX....",
+            "........XXXXX...",
+            "........XXXXXX..",
+            "...XXXXXXXXXXX..",
+            "..XXXXXXXXXXXX..",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+            "..XXXXXXXXXXX...",
+          },
+        },
+      },
       -- NOT covered: INDIGO_PLATEAU_LOBBY, the ninth map on this id and
       -- the only one that is not the 4x4 shop.  It draws its own hall,
       -- lift bank and rope stanchions from tiles no Mart places, three
