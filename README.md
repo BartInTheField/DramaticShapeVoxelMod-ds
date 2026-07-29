@@ -38,6 +38,21 @@ menu.
 **3D-BTL** is on by default and is independent of **VOXEL**: battles draw
 on the world whether or not the free-roam camera is pitched over.
 
+While a battle can be staged on the map — **3D-BTL** on, or **VOXEL** on
+`FULL`, which owns that row — the engine's **BATTLE LAYOUT** row is set to
+`OG` and taken off the OPTIONS menu. The staged shot is composed in the Game
+Boy's own 160x144 frame: the arena camera is solved to put a cell under each
+of the two pics' feet, and `WIDE` re-lays that screen out on a 304x144
+surface, which moves every anchor it is solved against. Switching **3D-BTL**
+off hands the row straight back with `WIDE` selectable again.
+
+The two HP boxes snap to the window's own edges while a battle is staged —
+the foe's to the left, yours to the right — instead of huddling in the middle
+of the frame with map showing either side of them. Same tiles, same size,
+same rows, on the same frosted glass; only the pair's position changes. On a
+window shaped like the GB screen there is nowhere to snap to and nothing
+moves.
+
 ## Where a battle is staged
 
 The mod looks for the nearest clearing shaped like this, where every `x` is

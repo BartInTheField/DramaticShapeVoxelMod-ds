@@ -135,6 +135,62 @@ T.check(not fullIds["DRAMATIC_SHAPE:grid"], "and V-GRID")
 T.check(not fullIds["DRAMATIC_SHAPE:curve"], "and V-CURVE")
 T.check(not fullIds["DRAMATIC_SHAPE:battles"], "and 3D-BTL")
 
+-- ------- BATTLE LAYOUT is pinned to OG while a fight can be staged on the map
+--
+-- The staged battle is composed in the GB's own 160x144 frame: the anchors the
+-- arena camera is solved to put a cell under, the HUD rects the frosted panels
+-- are cut to, the full-frame white intercepted to let the world through. WIDE
+-- lays the same battle out on a 304x144 surface and moves every one of them. So
+-- the value is set and the ENGINE's row comes off the menu -- the one row this
+-- mod takes away that is not its own.
+local Battles = run.loader.exports.DRAMATIC_SHAPE.lib.require("OverworldBattle")
+T.eq(Battles.enabled(), true, "3D-BTL is on by default, which is what pins it")
+
+-- off FULL first: the row on its own has to be enough, and FULL is checked
+-- separately below
+Pipelines.setLevel("voxel", 2)
+local layoutGame = {
+  data = Data,
+  save = { options = { battleLayout = "wide", pipelines = {}, modOptions = {} } },
+  mods = { modOptions = {} },
+  writeOptions = function() end,
+}
+local pinned = Runtime.call("ui.options.rows", function(_, r) return r end,
+                            layoutGame,
+                            { { id = "battleLayout" }, { id = "tilt" },
+                              { id = "pipeline:voxel" } })
+local pinnedIds = {}
+for _, row in ipairs(pinned) do pinnedIds[row.id] = true end
+T.check(not pinnedIds["battleLayout"],
+  "with staged battles on, BATTLE LAYOUT is off the menu")
+T.eq(layoutGame.save.options.battleLayout, "og",
+  "and a save that had WIDE is set to OG -- the only layout the shot composes in")
+
+-- switching 3D-BTL off hands the row straight back, WIDE and all
+Battles.setting:setIndex(2, layoutGame)
+T.eq(Battles.enabled(), false, "3D-BTL off")
+local handedBack = Runtime.call("ui.options.rows", function(_, r) return r end,
+                                layoutGame,
+                                { { id = "battleLayout" }, { id = "tilt" },
+                                  { id = "pipeline:voxel" } })
+local backIds = {}
+for _, row in ipairs(handedBack) do backIds[row.id] = true end
+T.check(backIds["battleLayout"], "the engine's row is back on the menu")
+layoutGame.save.options.battleLayout = "wide"
+Runtime.call("ui.options.rows", function(_, r) return r end, layoutGame,
+             { { id = "battleLayout" } })
+T.eq(layoutGame.save.options.battleLayout, "wide",
+  "and WIDE is left alone once no battle can be staged on the map")
+
+-- FULL owns the 3D-BTL row, so it pins the layout even with that row switched
+-- off underneath it
+Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
+Runtime.call("ui.options.rows", function(_, r) return r end, layoutGame,
+             { { id = "battleLayout" } })
+T.eq(layoutGame.save.options.battleLayout, "og",
+  "FULL pins the layout on its own, because it owns the row that would")
+Battles.setting:setIndex(1, layoutGame)
+
 -- ------- and off FULL, the rows come back, grouped with the mode
 --
 -- The engine splices a pipeline row in beside TILT and lands a mod's own
@@ -199,6 +255,29 @@ T.eq(Pipelines.level("voxel"), 2, "the step left FULL")
 T.check(rowIndex(menu, "DRAMATIC_SHAPE:grid"),
   "and the rows came straight back without reopening the menu")
 T.check(rowIndex(menu, "pipeline:tiltshift"), "T-SHIFT too")
+
+-- ------- 3D-BTL owns BATTLE LAYOUT, and takes it off the OPEN menu too
+--
+-- The row this one takes away sits ABOVE it in the list, so the cursor has to
+-- follow the row it was ON rather than the slot it was in -- otherwise the very
+-- press that switched staged battles on would leave the cursor a row further
+-- down than the player left it.
+Battles.setting:setIndex(2, menuGame)             -- staged battles off
+menuGame.save.options.battleLayout = "wide"
+Pipelines.setLevel("voxel", 2)
+local layoutMenu = OptionsMenu.new(menuGame)
+T.check(rowIndex(layoutMenu, "battleLayout"),
+  "with staged battles off, the engine's BATTLE LAYOUT row is on the menu")
+layoutMenu.index = rowIndex(layoutMenu, "DRAMATIC_SHAPE:battles")
+pressed = { right = true }
+layoutMenu:update(0)
+pressed = {}
+T.eq(Battles.setting:get(), true, "the step switched staged battles on")
+T.check(not rowIndex(layoutMenu, "battleLayout"),
+  "and BATTLE LAYOUT left the open menu with the same keypress")
+T.eq(menuGame.save.options.battleLayout, "og", "pinned to OG on the way out")
+T.eq(layoutMenu.index, rowIndex(layoutMenu, "DRAMATIC_SHAPE:battles"),
+  "with the cursor still on the row the player just used")
 
 -- level 2 is the "15" rung: any rung that is not FULL, so the settings the
 -- preset owns are back on the menu
@@ -1427,6 +1506,66 @@ T.check(focusY - band < 56 / 144 and focusY + band > 96 / 144,
 T.check(range > 0, "with a ramp out of it, so the band edge has no seam")
 local wide = select(2, BattleDOF.bandFor(120, 30, 144))
 T.check(wide > band, "marks further apart hold a deeper slab in focus")
+
+-- ------- the HUDs are snapped to the window's own edges
+--
+-- The battle screen is 160x144 in the middle of the window and the world is the
+-- whole of it, which left both HUD blocks huddled in the middle of the frame
+-- with map on either side of them. Each is snapped to its own side instead: the
+-- foe's to the left edge, the player's to the right. Measured in world-canvas
+-- pixels, because that is the surface they are composited into -- the GB canvas
+-- they are drawn in cannot reach past its own 160 columns.
+local hudShot = { lx = 100, ly = 12, scale = 3, pw = 1000, ph = 500 }
+local hudRects, bandX = Battles.snapRects(hudShot)
+local hudRect = Battles.HUD_RECT
+
+T.eq(hudRects.enemy[1], 0, "the foe's panel starts at the window's left edge")
+T.eq(hudRects.player[1] + hudRects.player[3], hudShot.pw,
+  "and the player's ends at the right one")
+T.check(hudRects.enemy[1] < hudShot.lx,
+  "so the foe's block has left the letterbox it used to sit in")
+T.check(hudRects.player[1] > hudShot.lx + hudRect.player[1] * hudShot.scale,
+  "and the player's has gone the other way")
+
+-- the vertical is untouched: both blocks stay on the rows the GB put them on
+T.eq(hudRects.enemy[2], hudShot.ly + hudRect.enemy[2] * hudShot.scale,
+  "the foe's block keeps its own rows")
+T.eq(hudRects.player[2], hudShot.ly + hudRect.player[2] * hudShot.scale,
+  "and so does the player's")
+
+-- and their size: a block is the same GB tiles at the same scale as the rest of
+-- the art, moved and not stretched
+T.eq(hudRects.enemy[3], hudRect.enemy[3] * hudShot.scale,
+  "a block is its own width at the frame's scale")
+T.eq(hudRects.player[4], hudRect.player[4] * hudShot.scale,
+  "and its own height")
+
+-- the band each block is cut out of is placed so the block lands on the rect
+-- above; that is what the panel and the glyphs agreeing depends on
+T.eq(bandX.enemy + hudRect.enemy[1] * hudShot.scale, hudRects.enemy[1],
+  "the foe's band is offset so its block lands on its panel")
+T.eq(bandX.player + hudRect.player[1] * hudShot.scale, hudRects.player[1],
+  "and the player's likewise")
+
+-- a window the shape of the GB screen has nowhere to snap TO, and the player's
+-- block already ends at column 160, so it must not move at all
+local snug = { lx = 0, ly = 0, scale = 4, pw = 160 * 4, ph = 144 * 4 }
+local snugRects = Battles.snapRects(snug)
+T.eq(snugRects.player[1], hudRect.player[1] * snug.scale,
+  "on a GB-shaped window the player's block stays exactly where it was")
+T.eq(snugRects.enemy[1], 0, "and the foe's is flush with a left edge it already met")
+
+-- the bands together cover every row drawHUDs draws into (0-96: the two HUDs,
+-- the pokeball rows and the safari ball count) and never overlap, so nothing it
+-- draws is dropped or shown twice
+local e, p = Battles.HUD_BAND.enemy, Battles.HUD_BAND.player
+T.eq(e[2], 0, "the foe's band starts at the top of the frame")
+T.eq(e[2] + e[4], p[2], "the player's picks up exactly where it ends")
+T.check(p[2] + p[4] >= 96, "and together they reach the bottom of the HUD rows")
+T.check(e[2] + e[4] <= hudRect.player[2],
+  "the split falls between the two blocks, so neither is cut in half")
+T.eq(e[1], 0, "the bands are full width")
+T.eq(e[3], 160, "so a shaken HUD or a long name is carried out with its block")
 
 Pipelines.reset()
 run.release()

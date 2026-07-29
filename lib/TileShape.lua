@@ -54,6 +54,12 @@ local FALLBACK_HEIGHTS = {
   sign = 12,
   wall = 16,
   tree = 16,
+  -- masonry drawn TWO courses tall: the Indigo Plateau's rim and the
+  -- badge-check gates down Route 23 are drawn 32px, the same height as a
+  -- statue on its plinth, and read as a step in the terrain rather than a
+  -- room's wall.  Same fold as `wall`, twice the height -- and its own
+  -- class because `wall` is 16px for every interior in the game.
+  cliff = 32,
   roof = 28,
   cylinder = 16,
   -- big round scenery: a 2x2-CELL drawing carved as ONE 32px voxel hull
@@ -110,6 +116,7 @@ local ART = {
   ledge = "top",
   roof = "top",
   wall = "upright",
+  cliff = "upright",
   tree = "upright",
   fence = "upright",
   sign = "upright",

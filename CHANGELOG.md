@@ -43,6 +43,32 @@
 
 ### Changed
 
+- **The two HP boxes snap to the window's edges during a staged battle.** The
+  battle screen is 160x144 in the middle of the window and the world is the
+  whole of it, which left both HUD blocks huddled together in the middle of the
+  frame with map showing on either side of them -- a Game Boy screenshot pasted
+  over a diorama rather than the diorama's own furniture. The foe's block now
+  sits against the left edge and the player's against the right, on the same
+  frosted glass, with the same tiles at the same size on the same rows. The
+  pokeball rows and the safari ball count travel with the block whose rows they
+  share. On a window shaped like the GB screen there is nowhere to go and
+  nothing moves.
+
+  The engine draws them into the 160x144 canvas, which clips at its own edges,
+  so the layer is rendered to a texture and composited into the world image --
+  the one surface here that covers the whole window. A driver that cannot do
+  that falls back to the HUD in the frame rather than to no HUD.
+
+- **`BATTLE LAYOUT` is pinned to `OG` while battles are staged on the map**, and
+  the row comes off the OPTIONS menu with the rows `FULL` owns. The staged shot
+  is composed in the GB's own frame -- the arena camera is solved to put a cell
+  under each pic's feet, and the HUD rects and the intercepted background fill
+  are measured there too -- and `WIDE` re-lays that screen out on a 304x144
+  surface, moving every one of them. Set rather than worked around, on every
+  route in: the options row, hotkey `8`, the mod manager's page, `FULL`'s
+  preset, and a save that arrived with `WIDE` already on. Switching `3D-BTL`
+  off hands the row back with `WIDE` selectable again.
+
 - **Hotkey `3` walks the angle rungs only and steps over `FULL`.** The key is
   a display-mode cycler -- it should change the camera and nothing else --
   and `FULL` reaches in and rewrites four other settings. Landing on it

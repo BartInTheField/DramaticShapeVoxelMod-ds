@@ -201,6 +201,23 @@ local function frostRect(rect, box)
   return fx, fy, math.max(1, fw), math.max(1, fh)
 end
 
+-- The same map for a rect that is ALREADY in world-canvas pixels. A HUD
+-- snapped out to the window's edge has left the GB frame, so it has no GB
+-- coordinates to be placed from -- see OverworldBattle.snapRects.
+local function frostRectWorld(rect, box)
+  local kx = frostW / box.pw
+  local ky = frostH / box.ph
+  return rect[1] * kx, rect[2] * ky,
+         math.max(1, rect[3] * kx), math.max(1, rect[4] * ky)
+end
+
+-- Which of the two the caller's rects are in. One frost buffer, one panel
+-- draw, two coordinate spaces: the GB frame (rects land in the 160x144 UI
+-- canvas) or world pixels (rects land in the window-resolution world image).
+local function mapper(world)
+  return world and frostRectWorld or frostRect
+end
+
 -- ------- the verdict
 --
 -- ONE answer for the whole frame, not one per panel. Both HUDs draw in a
@@ -211,11 +228,12 @@ end
 -- the tint below then commits both panels to that reading.
 local wasDark = false
 
-function BattleHud.verdict(rects, box)
+function BattleHud.verdict(rects, box, world)
   if not (frost and box and box.scale and box.scale > 0) then return false end
+  local toFrost = mapper(world)
   local darkest = nil
   for key, rect in pairs(rects) do
-    local fx, fy, fw, fh = frostRect(rect, box)
+    local fx, fy, fw, fh = toFrost(rect, box)
     local v = sampleLuma(key, fx, fy, fw, fh)
     if v and (not darkest or v < darkest) then darkest = v end
   end
@@ -230,14 +248,16 @@ function BattleHud.verdict(rects, box)
   return wasDark
 end
 
--- Draw one HUD panel into the current target, in GB coordinates.
+-- Draw one HUD panel into the current target, in that target's own
+-- coordinates: GB ones for the 160x144 UI canvas, world pixels (world = true)
+-- for a panel laid straight onto the world image.
 --
 -- The tint always pushes AWAY from the glyph colour that is about to be
 -- used, so the contrast is guaranteed rather than hoped for: a dark panel
 -- gets darker under white text, a bright one brighter under black text.
-function BattleHud.panel(rect, box, dark)
+function BattleHud.panel(rect, box, dark, world)
   if not (frost and box and box.scale and box.scale > 0) then return false end
-  local fx, fy, fw, fh = frostRect(rect, box)
+  local fx, fy, fw, fh = mapper(world)(rect, box)
   local ok = pcall(function()
     local quad = love.graphics.newQuad(fx, fy, fw, fh, frostW, frostH)
     love.graphics.setColor(1, 1, 1, BattleHud.FROST)
@@ -330,6 +350,44 @@ function BattleHud.flipGlyphs(w, h, fn)
   love.graphics.setShader()
 end
 
+-- ------- the whole HUD layer as a texture
+--
+-- The two blocks do not sit in the same place any more: each is snapped to its
+-- own side of the WINDOW, which is outside the 160x144 canvas the engine draws
+-- them in (see OverworldBattle.snapRects). A draw cannot be aimed at two
+-- places at once, so the layer is rendered ONCE into a GB-sized canvas and
+-- each block is then blitted out of it as a quad.
+--
+-- `dark` runs the ink through the same flip the in-frame HUD uses, here baked
+-- into the texture rather than composited into the caller's target -- the world
+-- image the quads land on is a colour canvas, and a flip pass over it would
+-- whiten the terrain behind the glyphs along with them.
+local hudLayer = nil
+
+function BattleHud.layerTexture(w, h, dark, fn)
+  if not hudLayer or hudLayer:getWidth() ~= w or hudLayer:getHeight() ~= h then
+    hudLayer = canvasOf(w, h, "nearest")
+    if not hudLayer then return nil end
+  end
+  local g = love.graphics
+  local prevCanvas = g.getCanvas()
+  local prevBlend, prevAlpha = g.getBlendMode()
+  local ok, err = pcall(function()
+    g.setCanvas(hudLayer)
+    g.clear(0, 0, 0, 0)
+    g.setBlendMode("alpha")
+    g.setColor(1, 1, 1, 1)
+    -- flipGlyphs renders fn into its own scratch layer and composites the
+    -- whitened result into whatever is bound, which is this canvas
+    if dark then BattleHud.flipGlyphs(w, h, fn) else fn() end
+  end)
+  if prevCanvas then g.setCanvas(prevCanvas) else g.setCanvas() end
+  g.setBlendMode(prevBlend or "alpha", prevAlpha)
+  g.setColor(1, 1, 1, 1)
+  if not ok then error(err, 0) end
+  return hudLayer
+end
+
 -- The last luminance measured, for the shot driver's log.
 function BattleHud.lastLuma()
   local best = nil
@@ -344,6 +402,7 @@ function BattleHud.invalidate()
   frostW, frostH = 0, 0
   luma = {}
   wasDark = false
+  layer, hudLayer = nil, nil
 end
 
 return BattleHud

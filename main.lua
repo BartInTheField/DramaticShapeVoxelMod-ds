@@ -281,7 +281,24 @@ applyFull = function(level)
   -- half of it is spent. Set rather than forced -- the row is gone from the
   -- menu while FULL is on, but a save that already had it off gets it on.
   OverworldBattle.setting:setIndex(1, Game)
+  -- and the battle screen the staged fight is composed for. WIDE re-lays that
+  -- screen out on a 304x144 surface, which moves every anchor the arena camera
+  -- is solved against (OverworldBattle.forceOG); FULL has just switched staged
+  -- fights on, so the layout follows them.
+  OverworldBattle.forceOG(Game)
   if Game.writeOptions then pcall(Game.writeOptions, Game) end
+end
+
+-- Whether a fight can be staged on the map, as far as the OPTIONS menu is
+-- concerned: 3D-BTL is on, or FULL is selected -- which owns that row and
+-- switches it on. Deliberately NOT gated on Voxel3D.available(): the engine
+-- offers a pipeline's row whether or not the hardware can run it
+-- (Pipelines.rows), so this mode's rows say ON on a machine without a depth
+-- buffer too, and a menu that claims 3D battles are on must not also offer the
+-- layout they cannot be drawn in.
+local function stagedBattles()
+  local Pipelines = require("src.render.Pipelines")
+  return OverworldBattle.enabled() or Voxel.isFull(Pipelines.level("voxel"))
 end
 
 local SETTINGS = {
@@ -393,6 +410,11 @@ do
         -- when the fight starts, so flipping it from inside one would be a
         -- switch that appeared to do nothing.
         claim:cycle(self)
+        -- 8 is one of the two ways staged battles get switched on, and they
+        -- pin BATTLE LAYOUT to OG (see the rows hook). The other two keys
+        -- parameterise the pass and leave the layout alone; the guard answers
+        -- for all three, so nothing here has to know which key it was.
+        if stagedBattles() then OverworldBattle.forceOG(self) end
         return
       end
     end
@@ -442,6 +464,17 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   local out = next(game, rows)
   if type(out) ~= "table" then return out end
   local Pipelines = require("src.render.Pipelines")
+  -- BATTLE LAYOUT is the ENGINE's row, and this is the one place the mod takes
+  -- one away. While a fight can be staged on the map, OG is the only layout it
+  -- can be composed in (OverworldBattle.forceOG), so the value is pinned there
+  -- and the row comes off the list on the same reasoning as the rows FULL owns:
+  -- a row that no longer decides anything is worse than no row. Nothing is
+  -- lost by switching 3D-BTL off -- the row is back, WIDE and all, on the same
+  -- keypress.
+  if stagedBattles() then
+    OverworldBattle.forceOG(game)
+    dropRow(out, "battleLayout")
+  end
   if Voxel.isFull(Pipelines.level("voxel")) then
     return dropRow(out, "pipeline:tiltshift")
   end
@@ -457,6 +490,10 @@ mod.events:on("mod.options_changed", function(payload)
   for _, entry in ipairs(SETTINGS) do
     if payload.key == entry[1].key then entry[1]:sync(payload.value) end
   end
+  -- 3D-BTL switched on from the manager's page pins BATTLE LAYOUT exactly as
+  -- the OPTIONS row does. The manager persists its own value; this is the one
+  -- that has to follow it.
+  if stagedBattles() then OverworldBattle.forceOG() end
 end)
 
 -- ------- keeping the geometry in step with the world
@@ -539,7 +576,7 @@ mod.events:on("map.reloaded", function(payload)
   if mapId then ChunkMesher.invalidate(mapId) end
 end)
 
--- ------- FULL takes rows off the menu, so the menu has to notice
+-- ------- rows come and go, so the menu has to notice
 --
 -- OptionsMenu builds its row list ONCE, when it is opened, and then reads
 -- that list every frame. So stepping the VOXEL row onto or off FULL changed
@@ -547,25 +584,40 @@ end)
 -- settings FULL owns stayed visible until the menu was closed and reopened,
 -- and a player who stepped off FULL could not see the rows come back.
 --
--- Rebuilt in place, and only on a step that crosses FULL: every other rung
--- returns the same list, and rebuilding on all of them would rerun every
--- mod's ui.options.rows hook once per keypress. The cursor is clamped rather
--- than reset, so it stays on the VOXEL row it was just used on instead of
--- jumping to the top when the list below it shortens.
+-- Rebuilt in place, and only on a step that changes the LIST: crossing FULL,
+-- or toggling 3D-BTL, which is the other row that owns one (BATTLE LAYOUT).
+-- Every other rung returns the same list, and rebuilding on all of them would
+-- rerun every mod's ui.options.rows hook once per keypress. The cursor is
+-- clamped rather than reset, so it stays on the row it was just used on
+-- instead of jumping to the top when the list below it shortens.
 do
   local OptionsMenu = require("src.ui.OptionsMenu")
   if not OptionsMenu.dramaticShapeFullHook then
     local Pipelines = require("src.render.Pipelines")
     local inner = OptionsMenu.update
 
+    local function idAt(menu, index)
+      local row = menu.rows and menu.rows[index or 1]
+      return type(row) == "table" and row.id or nil
+    end
+
     function OptionsMenu:update(dt)
       local before = Pipelines.level("voxel")
+      local hadBattles = OverworldBattle.enabled()
+      local wasOn = idAt(self, self.index)
       inner(self, dt)
       local after = Pipelines.level("voxel")
-      if after ~= before
-         and (Voxel.isFull(before) or Voxel.isFull(after)) then
+      local crossedFull = after ~= before
+                          and (Voxel.isFull(before) or Voxel.isFull(after))
+      if crossedFull or OverworldBattle.enabled() ~= hadBattles then
         local rebuilt = OptionsMenu.new(self.game)
         self.rows = rebuilt.rows
+        -- Follow the row the cursor was ON rather than the slot it was in:
+        -- 3D-BTL takes BATTLE LAYOUT off the list ABOVE itself, which would
+        -- otherwise slide the cursor onto the row under the one just used.
+        for i = 1, #self.rows do
+          if wasOn and idAt(self, i) == wasOn then self.index = i; break end
+        end
         local cancel = #self.rows + 1
         if (self.index or 1) > cancel then self.index = cancel end
       end

@@ -102,6 +102,9 @@ return {
     fence = 10,
     sign = 12,
     wall = 16,
+    -- masonry drawn two courses tall (the Indigo Plateau's rim, the
+    -- badge-check gates): as tall as a statue on its plinth
+    cliff = 32,
     tree = 16,
     roof = 28,
     bed = 7,
@@ -2258,6 +2261,165 @@ return {
       -- south-east).  Neither map places them; they belong with the
       -- wall band above if one ever does.
     },
+
+    -- The approach to the Pokemon League: two maps, INDIGO_PLATEAU (the
+    -- forecourt the League itself stands on) and ROUTE_23 (the long
+    -- climb up to it, with its badge-check gates).  Everything this
+    -- blockset draws is one piece of architecture -- striated rock
+    -- walls, white pillars, and the bird STATUES that line both the
+    -- avenue and the plaza.  29 of its 73 blocks are never placed, so
+    -- every tile named below really is one of these two maps'.
+    --
+    -- A statue is built exactly like the badge gyms' (see GYM above):
+    -- one cell of FIGURE ($10/$12 over $28/$29) standing on one cell of
+    -- PLINTH ($15/$16 the cap over $30/$31 the plaque).  47 of them --
+    -- 12 on INDIGO_PLATEAU, six a side down the avenue, and 35 more
+    -- across ROUTE_23's plaza (blocks $42/$43; the $25/$26 twins that
+    -- stand the same statue on grass are never placed).
+    --
+    -- What the detector made of them is the bug this entry exists for.
+    -- On the avenue the statues stack with NO gap: the plinth's plaque
+    -- row is drawn directly above the next figure's head, so the
+    -- flood-fill joined all six of a column into ONE region 24 tile rows
+    -- tall, and the volume builder's repeat scan read 32px down one half
+    -- of the drawing and 24px down the other.  Each row came out as a
+    -- continuous stepped RIDGE of boxes wearing the statue art folded
+    -- onto its south face -- probed INDIGO_PLATEAU tiles (16,12)-(17,35)
+    -- at 32/24 and (22,12)-(23,35) mirrored.  ROUTE_23's plaza statues
+    -- stand alone and fared no better: 24px boxes with the figure's top
+    -- row skipped outright.
+    --
+    -- Pinned the gyms' way the ridge becomes statues.  The plinth is a
+    -- SOLID 16px `wall` block; the figure is a per-pixel cutout 5 voxels
+    -- deep (the thin `prop` pool) that rides the plinth's top face
+    -- through the authored-box support rule and collapses to the
+    -- plinth's SINGLE cell of footprint -- Structures' wall-support case,
+    -- so the base never marches backwards.
+    --
+    -- The one thing the gyms did not have to deal with: $28/$29 is
+    -- SHARED.  The same bird is drawn again at the foot of every white
+    -- pillar, framed there by the pillar's black edge ($25/$26 over that
+    -- same $28/$29, blocks $18/$1B) -- 80 of them, 76 down ROUTE_23 and
+    -- four on INDIGO_PLATEAU (its two outer corners and the pair
+    -- flanking the League's recess).  So $25/$26 joins the same pool:
+    -- pinning half a cell would have stood a half-height bird under a
+    -- wall.  That in turn is why the pillar itself is pinned -- see the
+    -- last paragraph of `wall`.
+    PLATEAU = {
+      -- ONE 16px course for every piece of masonry here.
+      --
+      -- $03 is the striated rock face, 2436 placements and the bulk of
+      -- both maps.  It already read 16 nearly everywhere, but in the
+      -- columns of INDIGO_PLATEAU's rim that stand over a corner pillar
+      -- the repeat scan came out 24 -- a stagger in the plateau's
+      -- skyline (probed `03w24` at tiles (8,0)-(9,2), (12,0)-(13,2) and
+      -- their two mirrors).  Authored, the rim is one course.
+      --
+      -- $0D/$0F/$0E are the League's outer wall -- top band, face and
+      -- base.  The same three tiles draw the Pokemon League's own
+      -- facade, the long walls flanking the avenue, and every
+      -- badge-check gate down ROUTE_23.
+      --
+      -- $15/$16 + $05/$06 + $30/$31 are the pilaster: cap, shaft, and
+      -- the plaque base.  $15/$16 over $30/$31 IS the statue's plinth --
+      -- the artist drew the same stone twice -- which is why one pin
+      -- serves the gate corners and the statues alike.
+      --
+      -- $2E/$2F the white pillar shaft and $20/$21 its cap change no
+      -- HEIGHT: they derive 16 already.  What the pin buys is
+      -- `authored`, which is exactly what the prop support rule tests.
+      -- Without it a pillar-foot bird finds no support, drops to ground
+      -- level, and leaves a hole punched clean through the pillar
+      -- (probed, shot, then fixed).
+      -- TWO courses (32px) for the masonry that ENCLOSES both maps -- the
+      -- plateau's rim and every wall around the terraces.  It is drawn two
+      -- cells tall, which is exactly the height of a statue on its plinth
+      -- (a 16px plinth under a 16px standee), and that is the read: you are
+      -- walking in a walled compound whose wall matches the statues lining
+      -- it, not a room with a 16px skirting.  At one course the rim was a
+      -- kerb you appeared to look over.
+      --
+      -- $03 the striated rock face, $0D/$0F/$0E the League's outer wall
+      -- (top band, face, base -- the same three tiles draw the League's
+      -- facade, the walls flanking the avenue and every badge-check gate
+      -- down ROUTE_23), and $2E/$2F the white pillar shaft with $20/$21 its
+      -- cap.  These four groups are the enclosure.
+      cliff = { 3,
+                13, 14, 15,
+                32, 33, 46, 47 },
+      -- ONE course, and it must stay one: $15/$16 + $05/$06 + $30/$31 is
+      -- the pilaster -- cap, shaft, plaque base -- and $15/$16 over $30/$31
+      -- IS the statue's plinth, the artist having drawn the same stone
+      -- twice.  Raising it would carry every statue standee up to 48px and
+      -- break the very match the cliff height was chosen for.
+      wall = { 21, 22, 48, 49, 5, 6 },
+      -- The statues, and the same bird at the pillar feet.  Black-outline
+      -- segmented: the outline and everything it encloses stay, the sky
+      -- and the paving around them flood away.
+      prop = { 16, 18, 40, 41, 37, 38 },
+      -- Round drawings, one voxel ball per 16x16 cell -- the treatment
+      -- the overworld's canopies and Celadon's hedge take.
+      --
+      -- $07/$08 over $17/$18: the seven canopies planted on pillar tops
+      -- along ROUTE_23 (blocks $44/$45; the $0F block that tiles four of
+      -- them together is never placed).  Boxed, the canopy art smeared
+      -- down the whole pillar column beneath it.
+      --
+      -- $2A/$2B over $22/$1D: the boulders strewn across ROUTE_23's
+      -- middle terrace (blocks $02/$13/$16), one per cell and NOT
+      -- walkable.  As boxes they sat flat enough to look painted onto
+      -- the path; as balls they read as the obstacles they are.
+      cylinder = { 7, 8, 23, 24,
+                   29, 34, 42, 43 },
+      -- The Route 23 sign, one cell, block $48's only placement.
+      -- Unpinned it probed `09w00 0Aw00 / 19w08 1Aw08` -- an 8px stub
+      -- with its board skipped.  Same thin plate on a stick every other
+      -- outdoor sign gets.
+      signpost = { 9, 10, 25, 26 },
+      -- The Route 22 gate's roof, drawn from ABOVE and filling
+      -- ROUTE_23's last two block rows ($3D the tiling, $3E/$44 its
+      -- edges, $40/$41 the corners).  Art on the TOP face -- the way
+      -- SHIP_PORT's hull is pinned -- rather than folded up a 16px kerb.
+      -- It stands past the map's last walkable row (you warp to
+      -- ROUTE_22_GATE before you reach it), so this is a tidy-up rather
+      -- than a fix.
+      roof = { 61, 62, 64, 65, 68 },
+      -- The ground painted where a pinned figure's cell used to be:
+      -- $23, the pale paving both maps are floored with.  It is also the
+      -- white the pillars are drawn in, so the cell a pillar-foot bird
+      -- vacates reads as more pillar -- where the neighbour vote left a
+      -- BLACK hole, having nothing to elect (all four neighbours of that
+      -- cell are wall).  On the avenue and the plaza the statues' own
+      -- cells simply keep the paving they stand on.
+      prop_ground = { [16] = 35, [18] = 35, [40] = 35, [41] = 35,
+                      [37] = 35, [38] = 35 },
+      -- Deliberately NOT pinned:
+      --
+      -- $14, the water -- 1446 placements, the pond on ROUTE_23's middle
+      -- terrace -- and its bank shading $32/$33/$1F.  $14 and $32 are
+      -- two of the three stale-cache water ids the trap is named for,
+      -- but here they are honestly water: TILEANIM_WATER animates $14,
+      -- the pond is real, and $32/$33/$1F are drawn in the TOP half of
+      -- water cells as the waterline itself, so the cell rule dropping
+      -- them to -2 is what the art means.  Left to fall through to the
+      -- engine's water set.  ($48, the third trap id, is not in this
+      -- atlas at all -- it stops at $45.)
+      --
+      -- $0B/$0C over $1B/$1C, the barred doors: the Pokemon League's two
+      -- and Victory Road's two.  They are the tileset's own doorTiles,
+      -- so the door fold already stands them upright in the facade;
+      -- probed 16px identically before and after this entry.
+      --
+      -- $23/$2C/$2D are in the walkable list outright, and $45 is the
+      -- tileset's grassTile, which derives its own standing-tuft pin.
+      --
+      -- The Victory Road entrance is a `buildings` template
+      -- (victory_road_gate, at the bottom of this file): 36x6 tiles at
+      -- ROUTE_23 (0,58), and its ends are built out of $25/$26/$28/$29
+      -- and $15/$16/$05/$06.  Buildings claim their tiles before any of
+      -- the above can reach them -- probed `b` class over all 216 of
+      -- them, unchanged by this entry.
+    },
   },
 
   -- Buildings whose whole sprite is voxelized band by band (lib/Buildings.lua,
@@ -3002,147 +3164,6 @@ return {
         roofRows = 17, roofBack = 5, roofFront = 3, roofCycle = { 5, 9 },
         slab = 4, frontEave = 4, ledge = nil,
       },
-    },
-
-    -- The approach to the Pokemon League: two maps, INDIGO_PLATEAU (the
-    -- forecourt the League itself stands on) and ROUTE_23 (the long
-    -- climb up to it, with its badge-check gates).  Everything this
-    -- blockset draws is one piece of architecture -- striated rock
-    -- walls, white pillars, and the bird STATUES that line both the
-    -- avenue and the plaza.  29 of its 73 blocks are never placed, so
-    -- every tile named below really is one of these two maps'.
-    --
-    -- A statue is built exactly like the badge gyms' (see GYM above):
-    -- one cell of FIGURE ($10/$12 over $28/$29) standing on one cell of
-    -- PLINTH ($15/$16 the cap over $30/$31 the plaque).  47 of them --
-    -- 12 on INDIGO_PLATEAU, six a side down the avenue, and 35 more
-    -- across ROUTE_23's plaza (blocks $42/$43; the $25/$26 twins that
-    -- stand the same statue on grass are never placed).
-    --
-    -- What the detector made of them is the bug this entry exists for.
-    -- On the avenue the statues stack with NO gap: the plinth's plaque
-    -- row is drawn directly above the next figure's head, so the
-    -- flood-fill joined all six of a column into ONE region 24 tile rows
-    -- tall, and the volume builder's repeat scan read 32px down one half
-    -- of the drawing and 24px down the other.  Each row came out as a
-    -- continuous stepped RIDGE of boxes wearing the statue art folded
-    -- onto its south face -- probed INDIGO_PLATEAU tiles (16,12)-(17,35)
-    -- at 32/24 and (22,12)-(23,35) mirrored.  ROUTE_23's plaza statues
-    -- stand alone and fared no better: 24px boxes with the figure's top
-    -- row skipped outright.
-    --
-    -- Pinned the gyms' way the ridge becomes statues.  The plinth is a
-    -- SOLID 16px `wall` block; the figure is a per-pixel cutout 5 voxels
-    -- deep (the thin `prop` pool) that rides the plinth's top face
-    -- through the authored-box support rule and collapses to the
-    -- plinth's SINGLE cell of footprint -- Structures' wall-support case,
-    -- so the base never marches backwards.
-    --
-    -- The one thing the gyms did not have to deal with: $28/$29 is
-    -- SHARED.  The same bird is drawn again at the foot of every white
-    -- pillar, framed there by the pillar's black edge ($25/$26 over that
-    -- same $28/$29, blocks $18/$1B) -- 80 of them, 76 down ROUTE_23 and
-    -- four on INDIGO_PLATEAU (its two outer corners and the pair
-    -- flanking the League's recess).  So $25/$26 joins the same pool:
-    -- pinning half a cell would have stood a half-height bird under a
-    -- wall.  That in turn is why the pillar itself is pinned -- see the
-    -- last paragraph of `wall`.
-    PLATEAU = {
-      -- ONE 16px course for every piece of masonry here.
-      --
-      -- $03 is the striated rock face, 2436 placements and the bulk of
-      -- both maps.  It already read 16 nearly everywhere, but in the
-      -- columns of INDIGO_PLATEAU's rim that stand over a corner pillar
-      -- the repeat scan came out 24 -- a stagger in the plateau's
-      -- skyline (probed `03w24` at tiles (8,0)-(9,2), (12,0)-(13,2) and
-      -- their two mirrors).  Authored, the rim is one course.
-      --
-      -- $0D/$0F/$0E are the League's outer wall -- top band, face and
-      -- base.  The same three tiles draw the Pokemon League's own
-      -- facade, the long walls flanking the avenue, and every
-      -- badge-check gate down ROUTE_23.
-      --
-      -- $15/$16 + $05/$06 + $30/$31 are the pilaster: cap, shaft, and
-      -- the plaque base.  $15/$16 over $30/$31 IS the statue's plinth --
-      -- the artist drew the same stone twice -- which is why one pin
-      -- serves the gate corners and the statues alike.
-      --
-      -- $2E/$2F the white pillar shaft and $20/$21 its cap change no
-      -- HEIGHT: they derive 16 already.  What the pin buys is
-      -- `authored`, which is exactly what the prop support rule tests.
-      -- Without it a pillar-foot bird finds no support, drops to ground
-      -- level, and leaves a hole punched clean through the pillar
-      -- (probed, shot, then fixed).
-      wall = { 3,
-               13, 14, 15,
-               21, 22, 48, 49, 5, 6,
-               32, 33, 46, 47 },
-      -- The statues, and the same bird at the pillar feet.  Black-outline
-      -- segmented: the outline and everything it encloses stay, the sky
-      -- and the paving around them flood away.
-      prop = { 16, 18, 40, 41, 37, 38 },
-      -- Round drawings, one voxel ball per 16x16 cell -- the treatment
-      -- the overworld's canopies and Celadon's hedge take.
-      --
-      -- $07/$08 over $17/$18: the seven canopies planted on pillar tops
-      -- along ROUTE_23 (blocks $44/$45; the $0F block that tiles four of
-      -- them together is never placed).  Boxed, the canopy art smeared
-      -- down the whole pillar column beneath it.
-      --
-      -- $2A/$2B over $22/$1D: the boulders strewn across ROUTE_23's
-      -- middle terrace (blocks $02/$13/$16), one per cell and NOT
-      -- walkable.  As boxes they sat flat enough to look painted onto
-      -- the path; as balls they read as the obstacles they are.
-      cylinder = { 7, 8, 23, 24,
-                   29, 34, 42, 43 },
-      -- The Route 23 sign, one cell, block $48's only placement.
-      -- Unpinned it probed `09w00 0Aw00 / 19w08 1Aw08` -- an 8px stub
-      -- with its board skipped.  Same thin plate on a stick every other
-      -- outdoor sign gets.
-      signpost = { 9, 10, 25, 26 },
-      -- The Route 22 gate's roof, drawn from ABOVE and filling
-      -- ROUTE_23's last two block rows ($3D the tiling, $3E/$44 its
-      -- edges, $40/$41 the corners).  Art on the TOP face -- the way
-      -- SHIP_PORT's hull is pinned -- rather than folded up a 16px kerb.
-      -- It stands past the map's last walkable row (you warp to
-      -- ROUTE_22_GATE before you reach it), so this is a tidy-up rather
-      -- than a fix.
-      roof = { 61, 62, 64, 65, 68 },
-      -- The ground painted where a pinned figure's cell used to be:
-      -- $23, the pale paving both maps are floored with.  It is also the
-      -- white the pillars are drawn in, so the cell a pillar-foot bird
-      -- vacates reads as more pillar -- where the neighbour vote left a
-      -- BLACK hole, having nothing to elect (all four neighbours of that
-      -- cell are wall).  On the avenue and the plaza the statues' own
-      -- cells simply keep the paving they stand on.
-      prop_ground = { [16] = 35, [18] = 35, [40] = 35, [41] = 35,
-                      [37] = 35, [38] = 35 },
-      -- Deliberately NOT pinned:
-      --
-      -- $14, the water -- 1446 placements, the pond on ROUTE_23's middle
-      -- terrace -- and its bank shading $32/$33/$1F.  $14 and $32 are
-      -- two of the three stale-cache water ids the trap is named for,
-      -- but here they are honestly water: TILEANIM_WATER animates $14,
-      -- the pond is real, and $32/$33/$1F are drawn in the TOP half of
-      -- water cells as the waterline itself, so the cell rule dropping
-      -- them to -2 is what the art means.  Left to fall through to the
-      -- engine's water set.  ($48, the third trap id, is not in this
-      -- atlas at all -- it stops at $45.)
-      --
-      -- $0B/$0C over $1B/$1C, the barred doors: the Pokemon League's two
-      -- and Victory Road's two.  They are the tileset's own doorTiles,
-      -- so the door fold already stands them upright in the facade;
-      -- probed 16px identically before and after this entry.
-      --
-      -- $23/$2C/$2D are in the walkable list outright, and $45 is the
-      -- tileset's grassTile, which derives its own standing-tuft pin.
-      --
-      -- The Victory Road entrance is a `buildings` template
-      -- (victory_road_gate, at the bottom of this file): 36x6 tiles at
-      -- ROUTE_23 (0,58), and its ends are built out of $25/$26/$28/$29
-      -- and $15/$16/$05/$06.  Buildings claim their tiles before any of
-      -- the above can reach them -- probed `b` class over all 216 of
-      -- them, unchanged by this entry.
     },
   },
 }
