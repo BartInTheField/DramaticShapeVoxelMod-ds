@@ -1222,6 +1222,9 @@ local function bookcaseRank(S, map, tx, northTy, frontTy, capTile)
 end
 
 function Structures.buildBookcases(S, map, x0, x1, y0, y1)
+  -- What to do with the rows a rank VACATES (see TileShape.bookcaseBackfill).
+  -- Read once: it is a property of the tileset, not of the column.
+  local backfill = TileShape.bookcaseBackfill(map.tileset.id)
   for tx = x0, x1 do
     local ty = y1
     while ty >= y0 do
@@ -1249,10 +1252,24 @@ function Structures.buildBookcases(S, map, x0, x1, y0, y1)
               capTile = S.tileAt[ck]
             end
           end
+          -- The box is one cell deep, so it covers only the run's southmost
+          -- rows; everything north of that is vacated.  By default a vacated
+          -- row is skipped and painted with synthesized ground -- right for a
+          -- shelf standing in a room.  `bookcase_backfill = "above"` hands it
+          -- the cell above the run instead, shape and art, so a wall cut into
+          -- a terrace has more terrace behind it rather than a trench.
+          local covered = math.min(2, front - top + 1)
+          local srcK = keyOf(tx, top - 1)
+          local src = backfill == "above" and S.shapeAt[srcK] or nil
           for cy = top, front do
             local tk = keyOf(tx, cy)
-            S.skip[tk] = true
-            S.ground[tk] = false
+            if src and cy <= front - covered then
+              S.shapeAt[tk] = src
+              S.tileAt[tk] = S.tileAt[srcK]
+            else
+              S.skip[tk] = true
+              S.ground[tk] = false
+            end
           end
           bookcaseRank(S, map, tx, top, front, capTile)
           front = top - 1
@@ -1977,8 +1994,13 @@ function Structures.buildObject(S, map, region, cluster,
     local bs = S.shapeAt[keyOf(cluster.minX, cluster.maxY + 1)]
     local blocked = not map:isWalkableCell(math.floor(cluster.minX / 2),
                                            math.floor(cluster.maxY / 2))
-    if blocked and bs and bs.authored and bs.art == "upright"
-       and (bs.h or 0) > 0 then
+    -- `bookcase` supports as well as `upright`.  A prop drawn above an
+    -- authored box stands ON it whatever art the box renders with, and a
+    -- stacked box is still a box: the Plateau's gate pilasters carry a
+    -- statue on 48 of their tops, and collapsing the pilaster to a stacked
+    -- run made every one of them fail this test and drop to ground level.
+    if blocked and bs and bs.authored and (bs.h or 0) > 0
+       and (bs.art == "upright" or bs.art == "bookcase") then
       baseY, support = bs.h, bs
     end
   end

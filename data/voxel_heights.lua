@@ -2344,15 +2344,81 @@ return {
       -- facade, the walls flanking the avenue and every badge-check gate
       -- down ROUTE_23), and $2E/$2F the white pillar shaft with $20/$21 its
       -- cap.  These four groups are the enclosure.
-      cliff = { 3,
-                13, 14, 15,
+      cliff = { 3, 13,
                 32, 33, 46, 47 },
+      -- THE GATE WALLS, stacked rather than laid out in depth.  $0D/$0F/$0E
+      -- (13/15/14 -- top band, face, base) draw the League's facade, the
+      -- walls flanking the avenue and every badge-check gate down ROUTE_23,
+      -- as FOUR tile rows: 13 / 15 / 15 / 14.  That is 32px of artwork
+      -- depicting one wall, and at one class per row it built four boxes
+      -- marching north, so the wall was 32px DEEP -- you saw the southmost
+      -- row's face and the rest hid behind it.
+      --
+      -- `bookcase` collapses the run onto a single one-cell-deep box at its
+      -- full drawn height: bands from the south are base, face, face, top
+      -- band, and the two rows behind are vacated.  Same mechanism the
+      -- Mart's back wall uses.
+      -- ...and the PILASTER stacks with it.  $05/$06 is its shaft, and it
+      -- is drawn only ever inside a pilaster, so it needs no rule.  Without
+      -- this the pale columns stood 16px against a 32px brown wall and
+      -- their top vertices sat a whole course below the wall's crown.
+      bookcase = { 14, 15, 5, 6 },
+      -- Tile 13 is DUAL-USE and needs resolving per position.  It is the
+      -- gate wall's TOP BAND (block $28's first row) and it is also the
+      -- BASE COURSE under a column of rock face (blocks $18/$1A/$1B, last
+      -- row).  Pinned `bookcase` outright the second use became a one-row
+      -- rank -- an 8px stub under the rock, 352 of them over both maps.
+      --
+      -- ABOVE cannot tell them apart, which is what `when_below` is for.
+      -- Scanned over both maps through the engine's own tileAt, the tile
+      -- above a 13 is the rock face $03 for 140 base courses AND for 64
+      -- gate bands -- so a rule on `above` misfires on those 64 (it did:
+      -- their runs came out 2 and 3 bands instead of 4).  BELOW splits it
+      -- exactly: the wall's own face $0F sits under the top band and under
+      -- nothing else, 336 against 352.  So 13 defaults to `cliff` and is
+      -- promoted where the face is drawn beneath it.
+      --
+      -- 14 and 15 need no rule: 14 only ever sits under 15, 15 only ever
+      -- under 13 or 15.
+      when_below = {
+        [13] = { { below = { 15 }, class = "bookcase" } },
+        -- The pilaster's CAP ($15/$16) is the same stone as the statue's
+        -- plinth top -- the artist drew it twice -- so it too resolves per
+        -- position.  Scanned over both maps: a cap with the shaft $05/$06
+        -- beneath it is a pilaster (76 of them) and one with the plaque
+        -- base $30/$31 beneath it is a statue's plinth (47).  Default
+        -- `wall`, promoted here, so the plinth keeps its single course and
+        -- the statue standing on it still totals the 32px the wall is.
+        [21] = { { below = { 5 }, class = "bookcase" } },
+        [22] = { { below = { 6 }, class = "bookcase" } },
+      },
+      -- The other two ends of the same pair of drawings, keyed the other
+      -- way round.  A pilaster is capped at BOTH ends, so its lower cap has
+      -- the shaft ABOVE it (8 placements); and the plaque base $30/$31 is a
+      -- pilaster's foot when the shaft is above it (68) but a statue's
+      -- plinth bottom when the cap $15/$16 is (47).
+      when_above = {
+        [21] = { { above = { 5 }, class = "bookcase" } },
+        [22] = { { above = { 6 }, class = "bookcase" } },
+        [48] = { { above = { 5 }, class = "bookcase" } },
+        [49] = { { above = { 6 }, class = "bookcase" } },
+      },
+      -- The vacated rows behind a collapsed wall take the cell ABOVE the
+      -- run rather than the default hidden floor: here that is more rock
+      -- face on ROUTE_23 and the plateau's paving or grass on INDIGO_
+      -- PLATEAU, so the wall reads as set INTO the terrace instead of
+      -- standing in front of a trench of synthesized ground.
+      bookcase_backfill = "above",
       -- ONE course, and it must stay one: $15/$16 + $05/$06 + $30/$31 is
       -- the pilaster -- cap, shaft, plaque base -- and $15/$16 over $30/$31
       -- IS the statue's plinth, the artist having drawn the same stone
       -- twice.  Raising it would carry every statue standee up to 48px and
       -- break the very match the cliff height was chosen for.
-      wall = { 21, 22, 48, 49, 5, 6 },
+      -- $05/$06 is NOT here: it moved to `bookcase` above, and a tile
+      -- listed in two groups resolves by whichever `pairs` order wins --
+      -- half the pilasters kept the shaft as `wall`, which broke the run
+      -- and left their caps as isolated 8px stubs.  One group per tile.
+      wall = { 21, 22, 48, 49 },
       -- The statues, and the same bird at the pillar feet.  Black-outline
       -- segmented: the outline and everything it encloses stay, the sky
       -- and the paving around them flood away.

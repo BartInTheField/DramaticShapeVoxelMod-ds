@@ -233,29 +233,42 @@ end
 -- class = "..." } } }`, evaluated per POSITION in TileShape.at, where
 -- the map and coordinates are in hand. First match wins; no match keeps
 -- the tile's ordinary pin.
+-- `when_below` is the mirror, and it exists because ABOVE is not always the
+-- side that tells the two uses apart.  The Plateau's $0D is the case: it is
+-- the gate wall's top band AND the base course under a column of rock face,
+-- and scanned over both maps the tile above is $03 for 64 of the first and
+-- 140 of the second -- no rule on `above` can split them.  What is BELOW
+-- does, exactly: the wall's own face $0F sits under the top band and under
+-- nothing else (336 vs 352, clean).
 local function authoredConditions(tilesetId, heights)
   local s = load()
   local entry = s and s.tilesets and s.tilesets[tilesetId]
-  local spec = entry and entry.when_above
-  if type(spec) ~= "table" then return nil end
+  if type(entry) ~= "table" then return nil end
   local out, any = {}, false
-  for tile, rules in pairs(spec) do
-    if type(tile) == "number" and type(rules) == "table" then
-      local list = {}
-      for _, rule in ipairs(rules) do
-        if type(rule) == "table" and heights[rule.class]
-           and type(rule.above) == "table" then
-          local set = {}
-          for _, t in ipairs(rule.above) do set[t] = true end
-          list[#list + 1] = { above = set, class = rule.class }
+
+  local function collect(spec, side)
+    if type(spec) ~= "table" then return end
+    for tile, rules in pairs(spec) do
+      if type(tile) == "number" and type(rules) == "table" then
+        local list = out[tile] or {}
+        for _, rule in ipairs(rules) do
+          if type(rule) == "table" and heights[rule.class]
+             and type(rule[side]) == "table" then
+            local set = {}
+            for _, t in ipairs(rule[side]) do set[t] = true end
+            list[#list + 1] = { side = side, set = set, class = rule.class }
+          end
         end
-      end
-      if #list > 0 then
-        out[tile] = list
-        any = true
+        if #list > 0 then
+          out[tile] = list
+          any = true
+        end
       end
     end
   end
+
+  collect(entry.when_above, "above")
+  collect(entry.when_below, "below")
   return any and out or nil
 end
 
@@ -357,9 +370,12 @@ function TileShape.at(map, shapes, tile, tx, ty)
   -- tile and the cell rules below (see authoredConditions)
   local rules = shapes.cond and shapes.cond[tile]
   if rules then
-    local above = map:tileAt(tx, ty - 1)
     for _, rule in ipairs(rules) do
-      if above and rule.above[above] then
+      -- NOTE map:tileAt border-EXTENDS: one row off an edge answers the
+      -- map's borderBlock, never nil.  A rule listing whatever that block
+      -- draws will fire along that whole edge (it did, on the Marts).
+      local n = map:tileAt(tx, rule.side == "above" and ty - 1 or ty + 1)
+      if n and rule.set[n] then
         -- shapes.condShape, NOT shapes.classes: the canonical class
         -- shapes are SHARED, and `wall` in particular is the very object
         -- rule 4 hands every unauthored solid tile. Marking that one
@@ -501,6 +517,26 @@ function TileShape.propBg(tilesetId)
 
   bgCache[tilesetId] = any and out or false
   return bgCache[tilesetId] or nil
+end
+
+-- What a bookcase rank does with the rows it VACATES -- the ones behind the
+-- one-cell-deep box it collapses onto (a tileset entry's
+-- bookcase_backfill).  Returns the mode name, or nil for the default.
+--
+--   "above"   hand them the cell immediately above the run: its shape and
+--             its art.  A wall set INTO a terrace wants this -- the ground
+--             behind it is more terrace, not a trench.
+--   nil       skip them and paint the map's commonest ground underneath,
+--             which is right for a free-standing shelf against a wall.
+--
+-- Per tileset because it is a statement about what the drawing depicts, and
+-- the answer differs: the Mart's racks and Red's shelves stand in a room,
+-- the Plateau's gate walls are cut into a hillside.
+function TileShape.bookcaseBackfill(tilesetId)
+  local s = load()
+  local entry = s and s.tilesets and s.tilesets[tilesetId]
+  local mode = entry and entry.bookcase_backfill
+  return mode == "above" and mode or nil
 end
 
 -- Drop the cache: a mod that shadows data/voxel_heights.lua or a tileset
