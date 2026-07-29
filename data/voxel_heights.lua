@@ -735,14 +735,21 @@ return {
       -- floor the artist had already drawn.  So the couch keeps its
       -- polygonal box and he stands on top of it, at NPC scale.
       --
-      -- The mask keeps the couch's east rule (column 7) wherever it is
-      -- drawn dark, because that is where his hair crosses the tile seam
-      -- -- without it the overhang would float free of his head.  The
-      -- cushion wedge under his legs and the two floor pixels above his
-      -- head are the only interior pixels it gives back.
+      -- The mask keeps ALL of column 7, the couch's east edge.  Where that
+      -- column is drawn dark it is the couch's own rule -- but it is also
+      -- where his hair crosses the tile seam, so dropping it floats the
+      -- overhang free of his head.  And where it is drawn WHITE it is the
+      -- right side of his face, so dropping it opens a slit down his cheek
+      -- (rows 5-8, which is exactly what the first cut did).  Keeping the
+      -- rule twice costs nothing: tile 39 redraws it on the couch beneath
+      -- him either way.  The background corners around his head and the
+      -- cushion wedge under his legs are the only pixels given back.
       figures = {
         {
-          class = "billboard",
+          -- the `cutout` pool: one voxel, a flat card -- the same thing
+          -- the walking NPCs are, so the man reads as a person and not
+          -- as a ten-voxel wedge of furniture
+          class = "cutout",
           w = 2,
           tiles = { 37, 57,
                     53, 60 },
@@ -754,10 +761,10 @@ return {
             "XXXXXXXXX.......",
             "XXXXXXXXXX......",
             "XXXXXXXXXX......",
-            "XXXXXXX.X.......",
-            "XXXXXXX.X.......",
-            "XXXXXXX.X.......",
-            "XXXXXXX.X.......",
+            "XXXXXXXXX.......",
+            "XXXXXXXXX.......",
+            "XXXXXXXXX.......",
+            "XXXXXXXXX.......",
             "XXXXXXXX........",
             "XXXXXXXX........",
             "XXXXXXXX........",

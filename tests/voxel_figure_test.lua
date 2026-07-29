@@ -57,7 +57,14 @@ T.check(type(figs) == "table" and #figs == 1,
 local fig = figs[1]
 T.eq(fig.w, 2, "the figure is two tiles across")
 T.eq(fig.h, 2, "the figure is two tiles tall")
-T.eq(fig.n, 124, "the mask claims 124 pixels of the 256 it spans")
+T.eq(fig.n, 128, "the mask claims 128 pixels of the 256 it spans")
+
+-- no holes in him: his tiles' column 7 is the couch's east rule AND the
+-- right side of his face, and masking it out by shade slit his cheek open
+for ly = 5, 8 do
+  T.check(fig.mask[ly * (fig.w * 8) + 7] == true,
+    "his cheek is solid at row " .. ly .. " (the column-7 slit)")
+end
 T.eq(fig.tiles[1], 37, "it starts at the tile his head is drawn in")
 T.eq(fig.under[1], 39, "which wears the couch's own cushion once he is off")
 T.eq(fig.under[2], 1, "and the floor tiles wear the clean art (57 -> 1)")
@@ -160,7 +167,13 @@ T.eq(minY, 8, "his feet are on the couch's top face, not the floor")
 T.eq(maxY, 24, "and he stands his drawn 16px tall from there")
 T.eq(minX, 8, "he starts at the tile column he is drawn in")
 T.eq(maxX, 18, "and reaches his hair's overhang, two pixels east of it")
-T.eq(maxZ - minZ, 10, "a billboard-pool standee, ten voxels of body")
+T.eq(maxZ - minZ, 1, "a flat card, one voxel deep, like the walking NPCs")
+
+-- and he stands in the depth band of the row he is DRAWN in -- the couch's
+-- northern cell (tile row 9 spans z 72..80), not shifted onto its southern
+-- half the way a supported prop is
+T.check(minZ >= 72 and maxZ <= 80,
+  "he stands on his own cell, not the couch's southern half")
 
 -- the cushion wedge under his legs stayed with the couch: his lowest row
 -- is his foot alone, not the whole tile width

@@ -2165,9 +2165,14 @@ local function buildFigure(S, map, fig, tx, ty, perRow)
     baseY, support = bs.h, bs
   end
 
+  -- He stands in the depth band of the tile row he is DRAWN in, centred.
+  -- No south shift: buildObject nudges a supported prop one row back
+  -- because a monitor is drawn in the rows ABOVE the desk it stands on,
+  -- so its drawn row is not its standing row.  A figure's mask already
+  -- says exactly which row is his -- shifting it walked him off his own
+  -- cell and onto the couch's southern half.
   local depth = PINNED_DEPTH[fig.class] or PINNED_DEPTH.billboard
-  local z0 = ty * 8 + math.floor(lowY / 8) * 8
-             + (support and 8 or 0) + (8 - depth) / 2
+  local z0 = ty * 8 + math.floor(lowY / 8) * 8 + (8 - depth) / 2
   local z1 = z0 + depth
 
   -- ONE object by construction: the figure keeps its drawn proportions
@@ -2234,8 +2239,6 @@ end
 -- own tiles, so a match can never fire twice on the same drawing.
 function Structures.buildFigures(S, map, x0, x1, y0, y1)
   local figures = TileShape.figures(map.tileset.id)
-  print("[fig] map", map.id, "tileset", map.tileset.id, "figures",
-        figures and #figures or "nil")
   if not figures then return end
   local perRow = map.tileset.tilesPerRow or 16
   for _, fig in ipairs(figures) do
@@ -2250,10 +2253,7 @@ function Structures.buildFigures(S, map, x0, x1, y0, y1)
             break
           end
         end
-        if hit then
-          print("[fig] MATCH at", tx, ty)
-          buildFigure(S, map, fig, tx, ty, perRow)
-        end
+        if hit then buildFigure(S, map, fig, tx, ty, perRow) end
       end
     end
   end
