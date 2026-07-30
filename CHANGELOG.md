@@ -57,13 +57,16 @@
   horizon above the frame, so the arena keeps exactly the flat sky it had.
 
 - **A day/night cycle**, on a new **DAYTIME** options row: `DAY`, `NIGHT`,
-  `DUSK`, `DAWN`, `CYCLE`. One twenty-minute clock underneath all five -- ten
-  minutes of sun, ten of moon -- where the four named settings are PINS on
-  that dial (noon, mid-night, sunset, sunrise) and `CYCLE` lets it run,
-  picking up from whichever pin the player was just looking at. Everything is
-  a pure function of the clock, so the pinned DUSK is exactly the running
-  cycle stopped at sunset. Setting **VOXEL** to `FULL` switches DAYTIME to
-  `CYCLE` along with the rest of the preset.
+  `DUSK`, `DAWN`, `SYNC`, `CYCLE`. One twenty-minute clock underneath all of
+  them -- ten minutes of sun, ten of moon -- where the four named settings
+  are PINS on that dial (noon, mid-night, sunset, sunrise), `CYCLE` lets it
+  run, picking up from whichever pin or SYNC sky the player was just looking
+  at, and `SYNC` -- the DEFAULT -- lays the machine's own clock onto the
+  dial: local noon is the DAY pin, midnight is NIGHT, six and eighteen the
+  twilights, an hour of the real day is fifty seconds of dial. Everything is a pure function of
+  the clock, so the pinned DUSK is exactly the running cycle stopped at
+  sunset. Setting **VOXEL** to `FULL` switches DAYTIME to `CYCLE` along with
+  the rest of the preset.
 
   **The sun and the moon are in the sky**, and their positions are honest:
   the disc is the light's own direction projected through the same matrix the

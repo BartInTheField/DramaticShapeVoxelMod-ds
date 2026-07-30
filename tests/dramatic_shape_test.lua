@@ -297,8 +297,8 @@ T.eq(#hookedRows, 5, "the options hook added a row per setting")
 local grid, curve, battles = hookedRows[2], hookedRows[3], hookedRows[4]
 local daytime = hookedRows[5]
 T.eq(daytime.label, "DAYTIME", "the day/night row carries its label")
-T.eq(daytime.value(), "DAY",
-  "and starts pinned to DAY -- no time set means it is day")
+T.eq(daytime.value(), "SYNC",
+  "and defaults to SYNC -- no value set follows the clock on the wall")
 T.eq(grid.label, "V-GRID", "the grid row carries its label")
 T.eq(grid.value(), "OFF", "the grid starts off")
 T.eq(curve.label, "V-CURVE", "the curve row carries its label")
@@ -1054,6 +1054,11 @@ local Voxel = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelState")
 local skyFor = VoxelScene._skyFor
 local skyStrength = VoxelScene._skyStrength
 T.check(type(skyFor) == "function", "the scene exposes its sky resolve")
+
+-- pinned to DAY for every sky assertion below: the row ships defaulting to
+-- SYNC -- the machine's own clock -- which would hand these tests whatever
+-- palette the hour of the test run happened to be
+run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight").setting:sync("day")
 
 local outside = { def = { id = "PALLET_TOWN", tileset = "OVERWORLD" } }
 local inside = { def = { id = "REDS_HOUSE_1F", tileset = "HOUSE" } }
@@ -1928,7 +1933,10 @@ local Voxel3D = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
 local Voxel = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelState")
 
 -- the dial and its pins
-T.eq(DayNight.setting:get(), "day", "no time set means DAY: the default pin")
+T.eq(DayNight.setting.values[1], "sync",
+  "no value set means SYNC: values[1] is the row's contract default, and "
+  .. "it follows the machine's clock")
+DayNight.setting:sync("day")
 T.eq(DayNight.time(), 300, "and DAY is noon on the dial")
 local PINS = { day = 300, night = 900, dusk = 600, dawn = 0 }
 for name, t in pairs(PINS) do
@@ -2087,6 +2095,30 @@ modApi.save:set(DayNight.SAVE_KEY, nil)
 DayNight.restore()
 T.eq(DayNight.clock, 300, "a save with no clock in it starts at day")
 
+-- SYNC lays the machine's own clock onto the dial: local noon is the DAY
+-- pin, midnight is NIGHT, six and eighteen the twilights
+local hoursWas = DayNight.hours
+DayNight.setting:sync("sync")
+DayNight.hours = function() return 12 end
+T.eq(DayNight.time(), 300, "local noon is the DAY pin")
+DayNight.hours = function() return 18 end
+T.eq(DayNight.time(), 600, "six in the evening is DUSK")
+DayNight.hours = function() return 0 end
+T.eq(DayNight.time(), 900, "midnight is mid-night")
+DayNight.hours = function() return 6.5 end
+T.check(math.abs(DayNight.time() - 25) < 1e-9,
+  "half past six in the morning is just after dawn")
+-- and stepping from SYNC onto CYCLE picks up from the sky already showing
+DayNight.update(0)
+DayNight.setting:sync("cycle")
+DayNight.update(0)
+T.check(math.abs(DayNight.clock - 25) < 1e-9,
+  "CYCLE picks up from wherever SYNC's sky already was")
+DayNight.hours = hoursWas
+T.eq(DayNight.setting.values[#DayNight.setting.values], "cycle",
+  "cycle stays the ladder's last rung -- the FULL preset reaches for it "
+  .. "by position")
+
 -- arriving at FULL sets the clock going
 local Game = require("src.core.Game")
 local hadSave = Game.save
@@ -2098,8 +2130,8 @@ T.eq(DayNight.setting:get(), "cycle",
   "FULL switches DAYTIME to CYCLE -- the diorama gets its running sky")
 Game.save = hadSave
 
--- put the room back the way it was found
-DayNight.setting:sync("day")
+-- put the room back the way it was found (SYNC is the shipped default)
+DayNight.setting:sync("sync")
 DayNight.clock = 300
 DayNight.applyRig(false)
 Voxel3D.tint = { 1, 1, 1 }
