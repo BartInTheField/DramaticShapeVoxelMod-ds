@@ -1,4 +1,4 @@
--- Overworld battles: one frame of the arena, as geometry.
+﻿-- Overworld battles: one frame of the arena, as geometry.
 --
 -- The same world the free-roam mode draws, from a placed camera instead of
 -- the orbit, at the WINDOW's own pixel resolution -- not the GB's. The
@@ -41,7 +41,9 @@ local VoxelScene = V.require("VoxelScene")
 local BattleCam = V.require("BattleCam")
 local BattleBillboard = V.require("BattleBillboard")
 local VoxelGrid = V.require("VoxelGrid")
+local DayNight = V.require("DayNight")
 local PaletteFX = require("src.render.PaletteFX")
+local Map = require("src.world.Map")
 
 local BattleScene = {}
 
@@ -215,7 +217,11 @@ BattleScene.monCards = monCards
 local function shadowSignature(state, arena, terrain, nbMesh, token)
   local host = arena.map or state.map
   local parts = { "battle", host.id, arena.x, arena.y, arena.shape,
-                  tostring(terrain), tostring(token or 0) }
+                  tostring(terrain), tostring(token or 0),
+                  -- the cycle keeps running through a fight, and an arena lit
+                  -- from somewhere new must be re-cast from there
+                  math.floor(ShadowMap.KX * 128),
+                  math.floor(ShadowMap.KZ * 128) }
   for i = 1, #nbMesh do parts[#parts + 1] = tostring(nbMesh[i]) end
   return table.concat(parts, ",")
 end
@@ -231,17 +237,21 @@ local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
   for i, nb in ipairs(neighbors) do
     ShadowMap.draw(nbMesh[i], atlasFor(nb.map), Mat4.translate(nb.ox, 0, nb.oy))
   end
-  ShadowMap.draw(ChunkMesher.flowers(host), atlasFor(host), nil)
+  -- thin cards are snugged toward the sun (ShadowMap.snug) so their shadows
+  -- keep contact with their bases instead of starting a bias-width away
+  ShadowMap.draw(ChunkMesher.flowers(host), atlasFor(host),
+                 ShadowMap.snug(nil))
   for _, nb in ipairs(neighbors) do
     ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
-                   Mat4.translate(nb.ox, 0, nb.oy))
+                   ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
   end
 
   -- the mons themselves, as the same cards the camera will see. Their alpha
   -- is the silhouette, so what lands on the ground is the shape of the
   -- Pokemon rather than a blob standing in for one.
   for _, card in ipairs(cards or {}) do
-    ShadowMap.draw(BattleBillboard.mesh(), card.tex, card.model)
+    ShadowMap.draw(BattleBillboard.mesh(), card.tex,
+                   ShadowMap.snug(card.model))
   end
 
   ShadowMap.finish(sig)
@@ -298,6 +308,22 @@ function BattleScene.render(state, arena, textures, token)
   local host = arena.map or state.map
   local neighbors = (host == state.map) and (state.neighbors or {}) or {}
 
+  -- the hour's light reaches the arena exactly as it reaches free-roam: the
+  -- shared rig follows the clock on an outdoor floor and stays at noon on an
+  -- indoor one, and the same tint multiplies the staged shot -- with the
+  -- same window glass on whatever buildings stand in the background
+  local outdoor = host.def and Map.isOutdoor(host.def) or false
+  DayNight.applyRig(outdoor)
+  -- a canopy floor (Viridian Forest) fights under the hour's tint too,
+  -- with the rig and the void exactly as they were
+  Voxel3D.tint = DayNight.tint(outdoor or DayNight.isCanopy(host))
+  local GlassMask = V.require("GlassMask")
+  Voxel3D.glassMask = outdoor and GlassMask.texture(host.tileset) or nil
+  Voxel3D.glassNight = outdoor and DayNight.windowLight() or 0
+  -- no glint in the arena: the drift is the shot breathing, not the player
+  -- moving, and a shimmer on background windows would fight the mons
+  Voxel3D.glassGlint = 0
+
   -- shares the free-roam mode's request/evict bookkeeping, so a battle warms
   -- exactly the meshes walking around would have and nothing extra
   local terrain, nbMesh = prefetchArena(state, host)
@@ -342,9 +368,12 @@ function BattleScene.render(state, arena, textures, token)
 
   Voxel3D.camera = cam
   -- the sun is turned up for the arena and put back afterwards, so the
-  -- free-roam world it shares this module with keeps its own weight
+  -- free-roam world it shares this module with keeps its own weight -- and
+  -- the hour still has the last word: a sunset fades the arena's shadows
+  -- out and the moon presses more softly, exactly as it does outside
   local sunWas = Voxel3D.SHADOW_ALPHA
   Voxel3D.SHADOW_ALPHA = BattleScene.SHADOW_ALPHA
+                         * DayNight.shadowScale(outdoor)
   -- and the wireframe is ON for a battle whatever the V-GRID row says. The
   -- arena is a staged shot rather than the world being walked through, and
   -- the seams are what make it read as built rather than photographed. Forced
@@ -378,10 +407,20 @@ function BattleScene.render(state, arena, textures, token)
     if flashing then
       Voxel3D.flatten(BattleScene.FLASH_COLOR, BattleScene.FLASH_STRENGTH)
     end
+    -- and no voxel wireframe on the pair. Everything else in this frame is
+    -- built a unit per voxel and wears the seams that fall out of that; a
+    -- mon's card is one quad wearing the battle screen (see
+    -- BattleBillboard), so it is off the grid and has no seams to draw.
+    Voxel3D.seams(false)
+    -- and no glass either: the cards wear the battle screen, not the
+    -- tileset atlas, so the mask's coordinates mean nothing on them
+    Voxel3D.glass(false)
     for _, card in ipairs(monCards(arena, groundY, textures)) do
       Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model,
                    BattleBillboard.PULL)
     end
+    Voxel3D.glass(true)
+    Voxel3D.seams(true)
     if flashing then Voxel3D.flatten(nil) end
     -- grass and flowers ride the same camera-ward pull the free-roam pass
     -- gives them, measured against THIS camera's pitch rather than the

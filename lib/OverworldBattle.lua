@@ -140,6 +140,54 @@ OverworldBattle.HUD_RECT = {
   player = { 72, 56, 88, 40 },
 }
 
+-- ------- the HUDs, out at the window's own edges
+--
+-- The battle screen is 160x144 in the MIDDLE of the window and the world is the
+-- whole of it. That left both HUD blocks huddled together in the middle of the
+-- frame with map showing on either side of them, which reads as a Game Boy
+-- screenshot pasted over a diorama rather than as the diorama's own furniture.
+--
+-- So each block is snapped to its own side: the foe's to the left edge of the
+-- window, the player's to the right. Nothing about either block changes -- same
+-- tiles, same size, same rows, drawn by the engine's own DrawEnemyHUDAndHPBar
+-- and DrawPlayerHUDAndHPBar -- only where the pair sits. On a window the shape
+-- of the GB screen there is nowhere to go and the snap is a no-op.
+--
+-- They cannot simply be MOVED there: the engine draws them into the 160x144 UI
+-- canvas and everything outside it is clipped away. So the layer is rendered to
+-- a texture and composited into the WORLD image instead, which is the one
+-- surface in this mode that covers the whole window.
+
+-- The rows each block is cut out of, full width. Generous on purpose:
+-- AnimationShakeEnemyHUD nudges the foe's block sideways, a long name reaches
+-- further than the panel does, and the pokeball rows and the safari ball count
+-- belong to the block whose rows they sit in. Nothing drawHUDs draws lies
+-- outside rows 0-96, and the two bands split that between them.
+OverworldBattle.HUD_BAND = {
+  enemy = { 0, 0, 160, 48 },
+  player = { 0, 48, 160, 48 },
+}
+
+-- Where each block lands, in WORLD-canvas pixels: the panel rect the frosted
+-- glass is cut to, plus the x its band is blitted at.
+--
+-- The foe's panel starts at the window's left edge and the player's ends at the
+-- right one. The vertical is untouched, so both stay on the rows the GB put
+-- them on. A band's own origin sits outside the window by the panel's inset --
+-- the couple of pixels a HUD shake can push past the edge are clipped there,
+-- which is the whole cost of the snap and is invisible.
+function OverworldBattle.snapRects(shot)
+  local s = shot.scale
+  local e, p = OverworldBattle.HUD_RECT.enemy, OverworldBattle.HUD_RECT.player
+  local ex = -e[1] * s                       -- foe: panel's left edge to 0
+  local px = shot.pw - (p[1] + p[3]) * s     -- player: right edge to the far side
+  local rects = {
+    enemy = { ex + e[1] * s, shot.ly + e[2] * s, e[3] * s, e[4] * s },
+    player = { px + p[1] * s, shot.ly + p[2] * s, p[3] * s, p[4] * s },
+  }
+  return rects, { enemy = ex, player = px }
+end
+
 -- ------- the live battle
 --
 -- nil when no overworld battle is running. Never more than one: battles do
@@ -148,6 +196,13 @@ local session = nil
 
 local function game()
   return require("src.core.Game")
+end
+
+-- Whether this frame's HUDs went out to the window's edges instead of being
+-- drawn in the GB frame. False whenever the composite could not be made, which
+-- is what leaves the in-frame HUD as the fallback rather than no HUD at all.
+local function snapped()
+  return (session and session.snapped) and true or false
 end
 
 -- Put the map's cast back. Both lists are handed back by identity, so
@@ -174,6 +229,36 @@ local function cullCast(state)
   state.ghosts = {}
 end
 
+-- ------- one right battle layout
+--
+-- Everything this file composes is measured in the GB's own 160x144 frame: the
+-- two ANCHORs the arena camera is solved to put a cell under, the HUD_RECTs
+-- the frosted panels are cut to, and the full-frame white intercepted to let
+-- the world through. BATTLE LAYOUT's WIDE lays the same battle out on a
+-- 304x144 surface (src/battle/WideBattle.lua), which moves every one of those
+-- -- the mons would stand where no camera was solved for them, and the panels
+-- would land beside the HUDs they are supposed to be under.
+--
+-- So while a fight can be staged on the map there is one right answer, and it
+-- is SET rather than worked around. The engine reads the option live
+-- (BattleState:isWideBattleLayout is asked per frame, and Renderer asks the
+-- top state for its surface the same way), so writing it here lands on the
+-- battle being pushed as well as every one after it.
+--
+-- This is the last line rather than the first: the OPTIONS menu takes the row
+-- off the list and pins the value while 3D-BTL is on (see main.lua), so a
+-- player is never offered a switch that gets reverted under them. What reaches
+-- here is a value that arrived some other way -- a save written before the mod
+-- was installed, the mod manager's own page, another mod.
+function OverworldBattle.forceOG(g)
+  g = g or game()
+  local opts = g and g.save and g.save.options
+  if not opts or opts.battleLayout ~= "wide" then return false end
+  opts.battleLayout = "og"
+  if g.writeOptions then pcall(g.writeOptions, g) end
+  return true
+end
+
 -- Stage a battle triggered from `state`, if this mode can. Returns true when
 -- a session started -- which is also the only case where anything visible
 -- changes, so a map with no room for an arena plays exactly the vanilla
@@ -188,6 +273,10 @@ function OverworldBattle.begin(state, battle)
                           state.player.cellX, state.player.cellY,
                           state.player.surfing)
   if not (ok and arena) then return false end
+
+  -- the fight is staged from here on, so the layout it is composed for is not
+  -- optional any more (see forceOG)
+  OverworldBattle.forceOG()
 
   session = { state = state, arena = arena, battle = battle, shot = nil,
               armed = false, token = 0 }
@@ -276,11 +365,13 @@ function OverworldBattle.update(dt)
     -- tries again. Rethrowing would hand the whole voxel mode to Pipelines'
     -- guard, which retires a pipeline for the session.
     session.shot = nil
+    session.snapped = false
     session.broken = true
     V.mod.log:warn("overworld battle scene failed: %s -- this battle draws "
                    .. "on the plain battle background", tostring(shot))
     return
   end
+  session.snapped = false
   if shot and shot.canvas then
     -- the depth of field is measured off the two marks: the slab in focus is
     -- the one the mons are standing in, at whatever the drift has done to
@@ -295,6 +386,20 @@ function OverworldBattle.update(dt)
     -- so a panel over a blurred far field is frosted from what is actually
     -- behind it
     pcall(BattleHud.build, shot.canvas)
+    -- and then the HUDs go ON that backdrop, snapped out to the window's own
+    -- edges (snapHUDs). Here rather than in the battle's draw for the same
+    -- reason the scene is: it binds a canvas of its own. After the frost, so
+    -- the glass is frosted from the world alone and never from the glyphs
+    -- about to sit on it.
+    local okHud, up = pcall(OverworldBattle.snapHUDs, session.battle, shot)
+    session.snapped = (okHud and up) and true or false
+    -- once per battle, not once per frame: a driver that cannot do this cannot
+    -- do it sixty times a second either, and the fallback is silent and fine
+    if not okHud and not session.hudWarned then
+      session.hudWarned = true
+      V.mod.log:warn("overworld battle HUD snap failed: %s -- the HUDs draw "
+                     .. "in the battle frame this battle", tostring(up))
+    end
   end
   session.shot = shot
 end
@@ -394,6 +499,7 @@ local texturing = nil
 
 local texCanvas = {}
 local innerPics = nil                   -- captured by install()
+local innerHUDs = nil                   -- likewise, for the snapped HUD layer
 
 local function texCanvasFor(side)
   local c = texCanvas[side]
@@ -695,8 +801,12 @@ function OverworldBattle.install()
   --
   -- The HP bar is untouched: it is drawn in its own greens and reds, and
   -- only an exactly-black set is remapped.
-  local innerHUDs = BattleState.drawHUDs
+  innerHUDs = BattleState.drawHUDs
   function BattleState:drawHUDs(slide)
+    -- Normally the HUDs have already been drawn this frame, snapped out to the
+    -- window's edges and composited into the world image (snapHUDs). Drawing
+    -- them here as well would show each block twice, once in each place.
+    if self.dramaticShapeShot and snapped() then return end
     if not (self.dramaticShapeShot and self.dramaticShapeDark) then
       return innerHUDs(self, slide)
     end
@@ -726,12 +836,91 @@ function OverworldBattle.hudLive(battle, slide)
   return enemy and true or false, player and true or false
 end
 
+-- ------- the snapped composite
+--
+-- The engine's own HUD layer, rendered into a texture.
+--
+-- One thing is falsified for the render, and it is falsified because this layer
+-- never reaches the battle's zone pass -- it is composited into the world image,
+-- outside the frame that pass covers. In the colorized pipeline drawHUDs leaves
+-- the HP bar's fill as DMG gray for the zone pass to colour by region (#229);
+-- answered false, it tints its own greens and reds instead, exactly as it does
+-- on the flat path. The glyphs are pure black either way, which is what the
+-- flip in BattleHud.layerTexture is measured against.
+--
+-- Shadowed on the instance for this call only, the way drawZonePass shadows
+-- activeBgp: putting the field back to whatever it was (normally nil) lets the
+-- class method be found again.
+function OverworldBattle.hudTexture(battle, slide, dark)
+  if not (innerHUDs and battle) then return nil end
+  local had = rawget(battle, "colorMode")
+  battle.colorMode = function() return false end
+  local ok, layer = pcall(BattleHud.layerTexture,
+                          BattleScene.GB_W, BattleScene.GB_H, dark,
+                          function() innerHUDs(battle, slide) end)
+  battle.colorMode = had
+  return ok and layer or nil
+end
+
+-- Draw both HUD blocks into the world image at the window's edges, each on its
+-- own frosted panel. Returns true when the frame's HUDs are up there and the
+-- in-frame draw must be skipped; false leaves the battle screen's own HUD
+-- exactly as it was before any of this existed.
+--
+-- Both bands are blitted whether or not that side's HUD is LIVE, because a band
+-- carries more than the HUD: the pokeball rows of the intro and of an enemy
+-- faint, and the safari ball count, all draw in these rows and belong at the
+-- same edge as the block they share it with. The panels are the ones that
+-- follow hudLive -- frosted glass under nothing is a slab floating in the arena.
+function OverworldBattle.snapHUDs(battle, shot)
+  if not (battle and shot and shot.canvas and (shot.scale or 0) > 0) then
+    return false
+  end
+  local slide = (battle.introSlide or 0) * 4
+  local rects, bandX = OverworldBattle.snapRects(shot)
+  local enemy, player = OverworldBattle.hudLive(battle, slide)
+  local live = {}
+  if enemy then live.enemy = rects.enemy end
+  if player then live.player = rects.player end
+  -- measured under the SNAPPED rects: the panels are over whatever the world
+  -- shows at the window's edges now, which is not what was behind them in the
+  -- middle of the frame
+  local dark = BattleHud.verdict(live, shot, true)
+  local layer = OverworldBattle.hudTexture(battle, slide, dark)
+  if not layer then return false end
+
+  local g = love.graphics
+  local prevCanvas = g.getCanvas()
+  local prevBlend, prevAlpha = g.getBlendMode()
+  local ok, err = pcall(function()
+    g.setCanvas(shot.canvas)
+    g.setBlendMode("alpha")
+    for _, rect in pairs(live) do BattleHud.panel(rect, shot, dark, true) end
+    g.setColor(1, 1, 1, 1)
+    for side, band in pairs(OverworldBattle.HUD_BAND) do
+      local quad = g.newQuad(band[1], band[2], band[3], band[4],
+                             BattleScene.GB_W, BattleScene.GB_H)
+      g.draw(layer, quad, bandX[side] + band[1] * shot.scale,
+             shot.ly + band[2] * shot.scale, 0, shot.scale, shot.scale)
+    end
+  end)
+  if prevCanvas then g.setCanvas(prevCanvas) else g.setCanvas() end
+  g.setBlendMode(prevBlend or "alpha", prevAlpha)
+  g.setColor(1, 1, 1, 1)
+  if not ok then error(err, 0) end
+  return true
+end
+
 -- Lay the frosted glass down under whichever HUD is about to draw, and
 -- record which way the glyphs have to flip.
+--
+-- The fallback path only: with the HUDs snapped out to the window's edges their
+-- panels went with them, and there is nothing left inside the GB frame to lay
+-- glass under.
 function OverworldBattle.drawHudPanels(battle)
   local shot = battle.dramaticShapeShot
   battle.dramaticShapeDark = nil
-  if not shot then return end
+  if not shot or snapped() then return end
   local slide = (battle.introSlide or 0) * 4
   local enemy, player = OverworldBattle.hudLive(battle, slide)
   if not (enemy or player) then return end

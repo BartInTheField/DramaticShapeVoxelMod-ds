@@ -16,6 +16,156 @@
 
 ### Added
 
+- **A gradient sky behind the diorama, on every `VOXEL` rung.** The void behind
+  the world used to be a black plate at every rung but the top, where it became
+  one flat blue -- enough while that void was a sliver, and a wall of paint once
+  the horizon came into frame.
+
+  It is the 8-bit skybox recipe now: four blues painted as flat horizontal bands,
+  deepest overhead and palest at the bottom, with a CHECKERBOARD of the next band
+  dithered into the bottom 40% of each one. Alternating two colours on a pixel
+  grid is how a machine with four to a palette got a fifth, sixth and seventh out
+  of them, and it is what keeps four bands reading as a gradient rather than as
+  four stripes. Every channel of the palette is a multiple of 8 -- where a
+  five-bit GBC channel lands -- so no colour in it is one the hardware could not
+  have shown. No clouds, nothing moving.
+
+  Where the bands END is the camera's own answer. At `75` the ground plane's
+  vanishing line is genuinely in frame -- projected through the same matrix the
+  geometry is drawn with -- and the pale end meets it. At the steeper rungs that
+  line is above the top edge, and what shows up there is the ground running OUT
+  past the map edge instead, so the bands take a fixed slice of the frame and the
+  haze fills the rest. One sky across the whole ladder either way.
+
+  **Nothing is resampled**, which is why it is drawn the way it is: no baked
+  160x144 image scaled up to the window, no downsized buffer blown back up, no
+  texture at all. One rectangle through a shader answers every pixel from its own
+  canvas coordinate, so a pixel of sky is computed at the size it is displayed
+  at and there is nothing for a filter to soften. The band edges and the dither
+  cells are measured in the pass's own pixels-per-world-pixel, handed in fresh
+  every frame -- so a `ZOOM` keypress is reflected in the frame that follows it,
+  with nothing cached at the old scale, and the sky's grid is the same grid the
+  world's own texels sit on.
+
+  The palette goes through the display-mode transform like every other palette in
+  this mod, so GRAY gets four greys and CLASSIC four greens. Below the bands the
+  void is filled with the palest of them -- which is also what the bottom band
+  ends on -- so the join has no seam, and a driver that cannot compile the shader
+  gets flat bands and a logged line rather than a wrong sky.
+
+  The overworld only. A battle is a staged shot whose placed camera has the
+  horizon above the frame, so the arena keeps exactly the flat sky it had.
+
+- **A day/night cycle**, on a new **DAYTIME** options row: `DAY`, `NIGHT`,
+  `DUSK`, `DAWN`, `CYCLE`. One twenty-minute clock underneath all five -- ten
+  minutes of sun, ten of moon -- where the four named settings are PINS on
+  that dial (noon, mid-night, sunset, sunrise) and `CYCLE` lets it run,
+  picking up from whichever pin the player was just looking at. Everything is
+  a pure function of the clock, so the pinned DUSK is exactly the running
+  cycle stopped at sunset. Setting **VOXEL** to `FULL` switches DAYTIME to
+  `CYCLE` along with the rest of the preset.
+
+  **The sun and the moon are in the sky**, and their positions are honest:
+  the disc is the light's own direction projected through the same matrix the
+  geometry is drawn with, so it stands over the point on the horizon its
+  shadows point away from, at every pitch, window shape and zoom. The sun's
+  noon is this mod's existing sun to the digit -- southeast, 45 degrees up,
+  overhead behind the north-facing camera and correctly out of frame -- and
+  its arc swings north at both ends, so the disc stands IN frame through dawn
+  and dusk, rising half-set on the horizon. The moon arcs the northern sky
+  all night, due north (screen centre) at mid-night, with scaled crater
+  cells. Both are cell art on the sky's own dither grid, sized by the frame
+  (a celestial body's apparent size is an angle, so zooming the ground does
+  not swell it), and both are SCISSORED to the sky's region: the horizon
+  point is where a setting body disappears -- it never hangs under the map.
+
+  **The sky follows the clock.** Phase palettes -- the daytime blues,
+  gold-to-violet dawn, a hotter gold-to-indigo dusk, moonlit navy -- six
+  bands each now, blended along the dial and re-quantised onto the 5-bit
+  lattice, so every mixed frame is still a colour the hardware could show.
+  The blends bend through designed WAYPOINTS rather than straight across --
+  a golden hour on the way into dusk, a violet civil twilight either side of
+  the night -- because day's blue and dusk's gold are near-complements, and
+  a straight lerp between complements bottoms out in dishwater grey. Through the twilights a posterised, checker-dithered GLOW
+  warms the bands around the low sun -- painted light, not an airbrush. The
+  blends are 75 seconds wide either side of each twilight and the pins land
+  on their phase palette unmixed.
+
+  **The shadows follow the sun and the moon.** The shear every shadow is
+  thrown by (direction opposite the body's bearing, length its elevation's
+  cotangent, clamped at twice the caster's height) comes off the clock, the
+  shadow map's signature carries it, and the light's press fades out over the
+  last twelve degrees before the horizon -- so sunset hands off to moonrise
+  through a soft shadowless gap, and moonlight presses at about two-thirds
+  the sun's weight. The scene shader also multiplies every surface by the
+  hour's tint: neutral at noon, warm at the twilights, dim blue at night.
+
+  **Outdoors only**, by the same `Map.isOutdoor` test the sky already rests
+  on: indoors keeps the noon rig, the neutral tint and no sky -- a cave at
+  midnight is exactly as dark as a cave at noon. Viridian Forest is the case
+  between, a CANOPY map (DayNight.CANOPY): there is no sky to paint and no
+  sun to see, so the shadow rig stays the mod's fixed noon light -- all that
+  ever filtered through the leaves -- but night still FALLS in a forest, so
+  of everything the clock does, exactly one thing reaches it: the hour's
+  tint, in free-roam and staged battles alike. A battle staged on an
+  outdoor map fights under the hour: the night sky behind the arena, the
+  tint on the mons, the sunset taking the arena's shadows with it; an indoor
+  arena is untouched. The engine's own `world.tod` hook is answered
+  (`MORNING`/`DAY`/`EVENING`/`NIGHT`), so palette or music packs keyed to the
+  period ride this clock for free.
+
+  **The clock rides the save slot.** On the engine's `save.writing` event the
+  cycle's time is written into the mod's own save-file bucket
+  (`save.modData.DRAMATIC_SHAPE`), and read back when a save is opened. A
+  save with no clock in it starts at day.
+
+- **Window glass.** The panes in the overworld art -- the framed squares on
+  building fronts, the small lights in doors -- are found by SHAPE in the
+  tileset image (a black border row, four or five black-flanked glass rows,
+  a closing border), at pixel granularity because the door's pane straddles
+  a 2x2 tile block. No tile ids are hardcoded: a conversion that draws its
+  own windows in the same idiom gets glass for free. The scan yields a mask
+  texture aligned to the tileset atlas, which the scene shader samples with
+  the same coordinates the terrain does -- so the effect lands on any wall,
+  at any angle, in free-roam and staged battles alike, with no geometry
+  work.
+
+  By day a thin diagonal glint crosses the panes WHILE THE VIEW MOVES: the
+  sweep's phase is fed by the camera's own travel and its strength fades out
+  within a beat of standing still -- a reflection is something the viewpoint
+  does, so still camera means still glass. It lifts the texels toward
+  sky-white and leaves the diagonal shine art visible through it. The mask
+  is consulted only by meshes textured from the tileset atlas
+  (Voxel3D.glass), never by sprite sheets, whose coordinates would land on
+  the panes' atlas positions by accident.
+  After dark the panes are LIT: the texel's own pattern carried into a warm
+  lamp colour, replacing the shaded answer entirely -- a lit window ignores
+  the sun, every shadow and the hour's tint, exactly as a window with a lamp
+  behind it does. The lamps follow the clock (DayNight.windowLight): on
+  through dusk, full all night, mostly out by dawn, and never lit indoors.
+
+- **A fade out of a battle, where there used to be a hard cut.** The engine
+  wipes INTO a fight with one of the original's eight transitions and cuts
+  straight out of it: `BattleState:finish` pops itself and the map is simply
+  there on the next frame. Between a white field and a tile map the original got
+  away with that; between a placed camera looking across an arena and a diorama
+  looking down on a walking player it reads as a glitch. The battle now fades to
+  black, closes behind it, and the map fades up out of it -- twelve frames each
+  way, registered as a `voxel_battle_exit` transitions record so the timing is
+  retunable in data like the wipes it answers.
+
+  Only while voxel mode is on, and then for EVERY battle, including one that
+  found no arena and drew on the flat battle screen: what is being smoothed over
+  is the return to the map, and the map is a diorama either way. With the mode
+  off, the vanilla cut is untouched.
+
+  One black rectangle over the FINISHED composite does the fading, so the world,
+  the letterbox bars and the battle's own text box all darken by the same amount
+  -- the renderer's existing warp-fade overlay is painted between the world and
+  the UI, which would have left the text box bright over the black. A blackout's
+  own warp fade or an evolution prompt still owns the way out when it takes the
+  screen: the fade stops at the cut rather than fading in over the top of it.
+
 - **A `FULL` rung on the VOXEL row**, directly after `OFF`. One choice that
   puts the whole mode in its intended state -- the 35-degree camera, the
   miniature blur at maximum, the horizon flat, the view fitted, and battles
@@ -41,7 +191,62 @@
   Pokemon go solid white for those frames, silhouette and all, and nothing
   else in the frame moves.
 
+- **A standing figure's shadow detached from its feet under a low sun.** The
+  shadow compare forgives `slack` world pixels so lit ground does not acne
+  against its own texels, and that same forgiveness lit the first `slack` of
+  every cast shadow -- so the shadow started a bias-width away from the feet,
+  further the lower the sun reached (the classic peter-panning, invisible at
+  the old fixed 45 degrees and plain at a day/night golden hour or under the
+  moon). Sprite cards -- characters, authored figures, flowers, battle mons
+  -- are now drawn into the shadow map snugged TOWARD the sun along their
+  own ray (`ShadowMap.snug`): moving along the ray changes nothing about
+  where a shadow falls, but storing the card shallower takes three quarters
+  of the forgiveness back for the shadow it throws -- and for nothing else:
+  no terrain moved, so the acne margin is untouched where it matters, and
+  the quarter left keeps the card off the float-equality knife edge against
+  its own stored depth. The shadow root lands back under the feet at every
+  hour.
+
 ### Changed
+
+- **Under `VOID FILL: TREES` the border wall is modelled trees or nothing.**
+  Only the first block past the map body gets carved into round trunks and
+  canopies; the two blocks past that were too far out to be worth the quads,
+  so they fell through to the mesher's plain box and came out as a flat-topped
+  slab of tree ART sitting beside the modelled forest -- a painted-on plateau,
+  and the more obvious the lower the camera got. Rather than pay to carve
+  hulls nobody walks near, the wall now simply STOPS where the carving does:
+  `Structures` does not build the ring past that distance (the same "nothing
+  out there" `BLACK` already produces), and the mesher drops any cell inside
+  it the 2x2 canopy grouping could not claim, so no strip of boxes survives at
+  a corner. `WATER` and every indoor border are untouched -- a flat sheet of
+  water is what water looks like from above anyway.
+
+- **The two HP boxes snap to the window's edges during a staged battle.** The
+  battle screen is 160x144 in the middle of the window and the world is the
+  whole of it, which left both HUD blocks huddled together in the middle of the
+  frame with map showing on either side of them -- a Game Boy screenshot pasted
+  over a diorama rather than the diorama's own furniture. The foe's block now
+  sits against the left edge and the player's against the right, on the same
+  frosted glass, with the same tiles at the same size on the same rows. The
+  pokeball rows and the safari ball count travel with the block whose rows they
+  share. On a window shaped like the GB screen there is nowhere to go and
+  nothing moves.
+
+  The engine draws them into the 160x144 canvas, which clips at its own edges,
+  so the layer is rendered to a texture and composited into the world image --
+  the one surface here that covers the whole window. A driver that cannot do
+  that falls back to the HUD in the frame rather than to no HUD.
+
+- **`BATTLE LAYOUT` is pinned to `OG` while battles are staged on the map**, and
+  the row comes off the OPTIONS menu with the rows `FULL` owns. The staged shot
+  is composed in the GB's own frame -- the arena camera is solved to put a cell
+  under each pic's feet, and the HUD rects and the intercepted background fill
+  are measured there too -- and `WIDE` re-lays that screen out on a 304x144
+  surface, moving every one of them. Set rather than worked around, on every
+  route in: the options row, hotkey `8`, the mod manager's page, `FULL`'s
+  preset, and a save that arrived with `WIDE` already on. Switching `3D-BTL`
+  off hands the row back with `WIDE` selectable again.
 
 - **Hotkey `3` walks the angle rungs only and steps over `FULL`.** The key is
   a display-mode cycler -- it should change the camera and nothing else --

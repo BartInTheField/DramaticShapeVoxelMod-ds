@@ -34,6 +34,7 @@ menu.
 | `6`, or the **T-SHIFT** options row | OFF → 1 → 2 → 3 → OFF (miniature blur) |
 | `7`, or the **V-CURVE** options row | OFF → 1 → 2 → 3 — bend the world over the horizon |
 | `8`, or the **3D-BTL** options row | ON / OFF — fight on the map instead of on a white field |
+| the **DAYTIME** options row | DAY / NIGHT / DUSK / DAWN / CYCLE — what time it is outdoors |
 
 **3D-BTL** is on by default and is independent of **VOXEL**: battles draw
 on the world whether or not the free-roam camera is pitched over.

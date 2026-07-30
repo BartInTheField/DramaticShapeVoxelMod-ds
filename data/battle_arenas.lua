@@ -39,7 +39,10 @@
 
 return {
   -- ------- routes
-  ["ROUTE_1"] = { x = 0, y = 16, shape = "wide" },
+  -- narrow, deliberately: the route's interior is a 3-cell-wide lane and the
+  -- wide shape only fits in the western connection border, which staged every
+  -- fight at the edge of the world instead of on the road
+  ["ROUTE_1"] = { x = 9, y = 16, shape = "narrow" },
   ["ROUTE_2"] = { x = 1, y = 49, shape = "wide" },
   ["ROUTE_3"] = { x = 57, y = 1, shape = "wide" },
   ["ROUTE_4"] = { x = 46, y = 7, shape = "wide" },

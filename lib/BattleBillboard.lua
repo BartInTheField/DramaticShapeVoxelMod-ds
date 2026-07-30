@@ -42,6 +42,20 @@ local quad = nil                  -- nil = untried, false = unavailable
 -- The unit card: x in -0.5..0.5, y in 0..1, z = 0, UV over the whole
 -- texture. Feet on the model origin, so the model matrix only has to say
 -- where the mon is standing and how big it is.
+--
+-- Which puts this card OFF the voxel grid, alone among the meshes in this
+-- mode: the rest are built one unit per voxel in their own model space --
+-- terrain in world pixels, a character's card in the sprite's own pixels --
+-- and the wireframe is the integer planes of that space (see VoxelGrid).
+-- One unit here is the whole card, so the only integer plane inside it is
+-- x = 0, which is the pic's centre column: a single stray line straight
+-- down the middle of every Pokemon and no seams anywhere else.
+--
+-- The card stays a unit card, because a mon's size on screen is decided by
+-- the artwork's own dimensions and the distance it is standing at, and a
+-- unit card is what lets one matrix say both. Whoever draws it turns the
+-- wireframe off instead (Voxel3D.seams) -- a mesh that is not on the voxel
+-- grid does not get a voxel grid drawn on it.
 local function unitQuad()
   if quad ~= nil then return quad or nil end
   local verts = {
@@ -93,8 +107,11 @@ function BattleBillboard.draw(tex, x, y, z, grow)
   if grow then w, h = w * grow, h * grow end
   if w <= 0 or h <= 0 then return false end
   local yaw = BattleBillboard.yawToward(x, z, Voxel3D.eye)
+  -- off the voxel grid, so no wireframe on it (see unitQuad)
+  Voxel3D.seams(false)
   Voxel3D.draw(mesh, tex, BattleBillboard.matrix(x, y, z, w, h, yaw),
                BattleBillboard.PULL)
+  Voxel3D.seams(true)
   return true
 end
 

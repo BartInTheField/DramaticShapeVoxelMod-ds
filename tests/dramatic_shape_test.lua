@@ -135,6 +135,68 @@ T.check(not fullIds["DRAMATIC_SHAPE:grid"], "and V-GRID")
 T.check(not fullIds["DRAMATIC_SHAPE:curve"], "and V-CURVE")
 T.check(not fullIds["DRAMATIC_SHAPE:battles"], "and 3D-BTL")
 
+-- ------- BATTLE LAYOUT is pinned to OG while a fight can be staged on the map
+--
+-- The staged battle is composed in the GB's own 160x144 frame: the anchors the
+-- arena camera is solved to put a cell under, the HUD rects the frosted panels
+-- are cut to, the full-frame white intercepted to let the world through. WIDE
+-- lays the same battle out on a 304x144 surface and moves every one of them. So
+-- the value is set and the ENGINE's row comes off the menu -- the one row this
+-- mod takes away that is not its own.
+--
+-- Scoped in a block of its own, like the sections below: this file is one Lua
+-- chunk and a chunk has 200 local slots, so a section that wants half a dozen
+-- borrows them rather than spending them for the rest of the run.
+do
+local Battles = run.loader.exports.DRAMATIC_SHAPE.lib.require("OverworldBattle")
+T.eq(Battles.enabled(), true, "3D-BTL is on by default, which is what pins it")
+
+-- off FULL first: the row on its own has to be enough, and FULL is checked
+-- separately below
+Pipelines.setLevel("voxel", 2)
+local layoutGame = {
+  data = Data,
+  save = { options = { battleLayout = "wide", pipelines = {}, modOptions = {} } },
+  mods = { modOptions = {} },
+  writeOptions = function() end,
+}
+local pinned = Runtime.call("ui.options.rows", function(_, r) return r end,
+                            layoutGame,
+                            { { id = "battleLayout" }, { id = "tilt" },
+                              { id = "pipeline:voxel" } })
+local pinnedIds = {}
+for _, row in ipairs(pinned) do pinnedIds[row.id] = true end
+T.check(not pinnedIds["battleLayout"],
+  "with staged battles on, BATTLE LAYOUT is off the menu")
+T.eq(layoutGame.save.options.battleLayout, "og",
+  "and a save that had WIDE is set to OG -- the only layout the shot composes in")
+
+-- switching 3D-BTL off hands the row straight back, WIDE and all
+Battles.setting:setIndex(2, layoutGame)
+T.eq(Battles.enabled(), false, "3D-BTL off")
+local handedBack = Runtime.call("ui.options.rows", function(_, r) return r end,
+                                layoutGame,
+                                { { id = "battleLayout" }, { id = "tilt" },
+                                  { id = "pipeline:voxel" } })
+local backIds = {}
+for _, row in ipairs(handedBack) do backIds[row.id] = true end
+T.check(backIds["battleLayout"], "the engine's row is back on the menu")
+layoutGame.save.options.battleLayout = "wide"
+Runtime.call("ui.options.rows", function(_, r) return r end, layoutGame,
+             { { id = "battleLayout" } })
+T.eq(layoutGame.save.options.battleLayout, "wide",
+  "and WIDE is left alone once no battle can be staged on the map")
+
+-- FULL owns the 3D-BTL row, so it pins the layout even with that row switched
+-- off underneath it
+Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
+Runtime.call("ui.options.rows", function(_, r) return r end, layoutGame,
+             { { id = "battleLayout" } })
+T.eq(layoutGame.save.options.battleLayout, "og",
+  "FULL pins the layout on its own, because it owns the row that would")
+Battles.setting:setIndex(1, layoutGame)
+end
+
 -- ------- and off FULL, the rows come back, grouped with the mode
 --
 -- The engine splices a pipeline row in beside TILT and lands a mod's own
@@ -200,13 +262,43 @@ T.check(rowIndex(menu, "DRAMATIC_SHAPE:grid"),
   "and the rows came straight back without reopening the menu")
 T.check(rowIndex(menu, "pipeline:tiltshift"), "T-SHIFT too")
 
+-- ------- 3D-BTL owns BATTLE LAYOUT, and takes it off the OPEN menu too
+--
+-- The row this one takes away sits ABOVE it in the list, so the cursor has to
+-- follow the row it was ON rather than the slot it was in -- otherwise the very
+-- press that switched staged battles on would leave the cursor a row further
+-- down than the player left it.
+do
+local Battles = run.loader.exports.DRAMATIC_SHAPE.lib.require("OverworldBattle")
+Battles.setting:setIndex(2, menuGame)             -- staged battles off
+menuGame.save.options.battleLayout = "wide"
+Pipelines.setLevel("voxel", 2)
+local layoutMenu = OptionsMenu.new(menuGame)
+T.check(rowIndex(layoutMenu, "battleLayout"),
+  "with staged battles off, the engine's BATTLE LAYOUT row is on the menu")
+layoutMenu.index = rowIndex(layoutMenu, "DRAMATIC_SHAPE:battles")
+pressed = { right = true }
+layoutMenu:update(0)
+pressed = {}
+T.eq(Battles.setting:get(), true, "the step switched staged battles on")
+T.check(not rowIndex(layoutMenu, "battleLayout"),
+  "and BATTLE LAYOUT left the open menu with the same keypress")
+T.eq(menuGame.save.options.battleLayout, "og", "pinned to OG on the way out")
+T.eq(layoutMenu.index, rowIndex(layoutMenu, "DRAMATIC_SHAPE:battles"),
+  "with the cursor still on the row the player just used")
+end
+
 -- level 2 is the "15" rung: any rung that is not FULL, so the settings the
 -- preset owns are back on the menu
 Pipelines.setLevel("voxel", 2)
 local hookedRows = Runtime.call("ui.options.rows", function(_, r) return r end,
                                { data = Data }, { { id = "text_speed" } })
-T.eq(#hookedRows, 4, "the options hook added a row per setting")
+T.eq(#hookedRows, 5, "the options hook added a row per setting")
 local grid, curve, battles = hookedRows[2], hookedRows[3], hookedRows[4]
+local daytime = hookedRows[5]
+T.eq(daytime.label, "DAYTIME", "the day/night row carries its label")
+T.eq(daytime.value(), "DAY",
+  "and starts pinned to DAY -- no time set means it is day")
 T.eq(grid.label, "V-GRID", "the grid row carries its label")
 T.eq(grid.value(), "OFF", "the grid starts off")
 T.eq(curve.label, "V-CURVE", "the curve row carries its label")
@@ -967,15 +1059,16 @@ local outside = { def = { id = "PALLET_TOWN", tileset = "OVERWORLD" } }
 local inside = { def = { id = "REDS_HOUSE_1F", tileset = "HOUSE" } }
 local TOP = math.rad(Voxel.ANGLES_DEG[Voxel.MAX_LEVEL + 1])
 
--- the ladder, by angle: only the top rung paints anything
+-- the ladder, by angle: every rung that tilts at all paints a sky
 for level = 0, Voxel.MAX_LEVEL do
   Voxel.angle = math.rad(Voxel.ANGLES_DEG[level + 1])
   local sky = skyFor(outside)
-  if level == Voxel.MAX_LEVEL then
-    T.check(sky ~= nil, "the 75-degree rung paints a sky outdoors")
-    T.eq(sky[4], 1, "and paints it at full strength")
+  if level == 0 then
+    T.eq(sky, nil, "rung 0 is the flat camera: no tilt, no void, no sky")
   else
-    T.eq(sky, nil, "rung " .. level .. " leaves the void alone")
+    T.check(sky ~= nil, "rung " .. level .. " paints a sky outdoors")
+    T.eq(sky[4], 1, "and paints it at full strength")
+    T.check(sky.bands ~= nil, "with its bands on it")
   end
 end
 
@@ -991,14 +1084,18 @@ T.eq(skyFor(inside), nil, "not even at 75 degrees, where outdoors would")
 T.eq(skyFor(nil), nil, "no map, no sky")
 T.eq(skyFor({}), nil, "a map with no def is not an outdoor map")
 
--- it fades in with the camera tween rather than popping on the keypress
-T.eq(skyStrength(math.rad(50)), 0, "the rung below the top is still skyless")
-T.eq(skyStrength(TOP), 1, "the top rung is full sky")
-local mid = skyStrength(math.rad(62.5))
-T.check(mid > 0 and mid < 1, "and the tween between them is partial")
-T.check(skyStrength(math.rad(70)) > skyStrength(math.rad(60)),
-  "strengthening as the camera pitches over")
-T.eq(skyStrength(math.rad(15)), 0, "a shallow pitch paints nothing at all")
+-- full strength at every rung, with the ramp left only for the ARRIVAL: the
+-- camera eases up from flat when the mode is switched on, and the sky comes up
+-- with it rather than appearing whole on the keypress
+T.eq(skyStrength(math.rad(15)), 1, "the shallowest rung is full sky")
+T.eq(skyStrength(math.rad(50)), 1, "so is the one below the top")
+T.eq(skyStrength(TOP), 1, "and the top rung")
+T.eq(skyStrength(0), 0, "a camera that has not tilted at all paints none")
+local rising = skyStrength(math.rad(4))
+T.check(rising > 0 and rising < 1,
+  "and the first few degrees off flat are the fade-in")
+T.check(skyStrength(math.rad(6)) > skyStrength(math.rad(3)),
+  "which strengthens as the camera lifts")
 
 -- the colour answers to the display mode, exactly as the terrain does: a
 -- hardcoded blue would sit wrong in the modes that are not colour modes
@@ -1024,6 +1121,227 @@ T.check(green[2] > green[1] and green[2] > green[3],
 
 T.check(skyRGB("gbc_inv")[3] ~= blue[3],
   "GBC INV does not paint the same sky as GBC")
+
+-- ------- and the sky is a banded gradient, with no picture behind it
+--
+-- One flat blue was enough while the void was a sliver; with the horizon a
+-- quarter of the way down the frame it is a wall of paint. So the sky is the
+-- 8-bit skybox recipe: a short palette of blues painted as flat bands, deepest
+-- overhead, with a checkerboard of the next band dithered into the bottom of
+-- each. Nothing is baked to a fixed size and upscaled -- the bands fill the
+-- window and the dither grid is cut to the diorama's own pixel scale.
+do
+local Sky = run.loader.exports.DRAMATIC_SHAPE.lib.require("Sky")
+local Voxel3D = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+
+local function luma(c) return 0.299 * c[1] + 0.587 * c[2] + 0.114 * c[3] end
+
+-- the palette is the band list, and it belongs to the CLOCK now: DayNight
+-- owns one per phase and blends between them. The row defaults to DAY, so
+-- what the sky paints here is the day palette -- still every inch a GBC one.
+local dayPal = DayNight.PALETTES.day
+for i, c in ipairs(dayPal) do
+  T.check(c[1] % 8 == 0 and c[2] % 8 == 0 and c[3] % 8 == 0,
+    "palette entry " .. i .. " is a colour a Game Boy Color could show -- five "
+    .. "bits a channel, so every one is a multiple of 8")
+  T.check(c[3] > c[1], "and it is blue: more blue than red")
+end
+T.eq(#dayPal, 6, "six of them: twilight needs the rungs, and day matches")
+
+Voxel.angle = TOP
+local skyGrad = skyRGB("gbc")
+T.eq(#(skyGrad.bands or {}), #dayPal,
+  "the sky arrives with one band per palette entry")
+
+for i, band in ipairs(skyGrad.bands) do
+  if i > 1 then
+    T.check(luma(band) > luma(skyGrad.bands[i - 1]),
+      "band " .. i .. " is lighter than the one above it: the sky pales toward "
+      .. "the horizon")
+  end
+end
+-- read backwards out of the palette, which is stored in shade order (lightest
+-- first) so a display mode's own four colours drop straight in
+local deepest = dayPal[#dayPal]
+T.check(math.abs(skyGrad.bands[1][1] - deepest[1] / 255) < 1e-9,
+  "the top band is the palette's deep rung, unmixed")
+
+-- the fill a caller clears to IS the palest band, so the haze below the horizon
+-- and the bottom of the sky are one colour and the horizon has no seam
+local palest = skyGrad.bands[#skyGrad.bands]
+T.check(math.abs(skyGrad[1] - palest[1]) < 1e-9
+        and math.abs(skyGrad[2] - palest[2]) < 1e-9
+        and math.abs(skyGrad[3] - palest[3]) < 1e-9,
+  "the flat fill is the palest band, so the horizon line has no seam of its own")
+T.eq(skyGrad[4], 1, "and the tween strength still rides on the descriptor")
+
+-- the gradient belongs to the VOXEL 75 rung and the walking camera on it. The
+-- arena shot asks for the sky by the flat route (VoxelScene.skyColor) and gets
+-- exactly the sky it always had -- its placed camera's horizon is above the
+-- frame, so there would be no gradient to see from down there anyway.
+local flat = VoxelScene.skyColor(outside, 1)
+T.eq(flat.bands, nil, "a battle's arena sky is the flat fill, not the gradient")
+T.check(math.abs(flat[1] - palest[1]) < 1e-9
+        and math.abs(flat[3] - palest[3]) < 1e-9,
+  "and it is the hour's haze, so a staged fight stands under the same sky "
+  .. "free-roam does -- navy at midnight, gold at dusk")
+
+-- the same call, the same numbers, and the same TABLE: the bands are memoised
+-- per display mode, so a frame that paints the sky allocates nothing to do it
+local again = Sky.bands()
+T.eq(Sky.bands(), again, "the bands are computed once and held, not rebuilt")
+
+local greyBands = skyRGB("og").bands
+for i, band in ipairs(greyBands) do
+  T.check(math.abs(band[1] - band[2]) < 1e-9
+          and math.abs(band[2] - band[3]) < 1e-9,
+    "GRAY gets four greys, not four blues (band " .. i .. ")")
+end
+T.check(luma(greyBands[#greyBands]) > luma(greyBands[1]),
+  "and they still climb toward the horizon")
+
+-- ------- where the bands go is the camera's own answer
+--
+-- The pale end has to meet the horizon at any pitch, fov or window shape, so it
+-- is placed on the ground plane's vanishing line -- which is what projecting a
+-- direction ALONG the ground through the scene matrix gives. Checked against the
+-- limit of projecting real ground points further and further away, so a retuned
+-- camera either still agrees with this or says so.
+local function groundY(h, dist)
+  local m = Voxel3D.vp
+  local y = m[5] * 0 + m[7] * -dist + m[8]
+  local w = m[13] * 0 + m[15] * -dist + m[16]
+  return (y / w * 0.5 + 0.5) * h
+end
+
+Voxel.angle = TOP
+local vh = 288
+Voxel3D.vp = Voxel3D.viewProjection(0, 0, 320, vh)
+local horizon = Voxel3D.horizonY(vh)
+T.check(horizon and horizon > 0 and horizon < vh,
+  "at the top rung the horizon is inside the frame, which is why there is a sky")
+T.check(math.abs(groundY(vh, 200000) - horizon) < 0.5,
+  ("ground at infinity converges on it: %.2f vs %.2f")
+  :format(groundY(vh, 200000), horizon))
+T.check(groundY(vh, 200) > groundY(vh, 2000)
+        and groundY(vh, 2000) > horizon,
+  "and nearer ground is always below it, never above")
+T.check(horizon < vh / 2,
+  "the horizon sits in the upper half: the sky is a band across the top, not "
+  .. "half the picture")
+
+-- the fraction is a property of the camera, not of the canvas
+Voxel3D.vp = Voxel3D.viewProjection(0, 0, 320, vh)
+local tall = Voxel3D.horizonY(vh * 3)
+T.check(math.abs(tall / (vh * 3) - horizon / vh) < 1e-9,
+  "a taller canvas puts it at the same fraction, so the bands scale with it")
+
+Voxel.angle = 0
+Voxel3D.vp = Voxel3D.viewProjection(0, 0, 320, vh)
+T.eq(Voxel3D.horizonY(vh), nil,
+  "a camera looking straight down has no horizon to find, and paints no bands")
+
+-- ------- where the sky's bottom edge goes at each rung
+--
+-- The camera's own horizon when that is in frame -- which is the top rung -- and
+-- otherwise a fixed slice of the frame, because at the steeper rungs the void
+-- that shows is where the ground runs OUT rather than what is above the horizon.
+-- One sky across the whole ladder either way.
+T.check(math.abs(Sky.region(288, 66.83) - 66.83) < 1e-9,
+  "a horizon in frame is where the sky ends")
+T.eq(Sky.region(288, -930), 288 * Sky.SPAN,
+  "a horizon above the frame falls back to a fixed slice of it")
+T.eq(Sky.region(288, nil), 288 * Sky.SPAN, "and so does no horizon at all")
+T.eq(Sky.region(288, 4000), 288, "a horizon below the frame fills it")
+T.eq(Sky.region(0, 40), nil, "and a canvas with no height paints nothing")
+T.check(Sky.SPAN > 0.1 and Sky.SPAN < 0.5,
+  "the fallback slice is a band across the top, not half the picture")
+
+-- ------- the pass, as it is actually issued
+--
+-- One rectangle through one shader: no texture, no baked image, nothing being
+-- resampled -- which is the whole reason it is drawn this way rather than
+-- generated once and scaled. Every pixel answers from its own canvas coordinate,
+-- so it is computed at the size it is shown at.
+--
+-- And the depth mode is put back to what it was, which is the piece that would
+-- break the frame: a rectangle drawn under the pass's own ("lequal", true) stamps
+-- itself across the depth buffer at the near plane and hides the whole world
+-- behind the sky.
+local realGraphics = love.graphics
+local rects, depthCalls, sent, shaderUses = {}, {}, {}, 0
+local fakeShader = {
+  send = function(_, name, a, b, c, d)
+    sent[name] = { a, b, c, d }
+  end,
+}
+love.graphics = {
+  getShader = function() return nil end,
+  setShader = function(sh) if sh then shaderUses = shaderUses + 1 end end,
+  getDepthMode = function() return "lequal", true end,
+  setDepthMode = function(cmp, write)
+    depthCalls[#depthCalls + 1] = tostring(cmp) .. "/" .. tostring(write)
+  end,
+  setColor = function() end,
+  newShader = function() return fakeShader end,
+  rectangle = function(_, x, y, w, h)
+    rects[#rects + 1] = { x = x, y = y, w = w, h = h }
+  end,
+}
+
+-- 320x288 canvas, horizon at 66.83, diorama pixels 7 canvas pixels square
+local painted = Sky.paint(320, 288, skyGrad, 66.83, 7)
+love.graphics = realGraphics
+
+T.eq(painted, true, "the sky paints")
+T.eq(shaderUses, 1, "through one shader")
+T.eq(#rects, 1, "over one rectangle -- not one per band, and not one per cell")
+T.eq(rects[1].x, 0, "from the left edge")
+T.eq(rects[1].w, 320, "across the full width of the frame")
+T.eq(rects[1].y, 0, "and from the top edge")
+T.eq(rects[1].h, 67, "down to the horizon")
+
+T.eq(sent.count[1], #skyGrad.bands, "the band count goes to the shader")
+T.check(math.abs(sent.edge[1] - 66.83) < 1e-9, "with the sky's bottom edge")
+T.eq(sent.cell[1], 7,
+  "and the diorama's pixel size, which is what puts the bands and the dither "
+  .. "cells on the world's own grid")
+T.eq(sent.start[1], Sky.DITHER_START, "and where in a band the checker begins")
+T.eq(sent.alpha[1], 1, "and the tween strength")
+T.check(sent.bands[1] and sent.bands[1][1] ~= nil,
+  "the palette goes as one array rather than a send per band")
+
+T.eq(depthCalls[1], "always/false", "the sky is drawn with depth writes OFF")
+T.eq(depthCalls[#depthCalls], "lequal/true",
+  "and the pass's own depth mode is handed straight back")
+
+-- ------- and it follows the zoom, in the frame the zoom changed
+--
+-- The cell size is handed in every frame rather than cached, so a ZOOM keypress
+-- -- which is what changes the diorama's pixels-per-world-pixel -- lands in the
+-- next frame with nothing to rebuild and nothing left over at the old scale.
+local zoomed = {}
+love.graphics = {
+  getShader = function() return nil end, setShader = function() end,
+  getDepthMode = function() return "lequal", true end,
+  setDepthMode = function() end,
+  setColor = function() end,
+  newShader = function() return fakeShader end,
+  rectangle = function(_, _, _, w, h) zoomed.rect = { w = w, h = h } end,
+}
+sent = {}
+Sky.paint(1920, 1080, skyGrad, 250.6, 12)
+love.graphics = realGraphics
+T.eq(zoomed.rect.w, 1920, "a bigger window is filled to its own width")
+T.eq(zoomed.rect.h, 251, "and its own horizon")
+T.eq(sent.cell[1], 12, "with the cell size that came in with it, not a cached one")
+
+T.eq(Sky.paint(320, 288, { 0, 0, 1, 1 }, 40, 7), false,
+  "a descriptor with no bands on it is the old flat sky, untouched")
+T.eq(Sky.paint(320, 0, skyGrad, 40, 7), false,
+  "and a frame with no height paints nothing at all")
+end
 
 Voxel.angle = 0
 
@@ -1427,6 +1745,484 @@ T.check(focusY - band < 56 / 144 and focusY + band > 96 / 144,
 T.check(range > 0, "with a ramp out of it, so the band edge has no seam")
 local wide = select(2, BattleDOF.bandFor(120, 30, 144))
 T.check(wide > band, "marks further apart hold a deeper slab in focus")
+
+-- ------- the HUDs are snapped to the window's own edges
+--
+-- The battle screen is 160x144 in the middle of the window and the world is the
+-- whole of it, which left both HUD blocks huddled in the middle of the frame
+-- with map on either side of them. Each is snapped to its own side instead: the
+-- foe's to the left edge, the player's to the right. Measured in world-canvas
+-- pixels, because that is the surface they are composited into -- the GB canvas
+-- they are drawn in cannot reach past its own 160 columns.
+do
+local hudShot = { lx = 100, ly = 12, scale = 3, pw = 1000, ph = 500 }
+local hudRects, bandX = Battles.snapRects(hudShot)
+local hudRect = Battles.HUD_RECT
+
+T.eq(hudRects.enemy[1], 0, "the foe's panel starts at the window's left edge")
+T.eq(hudRects.player[1] + hudRects.player[3], hudShot.pw,
+  "and the player's ends at the right one")
+T.check(hudRects.enemy[1] < hudShot.lx,
+  "so the foe's block has left the letterbox it used to sit in")
+T.check(hudRects.player[1] > hudShot.lx + hudRect.player[1] * hudShot.scale,
+  "and the player's has gone the other way")
+
+-- the vertical is untouched: both blocks stay on the rows the GB put them on
+T.eq(hudRects.enemy[2], hudShot.ly + hudRect.enemy[2] * hudShot.scale,
+  "the foe's block keeps its own rows")
+T.eq(hudRects.player[2], hudShot.ly + hudRect.player[2] * hudShot.scale,
+  "and so does the player's")
+
+-- and their size: a block is the same GB tiles at the same scale as the rest of
+-- the art, moved and not stretched
+T.eq(hudRects.enemy[3], hudRect.enemy[3] * hudShot.scale,
+  "a block is its own width at the frame's scale")
+T.eq(hudRects.player[4], hudRect.player[4] * hudShot.scale,
+  "and its own height")
+
+-- the band each block is cut out of is placed so the block lands on the rect
+-- above; that is what the panel and the glyphs agreeing depends on
+T.eq(bandX.enemy + hudRect.enemy[1] * hudShot.scale, hudRects.enemy[1],
+  "the foe's band is offset so its block lands on its panel")
+T.eq(bandX.player + hudRect.player[1] * hudShot.scale, hudRects.player[1],
+  "and the player's likewise")
+
+-- a window the shape of the GB screen has nowhere to snap TO, and the player's
+-- block already ends at column 160, so it must not move at all
+local snug = { lx = 0, ly = 0, scale = 4, pw = 160 * 4, ph = 144 * 4 }
+local snugRects = Battles.snapRects(snug)
+T.eq(snugRects.player[1], hudRect.player[1] * snug.scale,
+  "on a GB-shaped window the player's block stays exactly where it was")
+T.eq(snugRects.enemy[1], 0, "and the foe's is flush with a left edge it already met")
+
+-- the bands together cover every row drawHUDs draws into (0-96: the two HUDs,
+-- the pokeball rows and the safari ball count) and never overlap, so nothing it
+-- draws is dropped or shown twice
+local e, p = Battles.HUD_BAND.enemy, Battles.HUD_BAND.player
+T.eq(e[2], 0, "the foe's band starts at the top of the frame")
+T.eq(e[2] + e[4], p[2], "the player's picks up exactly where it ends")
+T.check(p[2] + p[4] >= 96, "and together they reach the bottom of the HUD rows")
+T.check(e[2] + e[4] <= hudRect.player[2],
+  "the split falls between the two blocks, so neither is cut in half")
+T.eq(e[1], 0, "the bands are full width")
+T.eq(e[3], 160, "so a shaken HUD or a long name is carried out with its block")
+end
+
+-- ------- the way out of a battle is a fade, not a cut
+--
+-- The engine wipes INTO a battle and cuts straight out of it. While voxel mode
+-- is on that cut is between a placed camera looking across an arena and a
+-- diorama looking down on a walking player, so the battle fades out, closes
+-- behind the black, and the map fades up.
+--
+-- The pop ORDER is the part that has to be right: BattleState:finish pops
+-- whatever is on top, which is the fade while it is up, so the fade has to be
+-- off the stack before the battle finishes and back on it afterwards.
+do
+local Exit = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattleExit")
+
+T.eq(Data.transitions and Data.transitions[Exit.ID] and
+     Data.transitions[Exit.ID].frames, Exit.FRAMES,
+  "the fade's timing is a registered transitions record, retunable in data")
+
+local function fakeStack(...)
+  local s = { states = { ... } }
+  function s:top() return self.states[#self.states] end
+  function s:push(state) self.states[#self.states + 1] = state end
+  function s:pop() return table.remove(self.states) end
+  return s
+end
+
+-- headless has no depth buffer, so the real gate answers no on every rung;
+-- pin it, which is what the seam is there for
+local realModeOn = Exit.modeOn
+Exit.modeOn = function() return true end
+
+T.eq(Exit.wanted(nil), false, "no battle, no fade")
+T.eq(Exit.wanted({ game = { stack = {} } }), true, "a battle in voxel mode fades")
+T.eq(Exit.wanted({ game = { stack = {} }, payDay = 100, result = "win" }), false,
+  "but not on an unpaid PAY DAY -- that finish() prints a message and comes "
+  .. "back, so the fade belongs to the call that really leaves")
+Exit.modeOn = function() return false end
+T.eq(Exit.wanted({ game = { stack = {} } }), false,
+  "and with voxel mode off the battle keeps the cut it always had")
+Exit.modeOn = function() return true end
+
+local exitOw = { isOverworld = true }
+local exitGame = { data = Data, overworld = exitOw }
+local exitBattle = { game = exitGame }
+exitGame.stack = fakeStack(exitOw, exitBattle)
+
+local finished = 0
+local fade = Exit.start(exitBattle, function()
+  finished = finished + 1
+  exitGame.stack:pop()          -- what BattleState:finish does: pops itself
+end)
+T.eq(exitGame.stack:top(), fade, "the fade goes on top of the battle it closes")
+T.eq(Exit.veil(), 0, "and starts on the battle's own last live frame")
+
+for _ = 1, fade.frames - 1 do fade:update() end
+T.check(Exit.veil() > 0.5, "the veil climbs while the battle is still up")
+T.eq(exitGame.stack:top(), fade, "which is a frozen battle: the fade is on top")
+T.eq(finished, 0, "and nothing has finished yet")
+
+fade:update()                    -- the frame the cut lands on
+T.eq(finished, 1, "at full black the battle finishes for real")
+T.eq(Exit.veil(), 1, "with the screen fully black over the swap")
+T.eq(#exitGame.stack.states, 2, "the battle left the stack")
+T.eq(exitGame.stack.states[1], exitOw, "the map is under it")
+T.eq(exitGame.stack:top(), fade,
+  "and the fade went back on top of the map to bring it up")
+
+for _ = 1, fade.frames - 1 do fade:update() end
+T.check(Exit.veil() < 0.5, "the veil falls away over the map")
+fade:update()
+T.eq(Exit.veil(), nil, "and the fade is done -- no veil left on the screen")
+T.eq(exitGame.stack:top(), exitOw, "with the map back on top, playable")
+T.eq(finished, 1, "the battle finished exactly once")
+
+-- ------- a blackout (or an evolution prompt) owns the way out itself
+--
+-- Those push their own transition on the way through onFinish, so this fade
+-- stops at the cut rather than fading in over the top of somebody else's.
+local other = { isSomeoneElse = true }
+local blackout = { game = exitGame }
+exitGame.stack = fakeStack(exitOw, blackout)
+local warpFade = Exit.start(blackout, function()
+  exitGame.stack:pop()                     -- the battle leaves
+  exitGame.stack:push(other)               -- and a warp fade takes the screen
+end)
+for _ = 1, warpFade.frames do warpFade:update() end
+T.eq(exitGame.stack:top(), other, "the state that took over is on top")
+T.eq(Exit.veil(), nil, "and this fade let go of the screen at the cut")
+T.eq(blackout.dramaticShapeLeaving, nil,
+  "with the flag cleared, so a finish() that really leaves fades again")
+
+-- ------- a stack cleared from under a fade cannot black the game out
+--
+-- A script (or the shot driver) pops down to the overworld without asking. The
+-- fade is gone, so the veil has to go with it -- nothing is left to fade it in.
+exitGame.stack = fakeStack(exitOw, exitBattle)
+local orphan = Exit.start(exitBattle, function() end)
+orphan:update()
+T.check(Exit.veil() > 0, "a live fade veils the frame")
+while exitGame.stack:top() ~= exitOw do exitGame.stack:pop() end
+T.eq(Exit.veil(), nil, "and a fade popped from under itself veils nothing")
+
+Exit.modeOn = realModeOn
+end
+
+-- ------- the day/night cycle
+--
+-- One twenty-minute clock, and everything is a pure function of it: the
+-- pinned DAYTIME settings are fixed times on the dial, CYCLE lets it run,
+-- and the sun, the moon, the shadows, the sky and the tint all read the same
+-- number. What is checked here is the dial itself, the noon-exactness pledge
+-- (DAY is the mod's existing sun, to the digit), the arcs' visibility (the
+-- camera looks north, so the discs must actually cross the northern sky),
+-- and the clock's ride through the save file.
+do
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+local ShadowMap = run.loader.exports.DRAMATIC_SHAPE.lib.require("ShadowMap")
+local Voxel3D = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
+local Voxel = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelState")
+
+-- the dial and its pins
+T.eq(DayNight.setting:get(), "day", "no time set means DAY: the default pin")
+T.eq(DayNight.time(), 300, "and DAY is noon on the dial")
+local PINS = { day = 300, night = 900, dusk = 600, dawn = 0 }
+for name, t in pairs(PINS) do
+  DayNight.setting:sync(name)
+  T.eq(DayNight.time(), t, name .. " pins the clock to " .. t)
+end
+
+-- CYCLE picks up from the pin the player was just looking at
+DayNight.setting:sync("dusk")
+DayNight.update(0)
+DayNight.setting:sync("cycle")
+DayNight.update(0)
+T.eq(DayNight.clock, 600, "stepping onto CYCLE picks up from the pin: dusk")
+DayNight.update(30)
+T.check(math.abs(DayNight.time() - 630) < 1e-9, "and the clock then runs")
+DayNight.clock = 1195
+DayNight.update(10)
+T.check(math.abs(DayNight.clock - 5) < 1e-9,
+  "the dial wraps at twenty minutes, back into dawn")
+
+-- the sun: noon is the mod's existing sun, exactly
+local kx, kz, moon = DayNight.shearAt(300)
+T.check(not moon, "noon is the sun's")
+T.check(math.abs(kx - (-0.85)) < 1e-9 and math.abs(kz - (-0.55)) < 1e-9,
+  ("DAY throws the shadows the mod always threw: (%.4f, %.4f)"):format(kx, kz))
+local kx0, kz0 = DayNight.shearAt(0)
+T.check(math.abs(math.sqrt(kx0 * kx0 + kz0 * kz0) - DayNight.K_MAX) < 1e-9,
+  "a rising sun throws a LONG shadow, clamped -- never an infinite one")
+T.eq(DayNight.strengthAt(0), 0, "and at the horizon it presses nothing")
+T.eq(DayNight.strengthAt(300), 1, "at noon it presses in full")
+
+-- the moon: due north at mid-night, pressing softly south
+local mkx, mkz, mmoon = DayNight.shearAt(900)
+T.check(mmoon, "mid-night is the moon's")
+T.check(math.abs(mkx) < 1e-9, "due north: no east-west drift at all")
+T.check(math.abs(mkz - 1 / math.tan(math.rad(40))) < 1e-9,
+  "shadows fall south, away from it, cot(40) long")
+
+-- the palettes: pins land on their phase palette unmixed, blends stay on
+-- the 5-bit lattice
+local function palEq(a, b)
+  for i = 1, #a do
+    for ch = 1, 3 do if a[i][ch] ~= b[i][ch] then return false end end
+  end
+  return #a == #b
+end
+T.check(palEq(DayNight.palette(300), DayNight.PALETTES.day),
+  "noon paints the day palette, unmixed")
+T.check(palEq(DayNight.palette(600), DayNight.PALETTES.dusk),
+  "the dusk pin paints dusk proper -- the blend is centred on it, not over it")
+T.check(palEq(DayNight.palette(0), DayNight.PALETTES.dawn),
+  "and dawn's pin paints dawn")
+local mid = DayNight.palette(562)         -- halfway through day -> dusk
+for i, c in ipairs(mid) do
+  T.check(c[1] % 8 == 0 and c[2] % 8 == 0 and c[3] % 8 == 0,
+    "blended band " .. i .. " is re-quantised onto the GBC lattice")
+end
+T.check(mid[1][3] < DayNight.PALETTES.day[1][3]
+        and mid[1][3] > DayNight.PALETTES.dusk[1][3],
+  "and sits between the two phases it blends")
+-- day's blue horizon and dusk's gold one are near-complements, and a
+-- straight lerp between complements bottoms out in grey -- so the evening
+-- path bends through the golden-hour waypoint, and halfway down the blend
+-- the horizon band must already be WARM
+T.check(mid[1][1] > mid[1][3],
+  "mid-evening the horizon is gold, not the grey between blue and gold")
+-- and the far side of sunset bends through violet the same way: halfway
+-- from dusk to night the horizon is rose, not the taupe between gold and navy
+local ev = DayNight.palette(645)[1]
+T.check(ev[1] > ev[2] and ev[3] > ev[2],
+  "mid-fall of night the horizon is violet-rose, not grey")
+T.eq(DayNight.palette(300), DayNight.palette(300.4),
+  "the palette is memoised within the second, not rebuilt per frame")
+
+-- the tint: noon is neutral, night is dim and blue, indoors is always noon
+local tn = DayNight.tint(true, 900)
+T.check(tn[1] < 1 and tn[3] > tn[1], "night light is dim and leans blue")
+T.eq(DayNight.tint(true, 300)[1], 1, "noon multiplies by one")
+T.eq(DayNight.tint(false, 900)[1], 1,
+  "a cave at midnight is exactly as dark as a cave at noon: neutral indoors")
+
+-- the twilight glow: gold at the sun's horizons, never for the moon
+local amt, gc = DayNight.glow(600)
+T.check(math.abs(amt - 1) < 1e-9, "dusk glows in full")
+T.check(gc[1] > gc[3], "and warm: more red than blue")
+T.eq((DayNight.glow(300)), 0, "noon does not glow")
+T.eq((DayNight.glow(900)), 0, "and the moon rises silver, not gold")
+
+-- the discs cross the sky the camera can actually see
+Voxel.angle = math.rad(75)
+Voxel3D.camera = nil
+Voxel3D.vp = Voxel3D.viewProjection(0, 0, 320, 288)
+local horizon = Voxel3D.horizonY(288)
+
+DayNight.setting:sync("night")
+local mb = Voxel3D.skyBody(320, 288)
+T.check(mb and mb.moon, "at the NIGHT pin the moon is in frame")
+T.check(math.abs(mb.x - 160) < 8,
+  ("due north is screen centre: got x %.1f"):format(mb.x))
+T.check(mb.y > 0 and mb.y < horizon,
+  ("hanging above the horizon point: y %.1f vs %.1f"):format(mb.y, horizon))
+
+DayNight.setting:sync("day")
+T.eq(Voxel3D.skyBody(320, 288), nil,
+  "the noon sun is overhead behind the camera -- correctly not in frame")
+
+DayNight.setting:sync("dawn")
+local db = Voxel3D.skyBody(320, 288)
+T.check(db and not db.moon, "at the DAWN pin the rising sun is in frame")
+T.check(db.x > 160 and db.x < 320,
+  ("north of east is screen right: got x %.1f"):format(db.x))
+T.check(math.abs(db.y - horizon) < 2,
+  "standing on the horizon point, half-risen")
+T.check(db.glowAmt > 0.9, "and wrapped in the dawn glow")
+
+DayNight.setting:sync("dusk")
+local sb = Voxel3D.skyBody(320, 288)
+T.check(sb and sb.x < 160, "the DUSK sun sets screen LEFT -- north of west")
+
+-- the rig: outdoor follows the clock, indoor is pinned to noon
+DayNight.setting:sync("night")
+DayNight.applyRig(true)
+T.check(math.abs(ShadowMap.KX - mkx) < 1e-9
+        and math.abs(ShadowMap.KZ - mkz) < 1e-9,
+  "outdoors at night the sun pass is lit by the moon")
+T.check(math.abs(Voxel3D.SHADOW_ALPHA - DayNight.ALPHA_MOON) < 1e-9,
+  "at the moon's own softer weight")
+DayNight.applyRig(false)
+T.check(math.abs(ShadowMap.KX - (-0.85)) < 1e-9
+        and math.abs(ShadowMap.KZ - (-0.55)) < 1e-9,
+  "indoors the rig stays the mod's noon sun, whatever the clock says")
+T.check(math.abs(Voxel3D.SHADOW_ALPHA - DayNight.ALPHA_SUN) < 1e-9,
+  "at the weight it always had")
+T.eq(DayNight.shadowScale(false), 1, "an indoor arena keeps its full shadows")
+T.check(math.abs(DayNight.shadowScale(true, 900)
+                 - DayNight.ALPHA_MOON / DayNight.ALPHA_SUN) < 1e-9,
+  "an outdoor arena under the moon presses at the moon's ratio")
+T.check(DayNight.shadowScale(true, 600) < 1e-9,
+  "and a sunset takes the arena's shadows with it")
+
+-- the engine's own vocabulary, for map.palette and music.select
+T.eq(DayNight.tod(300), "DAY", "noon is DAY")
+T.eq(DayNight.tod(900), "NIGHT", "mid-night is NIGHT")
+T.eq(DayNight.tod(0), "MORNING", "dawn is MORNING")
+T.eq(DayNight.tod(600), "EVENING", "dusk is EVENING")
+
+-- the clock rides the save slot
+local modApi = run.loader.exports.DRAMATIC_SHAPE.lib.mod
+DayNight.setting:sync("cycle")
+DayNight.clock = 777
+DayNight.store()
+DayNight.clock = 5
+DayNight.restore()
+T.eq(DayNight.clock, 777, "the clock survives the round trip through mod.save")
+modApi.save:set(DayNight.SAVE_KEY, nil)
+DayNight.restore()
+T.eq(DayNight.clock, 300, "a save with no clock in it starts at day")
+
+-- arriving at FULL sets the clock going
+local Game = require("src.core.Game")
+local hadSave = Game.save
+Game.save = { options = {} }
+DayNight.setting:sync("day")
+defs.voxel.update(0, 2)               -- any rung that is not FULL
+defs.voxel.update(0, 1)               -- and the arrival
+T.eq(DayNight.setting:get(), "cycle",
+  "FULL switches DAYTIME to CYCLE -- the diorama gets its running sky")
+Game.save = hadSave
+
+-- put the room back the way it was found
+DayNight.setting:sync("day")
+DayNight.clock = 300
+DayNight.applyRig(false)
+Voxel3D.tint = { 1, 1, 1 }
+Voxel3D.vp = nil
+end
+
+-- ------- night falls in the forest
+--
+-- Viridian Forest is not outdoor (no sky, and the light through the leaves
+-- has no direction to swing) and not a sealed room either. Of everything
+-- the clock does, exactly one thing reaches a canopy map: the hour's tint.
+-- The scenes wire it as tint(outdoor or isCanopy(map)) over the unchanged
+-- noon rig, so what is checked here is the classification itself.
+do
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+T.check(DayNight.isCanopy({ id = "VIRIDIAN_FOREST" }),
+  "Viridian Forest stands under a canopy")
+T.check(not DayNight.isCanopy({ id = "MT_MOON_1F" }),
+  "a cave does not -- midnight there is exactly as dark as noon")
+T.check(not DayNight.isCanopy({ id = "PALLET_TOWN" }),
+  "and an outdoor town is already the clock's in full")
+T.check(not DayNight.isCanopy(nil), "no map, no canopy")
+end
+
+-- ------- a shadow keeps hold of the feet that throw it
+--
+-- The depth compare forgives `slack` world pixels so lit ground does not
+-- acne, and that forgiveness detaches a standing card's shadow from its
+-- feet by the same amount -- worse the lower the sun. Cards are drawn into
+-- the map snugged TOWARD the sun along their own ray -- which moves their
+-- stored depth and nothing about where their shadow falls -- taking most of
+-- the forgiveness back for the shadow they throw and for nothing else.
+do
+local ShadowMap = run.loader.exports.DRAMATIC_SHAPE.lib.require("ShadowMap")
+local Mat4 = run.loader.exports.DRAMATIC_SHAPE.lib.require("Mat4")
+local dir = ShadowMap.sunDir()
+local s = -ShadowMap.slack * ShadowMap.SNUG
+local m = ShadowMap.snug(nil)
+T.check(math.abs(m[4] - dir[1] * s) < 1e-9
+        and math.abs(m[8] - dir[2] * s) < 1e-9
+        and math.abs(m[12] - dir[3] * s) < 1e-9,
+  "snug() moves a caster toward the sun -- AGAINST the light's travel")
+T.check(m[8] > 0, "which is upward: the sun is above the world it lights")
+T.check(ShadowMap.SNUG < 1,
+  "and takes back less than the whole forgiveness, so a card cannot land "
+  .. "on the float-equality knife edge against its own stored depth")
+local snugged = ShadowMap.snug(Mat4.translate(10, 0, 6))
+T.check(math.abs(snugged[4] - (10 + dir[1] * s)) < 1e-9
+        and math.abs(snugged[12] - (6 + dir[3] * s)) < 1e-9,
+  "and composes over the caster's own transform, not instead of it")
+end
+
+-- ------- the glass in the windows
+--
+-- Panes are found by SHAPE in the tileset art -- a black border row, four
+-- or five black-flanked glass rows, a closing border -- at pixel
+-- granularity, because the door's pane straddles a 2x2 tile block and the
+-- building's sits a row down inside its tile. The scan takes a pure reader,
+-- so the geometry is checked here without an image in sight.
+do
+local GlassMask = run.loader.exports.DRAMATIC_SHAPE.lib.require("GlassMask")
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+local Voxel3D = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
+
+local W, H = 32, 16
+local blackAt = {}
+local function paint(x, y) blackAt[y * W + x] = true end
+local function pane(x0, y0, rows, hole)
+  for c = 1, 6 do paint(x0 + c, y0); paint(x0 + c, y0 + rows + 1) end
+  for r = 1, rows do
+    paint(x0, y0 + r); paint(x0 + 7, y0 + r)
+    if hole and r == 2 then paint(x0 + 3, y0 + r) end
+  end
+end
+pane(8, 1, 5)              -- a building pane, one row down inside its tile
+pane(20, 3, 4)             -- a door pane, straddling a tile row boundary
+pane(0, 8, 5, true)        -- a near-miss: one black texel inside the glass
+
+local function getPixel(x, y)
+  if blackAt[y * W + x] then return 0, 0, 0 end
+  return 0.66, 0.66, 0.66
+end
+
+local rects = GlassMask.scan(getPixel, W, H)
+T.eq(#rects, 2, "the scan finds the two real panes and rejects the near-miss")
+T.check(rects[1].x == 9 and rects[1].y == 2
+        and rects[1].w == 6 and rects[1].h == 5,
+  "the building pane's glass is the 6x5 interior, border excluded")
+T.check(rects[2].x == 21 and rects[2].y == 4
+        and rects[2].w == 6 and rects[2].h == 4,
+  "the door pane's glass is the 6x4 interior, wherever it sits in the grid")
+
+-- black is the BORDER black, not the art's dark grey rung
+T.check(GlassMask._isBlack(0, 0, 0), "true black is border")
+T.check(not GlassMask._isBlack(85 / 255, 85 / 255, 85 / 255),
+  "the dark grey shade is not")
+
+-- the lamps behind the glass follow the clock, not the sky's own light
+T.eq(DayNight.windowLight(300), 0, "no lamps at noon")
+T.eq(DayNight.windowLight(900), 1, "all of them at mid-night")
+T.check(math.abs(DayNight.windowLight(600) - 0.7) < 1e-9,
+  "they come on through dusk -- lit windows against the sunset")
+T.check(DayNight.windowLight(645) > 0.9,
+  "and are fully on by the fall of night")
+T.check(math.abs(DayNight.windowLight(0) - 0.25) < 1e-9,
+  "mostly out again by dawn")
+
+-- the pass defaults to no glass at all until a scene says otherwise
+T.eq(Voxel3D.glassMask, nil, "no mask bound by default")
+T.eq(Voxel3D.glassNight, 0, "and the lamps off")
+
+-- the glint is fed by TRAVEL, not by a clock: still camera, still glass
+local g = {}
+VoxelScene.glintStep(g, 100, 100)
+T.eq(g.amp, 0, "the first frame establishes position and shows no sheen")
+for i = 1, 12 do VoxelScene.glintStep(g, 100 + i, 100) end
+T.eq(g.amp, 1, "a dozen frames of walking fades the glint fully in")
+local held = g.phase
+T.check(held > 0 and held < 2 * math.pi, "with the phase advanced by the travel")
+for _ = 1, 20 do VoxelScene.glintStep(g, 112, 100) end
+T.eq(g.amp, 0, "standing still fades it back out within a beat")
+T.eq(g.phase, held, "and the phase does not move while the camera does not")
+end
 
 Pipelines.reset()
 run.release()
