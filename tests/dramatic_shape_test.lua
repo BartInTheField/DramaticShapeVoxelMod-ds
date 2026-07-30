@@ -1278,22 +1278,45 @@ T.check(Sky.SPAN > 0.1 and Sky.SPAN < 0.5,
 
 -- ------- the pass, as it is actually issued
 --
--- One rectangle through one shader: no texture, no baked image, nothing being
+-- One rectangle through one shader: no baked picture of a sky, nothing being
 -- resampled -- which is the whole reason it is drawn this way rather than
 -- generated once and scaled. Every pixel answers from its own canvas coordinate,
 -- so it is computed at the size it is shown at.
+--
+-- The one texture bound is the band RAMP, and it is a palette rather than a
+-- picture: one texel per band, sampled nearest. It used to be a uniform array,
+-- and that is the bug this shape exists to have fixed -- on Android the array's
+-- later slots arrived as zero and painted the bottom of the sky black, while the
+-- identical colour delivered by love.graphics.clear (the haze under the horizon)
+-- landed correctly. So the assertions below pin the ramp, not an array.
 --
 -- And the depth mode is put back to what it was, which is the piece that would
 -- break the frame: a rectangle drawn under the pass's own ("lequal", true) stamps
 -- itself across the depth buffer at the near plane and hides the whole world
 -- behind the sky.
-local realGraphics = love.graphics
+local realGraphics, realImage = love.graphics, love.image
 local rects, depthCalls, sent, shaderUses = {}, {}, {}, 0
 local fakeShader = {
   send = function(_, name, a, b, c, d)
     sent[name] = { a, b, c, d }
   end,
 }
+-- enough of an image to be built and measured; the ramp only ever has pixels
+-- written into it and its dimensions read back
+local function fakeImage(w, h)
+  return {
+    pixels = {},
+    getWidth = function(self) return w end,
+    getHeight = function(self) return h end,
+    getDimensions = function(self) return w, h end,
+    setPixel = function(self, x, _, r, g, b, a)
+      self.pixels[x] = { r, g, b, a }
+    end,
+    setFilter = function() end,
+    setWrap = function() end,
+  }
+end
+love.image = { newImageData = function(w, h) return fakeImage(w, h) end }
 love.graphics = {
   getShader = function() return nil end,
   setShader = function(sh) if sh then shaderUses = shaderUses + 1 end end,
@@ -1303,14 +1326,17 @@ love.graphics = {
   end,
   setColor = function() end,
   newShader = function() return fakeShader end,
+  newImage = function(data) return data end,
   rectangle = function(_, x, y, w, h)
     rects[#rects + 1] = { x = x, y = y, w = w, h = h }
   end,
 }
+Sky.invalidate()   -- so the ramp is built through the fakes above, not held
 
 -- 320x288 canvas, horizon at 66.83, diorama pixels 7 canvas pixels square
 local painted = Sky.paint(320, 288, skyGrad, 66.83, 7)
-love.graphics = realGraphics
+local ramp = Sky._rampFor(skyGrad.bands)
+love.graphics, love.image = realGraphics, realImage
 
 T.eq(painted, true, "the sky paints")
 T.eq(shaderUses, 1, "through one shader")
@@ -1327,8 +1353,24 @@ T.eq(sent.cell[1], 7,
   .. "cells on the world's own grid")
 T.eq(sent.start[1], Sky.DITHER_START, "and where in a band the checker begins")
 T.eq(sent.alpha[1], 1, "and the tween strength")
-T.check(sent.bands[1] and sent.bands[1][1] ~= nil,
-  "the palette goes as one array rather than a send per band")
+-- The palette goes as ONE ramp texture, not as eight uniform vectors. The width
+-- is the contract the shader divides by: it samples texel (i + 0.5) / count, so
+-- a ramp of any other width reads between two bands or off the end -- and off
+-- the end is exactly the black the Android bug painted.
+T.eq(sent.ramp[1], ramp, "the palette goes to the shader as its ramp texture")
+T.eq(ramp:getWidth(), #skyGrad.bands, "one texel per band, and no spare slots")
+T.eq(ramp:getHeight(), 1, "on a single row -- it is a palette, not a picture")
+T.eq(Sky._rampFor(skyGrad.bands), ramp,
+  "and it is built once and held, not rebuilt per frame")
+-- every texel is a real colour: the failure being fixed here is a slot that
+-- was never written reading back as zero, which is black
+for i = 1, #skyGrad.bands do
+  local texel = ramp.pixels[i - 1]
+  T.check(texel ~= nil, "band " .. i .. " was written into the ramp")
+  T.check(texel[1] == skyGrad.bands[i][1] and texel[2] == skyGrad.bands[i][2]
+          and texel[3] == skyGrad.bands[i][3],
+    "and it is that band's own colour, in the order the sky reads them")
+end
 
 T.eq(depthCalls[1], "always/false", "the sky is drawn with depth writes OFF")
 T.eq(depthCalls[#depthCalls], "lequal/true",
