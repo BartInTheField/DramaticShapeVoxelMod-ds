@@ -390,8 +390,16 @@ ShadowMap.SNUG = 0.9
 -- terrain moved, so the acne margin the slack exists for is intact where
 -- it matters. For sprite cards and other thin stand-ins only.
 --
--- Valid between begin() and finish(), which is when `slack` matches the
--- frustum the map is being drawn with.
+-- ONE OBLIGATION comes with it: the caster's LIT draw must hand this same
+-- snugged transform to its shadow lookup (Voxel3D.draw's `sunModel`).
+-- Stored and lookup then agree exactly, as they did before snugging, and
+-- the compare keeps its full acne margin. A caster stored snugged but read
+-- un-snugged is 0.9 of the margin short, and the loss shows up as diagonal
+-- moire bands crawling across the card.
+--
+-- Valid between begin() and the next begin(): `slack` and the sun hold
+-- still between redraws of the map, so a lit frame that reuses last
+-- frame's map computes the same displacement it was stored with.
 function ShadowMap.snug(model)
   local f = sunDir()
   local s = -ShadowMap.slack * ShadowMap.SNUG
