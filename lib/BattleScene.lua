@@ -314,7 +314,9 @@ function BattleScene.render(state, arena, textures, token)
   -- same window glass on whatever buildings stand in the background
   local outdoor = host.def and Map.isOutdoor(host.def) or false
   DayNight.applyRig(outdoor)
-  Voxel3D.tint = DayNight.tint(outdoor)
+  -- a canopy floor (Viridian Forest) fights under the hour's tint too,
+  -- with the rig and the void exactly as they were
+  Voxel3D.tint = DayNight.tint(outdoor or DayNight.isCanopy(host))
   local GlassMask = V.require("GlassMask")
   Voxel3D.glassMask = outdoor and GlassMask.texture(host.tileset) or nil
   Voxel3D.glassNight = outdoor and DayNight.windowLight() or 0

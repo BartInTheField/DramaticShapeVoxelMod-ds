@@ -597,10 +597,12 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- the hour's light, before anything is cast or drawn: point the shared
   -- rig at the clock (or at noon, indoors -- a cave at midnight is exactly
   -- as dark as a cave at noon) and set the tint the scene shader multiplies
-  -- every surface by
+  -- every surface by. A CANOPY map (Viridian Forest) is the case between:
+  -- the rig stays at noon and no sky is painted, but the hour's tint still
+  -- falls through the leaves -- night reaches a forest floor.
   local outdoor = state.map.def and Map.isOutdoor(state.map.def) or false
   DayNight.applyRig(outdoor)
-  Voxel3D.tint = DayNight.tint(outdoor)
+  Voxel3D.tint = DayNight.tint(outdoor or DayNight.isCanopy(state.map))
   -- and the window glass: the tileset's own panes (found in its art --
   -- GlassMask), lit after dark. Outdoors only, like everything the clock
   -- touches, which also keeps any pane-shaped art in an interior tileset
