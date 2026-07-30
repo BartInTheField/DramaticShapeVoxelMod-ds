@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.2.1
+
+### Fixed
+
+- **On Android the sky went black below its first couple of bands.** A hard-edged
+  band of black ran from partway down the gradient to the horizon point, with the
+  moon still hanging correctly inside it. Desktop was unaffected.
+
+  What gave it away is that the same colour reached the screen by two routes and
+  only one of them was wrong. The haze filling the void UNDER the horizon is the
+  sky's palest band, and it is delivered by `love.graphics.clear` -- it landed
+  correctly. The bottom of the sky above it is that same band delivered by the
+  shader, and it was black. So the palette was not reaching the fragment shader,
+  and nothing was wrong with the palette, the layout or the camera.
+
+  The bands went in as `uniform vec3 bands[8]`, filled from Lua and read through
+  a loop counter, and on Android's GLSL ES the tail of that array arrived as
+  zero -- which is black. The likeliest reason is the fragment uniform budget:
+  ES 2.0 only guarantees sixteen uniform VECTORS, and eight band slots plus the
+  twilight glow plus LOVE's own built-ins is over it. A driver that truncates a
+  partly-filled array, or one that reflects `bands[0]` and nothing after it,
+  fails identically -- so the fix removes the whole class rather than the one
+  cause.
+
+  The bands are a one-texel-per-band TEXTURE now, sampled nearest, with the
+  band index clamped against the ramp's width. One texture unit replaces eight
+  uniform vectors, there is no array to index and no budget to overrun, and a
+  sample past the last band lands on the last band instead of on nothing. It is
+  still a palette and not a picture -- one texel per band on a single row -- so
+  the sky is still computed per pixel at the size it is displayed at, with
+  nothing resampled and nothing baked.
+
+  Also gone with it: `clamp(x, 0.0, 0.999999)`, which rounds its bound to 1.0 at
+  mediump -- the fragment default on GLSL ES -- and would have indexed one past
+  the last band on the sky's bottom row for the same black result.
+
 ## 1.1.1
 
 ### Fixed
