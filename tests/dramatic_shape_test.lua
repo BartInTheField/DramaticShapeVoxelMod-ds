@@ -134,6 +134,19 @@ T.check(not fullIds["pipeline:tiltshift"],
 T.check(not fullIds["DRAMATIC_SHAPE:grid"], "and V-GRID")
 T.check(not fullIds["DRAMATIC_SHAPE:curve"], "and V-CURVE")
 T.check(not fullIds["DRAMATIC_SHAPE:battles"], "and 3D-BTL")
+T.check(not fullIds["DRAMATIC_SHAPE:daytime"], "and DAYTIME")
+
+-- DAYTIME is not only hidden under FULL, it is HELD at SYNC: the row cannot
+-- be reached while FULL owns it, so a value changed underneath (the mod
+-- manager's page, an edited options file) snaps back when the menu asks
+do
+  local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+  DayNight.setting:sync("night")
+  Runtime.call("ui.options.rows", function(_, r) return r end,
+               { data = Data }, { { id = "tilt" } })
+  T.eq(DayNight.setting:get(), "sync",
+    "under FULL the rows hook pins DAYTIME back to SYNC, whatever was chosen")
+end
 
 -- ------- BATTLE LAYOUT is pinned to OG while a fight can be staged on the map
 --
@@ -2115,19 +2128,16 @@ DayNight.update(0)
 T.check(math.abs(DayNight.clock - 25) < 1e-9,
   "CYCLE picks up from wherever SYNC's sky already was")
 DayNight.hours = hoursWas
-T.eq(DayNight.setting.values[#DayNight.setting.values], "cycle",
-  "cycle stays the ladder's last rung -- the FULL preset reaches for it "
-  .. "by position")
 
--- arriving at FULL sets the clock going
+-- arriving at FULL pins the sky to the clock on the wall
 local Game = require("src.core.Game")
 local hadSave = Game.save
 Game.save = { options = {} }
 DayNight.setting:sync("day")
 defs.voxel.update(0, 2)               -- any rung that is not FULL
 defs.voxel.update(0, 1)               -- and the arrival
-T.eq(DayNight.setting:get(), "cycle",
-  "FULL switches DAYTIME to CYCLE -- the diorama gets its running sky")
+T.eq(DayNight.setting:get(), "sync",
+  "FULL pins DAYTIME to SYNC, whatever was chosen before")
 Game.save = hadSave
 
 -- put the room back the way it was found (SYNC is the shipped default)
@@ -2136,6 +2146,42 @@ DayNight.clock = 300
 DayNight.applyRig(false)
 Voxel3D.tint = { 1, 1, 1 }
 Voxel3D.vp = nil
+end
+
+-- ------- a scripted fight wipes in like a walked-into one
+--
+-- An engine seam this mod leans on: Commands.start_battle used to push the
+-- BattleState bare, so the rival in Oak's lab CUT to battle with no
+-- transition -- no flash, no wipe, the theme starting late. It now routes
+-- through the overworld's own pushBattle, the same path a grass encounter
+-- takes (and the path this mod wraps to stage the arena before the wipe).
+do
+local Commands = require("src.script.Commands")
+local realBS = package.loaded["src.battle.BattleState"]
+package.loaded["src.battle.BattleState"] = {
+  newWild = function() return { kind = "wild" } end,
+  newTrainer = function() return { kind = "trainer" } end,
+}
+local pushed, viaOverworld = nil, nil
+local runner = { yield = function() end, resume = function() end }
+local ctx = {
+  runner = runner,
+  game = { stack = { push = function(_, s) pushed = s end } },
+  overworld = {
+    pushBattle = function(_, b) viaOverworld = b end,
+    afterBattle = function() end,
+  },
+}
+Commands.start_battle(ctx, "trainer", "RIVAL1", 1)
+T.check(viaOverworld ~= nil and pushed == nil,
+  "a scripted trainer goes through pushBattle: the flash, the wipe and the "
+  .. "theme, like any fight walked into")
+T.eq(viaOverworld.kind, "trainer", "with the battle it was asked to start")
+ctx.overworld = nil
+Commands.start_battle(ctx, "wild", "PIDGEY", 5)
+T.check(pushed ~= nil,
+  "and a battle scripted with no overworld under it still starts bare")
+package.loaded["src.battle.BattleState"] = realBS
 end
 
 -- ------- night falls in the forest

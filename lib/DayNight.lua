@@ -64,13 +64,25 @@ DayNight.KEY = "daytime"
 DayNight.LABEL = "DAYTIME"
 
 -- "sync" first: an unset or unreadable value follows the machine's own
--- clock, per the row's contract (ModSetting values[1] is the default).
--- "cycle" stays LAST: the FULL preset reaches for it by position.
+-- clock, per the row's contract (ModSetting values[1] is the default) --
+-- and forceSync below reaches for it by the same position.
 DayNight.setting = ModSetting.new(DayNight.KEY, DayNight.LABEL,
                                   { "sync", "day", "night", "dusk",
                                     "dawn", "cycle" },
                                   { "SYNC", "DAY", "NIGHT", "DUSK",
                                     "DAWN", "CYCLE" })
+
+-- The one writer for the FULL pin. While VOXEL sits on FULL the DAYTIME
+-- row is off the menu with the rest of the rows the preset owns, and the
+-- value is held HERE at SYNC -- the diorama preset's sky follows the clock
+-- on the wall, whatever was chosen before. Called from every path that can
+-- arrive at or act under FULL (main.lua: the preset itself, the rows hook,
+-- the manager's options_changed), mirroring OverworldBattle.forceOG.
+function DayNight.forceSync(game)
+  if DayNight.setting:get() ~= "sync" then
+    DayNight.setting:setIndex(1, game)
+  end
+end
 
 DayNight.clock = DayNight.T.day     -- the running cycle's own position
 

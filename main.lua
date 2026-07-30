@@ -293,10 +293,11 @@ applyFull = function(level)
   -- is solved against (OverworldBattle.forceOG); FULL has just switched staged
   -- fights on, so the layout follows them.
   OverworldBattle.forceOG(Game)
-  -- FULL is the whole diorama, and a diorama with a running sky is more of
-  -- one: the clock is set going (CYCLE is the ladder's last rung). Set, not
-  -- held, like everything else here -- the player can pin it back afterwards.
-  DayNight.setting:setIndex(#DayNight.setting.values, Game)
+  -- and the sky on the clock on the wall: FULL pins DAYTIME to SYNC. Unlike
+  -- the rest of the preset this one IS held, not just set -- the row is off
+  -- the menu while FULL owns it (the rows hook below), so a value changed
+  -- under it could never be seen or changed back.
+  DayNight.forceSync(Game)
   if Game.writeOptions then pcall(Game.writeOptions, Game) end
 end
 
@@ -492,6 +493,9 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     dropRow(out, "battleLayout")
   end
   if Voxel.isFull(Pipelines.level("voxel")) then
+    -- FULL keeps every mod row off the menu (the early return skips the
+    -- insert below), and holds DAYTIME at SYNC while the row is unreachable
+    DayNight.forceSync(game)
     return dropRow(out, "pipeline:tiltshift")
   end
   local extra = {}
@@ -510,6 +514,11 @@ mod.events:on("mod.options_changed", function(payload)
   -- the OPTIONS row does. The manager persists its own value; this is the one
   -- that has to follow it.
   if stagedBattles() then OverworldBattle.forceOG() end
+  -- and DAYTIME changed from the manager's page while FULL owns it snaps
+  -- straight back to SYNC -- the OPTIONS row is hidden, but the manager's is
+  -- not, and FULL's pin must hold against both
+  local Pipelines = require("src.render.Pipelines")
+  if Voxel.isFull(Pipelines.level("voxel")) then DayNight.forceSync() end
 end)
 
 -- ------- keeping the geometry in step with the world

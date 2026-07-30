@@ -63,10 +63,13 @@
   run, picking up from whichever pin or SYNC sky the player was just looking
   at, and `SYNC` -- the DEFAULT -- lays the machine's own clock onto the
   dial: local noon is the DAY pin, midnight is NIGHT, six and eighteen the
-  twilights, an hour of the real day is fifty seconds of dial. Everything is a pure function of
-  the clock, so the pinned DUSK is exactly the running cycle stopped at
-  sunset. Setting **VOXEL** to `FULL` switches DAYTIME to `CYCLE` along with
-  the rest of the preset.
+  twilights, an hour of the real day is fifty seconds of dial. Everything is
+  a pure function of the clock, so the pinned DUSK is exactly the running
+  cycle stopped at sunset. While **VOXEL** sits on `FULL` the DAYTIME row is
+  HELD at `SYNC` and taken off the menu with the other rows the preset owns
+  (DayNight.forceSync, enforced from the preset, the rows hook and the
+  manager's options_changed -- the same three places BATTLE LAYOUT's pin
+  lives): the full diorama runs on the real sky.
 
   **The sun and the moon are in the sky**, and their positions are honest:
   the disc is the light's own direction projected through the same matrix the
@@ -197,6 +200,17 @@
   dropped on the way past and put back where it was ever about: the two
   Pokemon go solid white for those frames, silhouette and all, and nothing
   else in the frame moves.
+
+- **A scripted battle cut straight in with no transition** (an ENGINE seam,
+  fixed in `src/script/Commands.lua` rather than in this mod): the rival in
+  Oak's lab, and every `start_battle` script, pushed the BattleState bare --
+  no flash, no wipe, the theme starting late -- where the original wipes
+  into scripted fights like any other. `start_battle` now routes through the
+  overworld's own `pushBattle`, which is also the path this mod wraps, so a
+  scripted fight gets its arena staged and the cast culled BEFORE the wipe
+  instead of catching up behind it. A battle scripted with no overworld
+  under it still starts bare, and no music plays twice (BattleState's own
+  start is a same-song no-op).
 
 - **A standing figure's shadow detached from its feet under a low sun.** The
   shadow compare forgives `slack` world pixels so lit ground does not acne
