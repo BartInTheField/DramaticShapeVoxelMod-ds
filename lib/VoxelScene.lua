@@ -600,10 +600,20 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
     Voxel3D.endGhost()
   end
 
-  -- characters, normally depth-tested: the camera-ward pull inside
+  -- Characters carry no wireframe out here, whatever the V-GRID row says.
+  -- The seams are what makes the WORLD read as built out of voxels, and
+  -- the people walking around in it are the one thing that should read as
+  -- drawn instead -- a grid over a 16x16 sprite lands a line every couple
+  -- of display pixels and turns a face into a mesh. (The battle pass makes
+  -- the opposite call for its own combatants, deliberately: that is a
+  -- staged shot rather than the world being walked around in -- see
+  -- BattleBillboard.)
+  --
+  -- Characters, normally depth-tested: the camera-ward pull inside
   -- drawEntity resolves the lean-over-the-wall-in-front case, and a
   -- character genuinely behind a building is far deeper and loses the
   -- test, so buildings and trees really occlude.
+  Voxel3D.seams(false)
   for _, p in ipairs(posed) do
     drawEntity(p.sprite, p.px, p.py, p.facing, p.phase, p.flip, p.gh,
                p.colors, p.lift)
@@ -622,6 +632,9 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
       Voxel3D.draw(mesh, atlasFor(nb.map), model, figPull, caster)
     end)
   end
+  -- and the seams are back on for the terrain art that follows: grass and
+  -- flowers are the world's own drawing, not people
+  Voxel3D.seams(true)
   -- tall grass last, pulled camera-ward exactly as far as the characters
   -- were (same per-vertex shader bias, so grass never drifts either):
   -- relative depth between a walker and the tuft row south of their feet
