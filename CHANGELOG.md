@@ -57,13 +57,16 @@
   horizon above the frame, so the arena keeps exactly the flat sky it had.
 
 - **A day/night cycle**, on a new **DAYTIME** options row: `DAY`, `NIGHT`,
-  `DUSK`, `DAWN`, `CYCLE`. One twenty-minute clock underneath all five -- ten
-  minutes of sun, ten of moon -- where the four named settings are PINS on
-  that dial (noon, mid-night, sunset, sunrise) and `CYCLE` lets it run,
-  picking up from whichever pin the player was just looking at. Everything is
-  a pure function of the clock, so the pinned DUSK is exactly the running
-  cycle stopped at sunset. Setting **VOXEL** to `FULL` switches DAYTIME to
-  `CYCLE` along with the rest of the preset.
+  `DUSK`, `DAWN`, `SYNC`, `CYCLE`. One twenty-minute clock underneath all of
+  them -- ten minutes of sun, ten of moon -- where the four named settings
+  are PINS on that dial (noon, mid-night, sunset, sunrise), `CYCLE` lets it
+  run, picking up from whichever pin or SYNC sky the player was just looking
+  at, and `SYNC` -- the DEFAULT -- lays the machine's own clock onto the
+  dial: local noon is the DAY pin, midnight is NIGHT, six and eighteen the
+  twilights, an hour of the real day is fifty seconds of dial. Everything is a pure function of
+  the clock, so the pinned DUSK is exactly the running cycle stopped at
+  sunset. Setting **VOXEL** to `FULL` switches DAYTIME to `CYCLE` along with
+  the rest of the preset.
 
   **The sun and the moon are in the sky**, and their positions are honest:
   the disc is the light's own direction projected through the same matrix the
@@ -130,14 +133,18 @@
   at any angle, in free-roam and staged battles alike, with no geometry
   work.
 
-  By day a thin diagonal glint crosses the panes WHILE THE VIEW MOVES: the
-  sweep's phase is fed by the camera's own travel and its strength fades out
-  within a beat of standing still -- a reflection is something the viewpoint
-  does, so still camera means still glass. It lifts the texels toward
-  sky-white and leaves the diagonal shine art visible through it. The mask
-  is consulted only by meshes textured from the tileset atlas
-  (Voxel3D.glass), never by sprite sheets, whose coordinates would land on
-  the panes' atlas positions by accident.
+  By day a thin glint crosses the panes WHILE THE VIEW MOVES: the sweep's
+  phase is fed by the camera's own travel and its strength fades out within
+  a beat of standing still -- a reflection is something the viewpoint does,
+  so still camera means still glass. The sweep pattern lives in the pane's
+  OWN texels, not the screen's: a screen-anchored pattern has the world
+  sliding through it at zoom speed whenever the camera pans, which strobed
+  (worst walking against the sweep); anchored to the glass, panning moves
+  nothing and a step advances the glint a fraction of a texel, the same in
+  every direction. It lifts the texels toward sky-white and leaves the
+  shine art visible through it. The mask is consulted only by meshes
+  textured from the tileset atlas (Voxel3D.glass), never by sprite sheets,
+  whose coordinates would land on the panes' atlas positions by accident.
   After dark the panes are LIT: the texel's own pattern carried into a warm
   lamp colour, replacing the shaded answer entirely -- a lit window ignores
   the sun, every shadow and the hour's tint, exactly as a window with a lamp
@@ -202,10 +209,13 @@
   own ray (`ShadowMap.snug`): moving along the ray changes nothing about
   where a shadow falls, but storing the card shallower takes three quarters
   of the forgiveness back for the shadow it throws -- and for nothing else:
-  no terrain moved, so the acne margin is untouched where it matters, and
-  the quarter left keeps the card off the float-equality knife edge against
-  its own stored depth. The shadow root lands back under the feet at every
-  hour.
+  no terrain moved, so the acne margin is untouched where it matters. The
+  obligation that comes with it: every snugged caster's LIT draw hands the
+  same snugged transform to its own shadow lookup (Voxel3D.draw's
+  `sunModel`), so stored and lookup agree exactly and the compare keeps its
+  full margin -- read un-snugged, the missing nine tenths showed up as
+  diagonal moire bands crawling across every sprite. The shadow root lands
+  back under the feet at every hour.
 
 ### Changed
 

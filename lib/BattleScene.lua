@@ -416,8 +416,10 @@ function BattleScene.render(state, arena, textures, token)
     -- tileset atlas, so the mask's coordinates mean nothing on them
     Voxel3D.glass(false)
     for _, card in ipairs(monCards(arena, groundY, textures)) do
+      -- the sun stored this card snugged (castShadows), so its own shadow
+      -- lookup must read the same snugged transform -- see ShadowMap.snug
       Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model,
-                   BattleBillboard.PULL)
+                   BattleBillboard.PULL, ShadowMap.snug(card.model))
     end
     Voxel3D.glass(true)
     Voxel3D.seams(true)
@@ -433,10 +435,12 @@ function BattleScene.render(state, arena, textures, token)
                    Mat4.translate(nb.ox, 0, nb.oy), pull)
     end
     local fpull = math.max(0, pull - 8 * math.sin(math.max(pitch, 0.05)))
-    Voxel3D.draw(ChunkMesher.flowers(host), atlasFor(host), nil, fpull)
+    Voxel3D.draw(ChunkMesher.flowers(host), atlasFor(host), nil, fpull,
+                 ShadowMap.snug(nil))
     for _, nb in ipairs(neighbors) do
       Voxel3D.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
-                   Mat4.translate(nb.ox, 0, nb.oy), fpull)
+                   Mat4.translate(nb.ox, 0, nb.oy), fpull,
+                   ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
     end
     local canvas = Voxel3D.endScene()
     if not canvas then return end

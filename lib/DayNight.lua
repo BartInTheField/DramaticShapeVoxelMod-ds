@@ -63,11 +63,14 @@ DayNight.T = { dawn = 0, day = 300, dusk = 600, night = 900 }
 DayNight.KEY = "daytime"
 DayNight.LABEL = "DAYTIME"
 
--- "day" first: an unset or unreadable value is DAY, per the row's contract
--- (ModSetting values[1] is the default)
+-- "sync" first: an unset or unreadable value follows the machine's own
+-- clock, per the row's contract (ModSetting values[1] is the default).
+-- "cycle" stays LAST: the FULL preset reaches for it by position.
 DayNight.setting = ModSetting.new(DayNight.KEY, DayNight.LABEL,
-                                  { "day", "night", "dusk", "dawn", "cycle" },
-                                  { "DAY", "NIGHT", "DUSK", "DAWN", "CYCLE" })
+                                  { "sync", "day", "night", "dusk",
+                                    "dawn", "cycle" },
+                                  { "SYNC", "DAY", "NIGHT", "DUSK",
+                                    "DAWN", "CYCLE" })
 
 DayNight.clock = DayNight.T.day     -- the running cycle's own position
 
@@ -311,10 +314,28 @@ local function mode()
   return DayNight.setting:get() or "day"
 end
 
--- The effective time: the pin, or the running clock under CYCLE.
+-- Where SYNC reads the real clock: local hours, 0..24 with the minutes as
+-- fraction. A named seam rather than a bare os.date call, so the suite can
+-- hand it a fixed hour.
+function DayNight.hours()
+  local d = os.date("*t")
+  return d.hour + d.min / 60 + d.sec / 3600
+end
+
+-- SYNC: the machine's own time of day laid onto the dial. Local noon is
+-- the DAY pin, midnight the NIGHT pin, six and eighteen the twilights --
+-- an hour of the real day is fifty seconds of dial, and Kanto's evening
+-- falls when the player's does.
+function DayNight.syncTime()
+  return ((DayNight.hours() - 6) * (DayNight.CYCLE / 24)) % DayNight.CYCLE
+end
+
+-- The effective time: the pin, the running clock under CYCLE, or the wall
+-- clock under SYNC.
 function DayNight.time()
   local m = mode()
   if m == "cycle" then return DayNight.clock end
+  if m == "sync" then return DayNight.syncTime() end
   return DayNight.T[m] or DayNight.T.day
 end
 
@@ -326,8 +347,11 @@ end
 function DayNight.update(dt)
   local m = mode()
   if m ~= lastMode then
-    if m == "cycle" and DayNight.T[lastMode] then
+    if m == "cycle" then
+      -- from a pin, its time; from SYNC, wherever the real sky already was
       DayNight.clock = DayNight.T[lastMode]
+                       or (lastMode == "sync" and DayNight.syncTime())
+                       or DayNight.clock
     end
     lastMode = m
   end

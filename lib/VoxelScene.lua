@@ -307,12 +307,13 @@ local function drawEntity(sprite, px, py, facing, phase, flip, gh, colors,
   -- drift): lets the leaned-back head win against the wall it leans
   -- OVER while a character genuinely BEHIND a building is dozens of
   -- pixels deeper and still loses, so real occlusion works.
-  -- the same card UNLEANED is what the sun saw (castShadows draws
-  -- exactly this mesh), so that is where each vertex asks whether the
-  -- light reached it -- see Voxel3D.draw
+  -- the same card UNLEANED -- and SNUGGED, exactly as the sun stored it
+  -- (castShadows draws this mesh through ShadowMap.snug) -- is where each
+  -- vertex asks whether the light reached it; see ShadowMap.snug for why
+  -- the lookup must match the stored transform to the letter
   Voxel3D.draw(mesh, tex, billboardMatrix(px, py, y, mirror),
                billboardPull(),
-               Voxel3D.casterMatrix(px, py, y, mirror))
+               ShadowMap.snug(Voxel3D.casterMatrix(px, py, y, mirror)))
   return true
 end
 
@@ -464,7 +465,11 @@ end
 -- with distance covered and its strength fades in over a few steps of
 -- walking and back out within a beat of standing still. Stand still and
 -- the glass is still; move and the light crosses it.
-VoxelScene.GLINT_RATE = 0.22     -- radians of sweep per world pixel travelled
+-- The rate is slow on purpose: the sweep pattern lives in the pane's own
+-- texels (see the scene shader), so this is a FRACTION of a texel per world
+-- pixel walked -- one full pass of the glint across a pane per eight or so
+-- cells of travel, with no frame ever jumping it far enough to strobe.
+VoxelScene.GLINT_RATE = 0.05     -- radians of sweep per world pixel travelled
 VoxelScene.GLINT_IN = 0.12      -- strength gained per moving frame
 VoxelScene.GLINT_OUT = 0.08     -- and lost per resting frame
 
@@ -699,11 +704,13 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- wins the overlap, which is the order the flat game draws them in.
   local figPull = billboardPull()
   eachFigure(state.map, 0, 0, function(mesh, model, caster)
-    Voxel3D.draw(mesh, atlasFor(state.map), model, figPull, caster)
+    Voxel3D.draw(mesh, atlasFor(state.map), model, figPull,
+                 ShadowMap.snug(caster))
   end)
   for _, nb in ipairs(state.neighbors or {}) do
     eachFigure(nb.map, nb.ox, nb.oy, function(mesh, model, caster)
-      Voxel3D.draw(mesh, atlasFor(nb.map), model, figPull, caster)
+      Voxel3D.draw(mesh, atlasFor(nb.map), model, figPull,
+                   ShadowMap.snug(caster))
     end)
   end
   -- and the seams are back on for the terrain art that follows: grass and
@@ -733,11 +740,14 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- ON, while the nearest flower of the cell south (+20) stays in front
   -- and keeps overdrawing their feet.
   local fpull = math.max(0, pull - 8 * math.sin(math.max(Voxel.angle, 0.05)))
+  -- flowers are snugged casters too, so they read their own shadowing
+  -- through the same snugged transform the sun stored them with
   Voxel3D.draw(ChunkMesher.flowers(state.map), atlasFor(state.map), nil,
-               fpull)
+               fpull, ShadowMap.snug(nil))
   for _, nb in ipairs(state.neighbors or {}) do
     Voxel3D.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
-                 Mat4.translate(nb.ox, 0, nb.oy), fpull)
+                 Mat4.translate(nb.ox, 0, nb.oy), fpull,
+                 ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
   end
 
   return Voxel3D.endScene()

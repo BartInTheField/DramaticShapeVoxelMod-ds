@@ -205,6 +205,7 @@ local SHADER = [[
   uniform float ghost;        // 0 = shade normally, 1 = flatten to it
   uniform vec3 dayTint;       // the hour's light on the world; 1,1,1 = noon
   uniform Image glassMask;    // opaque where the atlas texel is window glass
+  uniform vec2 glassSize;     // the mask's dimensions: tc -> atlas texels
   uniform float glassNight;   // 0 = daylight .. 1 = the lamps are on
   uniform float glassPhase;   // the glint's phase: advances with TRAVEL
   uniform float glassGlint;   // and its strength: 0 while standing still
@@ -241,7 +242,13 @@ local SHADER = [[
     // cast with lamplight at night.
     float glass = Texel(glassMask, tc).a * glassOn;
     if (glass > 0.0) {
-      float sweep = sin((sc.x + sc.y) * 0.04 - glassPhase);
+      // the sweep lives in the PANE's own space (atlas texels), not the
+      // screen's: a pattern anchored to the screen has the world sliding
+      // through it at zoom speed whenever the camera pans, which strobed --
+      // worst where the pan and the phase ran opposite ways. Anchored to
+      // the glass, panning moves nothing; only the phase does, a fraction
+      // of a texel per step, the same in every walking direction.
+      float sweep = sin(tc.x * glassSize.x * 0.8 - glassPhase);
       float glint = pow(max(sweep, 0.0), 20.0) * 0.55 * glassGlint;
       vec3 pane = mix(rgb, vec3(0.93, 0.97, 1.0), glint * glass);
       float shine = dot(p.rgb, vec3(0.299, 0.587, 0.114));
@@ -607,7 +614,11 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
   -- declared either way, and unbound is a driver-dependent crash), how lit
   -- the panes are, and the movement-fed glint as the caller last set it
   local mask = Voxel3D.glassMask or GlassMask.blank()
-  if mask then pcall(sh.send, sh, "glassMask", mask) end
+  if mask then
+    pcall(sh.send, sh, "glassMask", mask)
+    local ok, mw, mh = pcall(mask.getDimensions, mask)
+    pcall(sh.send, sh, "glassSize", { ok and mw or 1, ok and mh or 1 })
+  end
   pcall(sh.send, sh, "glassNight", Voxel3D.glassNight or 0)
   pcall(sh.send, sh, "glassPhase", Voxel3D.glassPhase or 0)
   pcall(sh.send, sh, "glassGlint", Voxel3D.glassGlint or 0)
