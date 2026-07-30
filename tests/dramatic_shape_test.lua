@@ -2106,6 +2106,24 @@ Voxel3D.tint = { 1, 1, 1 }
 Voxel3D.vp = nil
 end
 
+-- ------- night falls in the forest
+--
+-- Viridian Forest is not outdoor (no sky, and the light through the leaves
+-- has no direction to swing) and not a sealed room either. Of everything
+-- the clock does, exactly one thing reaches a canopy map: the hour's tint.
+-- The scenes wire it as tint(outdoor or isCanopy(map)) over the unchanged
+-- noon rig, so what is checked here is the classification itself.
+do
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+T.check(DayNight.isCanopy({ id = "VIRIDIAN_FOREST" }),
+  "Viridian Forest stands under a canopy")
+T.check(not DayNight.isCanopy({ id = "MT_MOON_1F" }),
+  "a cave does not -- midnight there is exactly as dark as noon")
+T.check(not DayNight.isCanopy({ id = "PALLET_TOWN" }),
+  "and an outdoor town is already the clock's in full")
+T.check(not DayNight.isCanopy(nil), "no map, no canopy")
+end
+
 -- ------- a shadow keeps hold of the feet that throw it
 --
 -- The depth compare forgives `slack` world pixels so lit ground does not

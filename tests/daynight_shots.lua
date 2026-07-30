@@ -92,6 +92,18 @@ return function(game)
     U.shot(game, DIR .. "/50_indoor_at_night.png")
   end
 
+  -- ------- the forest, where only the TINT of it reaches: night falls
+  -- through the canopy, but there is no sky and the noon light stays put
+  setTime("night")
+  if game.data.maps.VIRIDIAN_FOREST then
+    U.teleport(game, "VIRIDIAN_FOREST", 17, 20, "up")
+    U.wait(120)
+    U.shot(game, DIR .. "/51_forest_night.png")
+    setTime("day")
+    U.wait(30)
+    U.shot(game, DIR .. "/52_forest_day.png")
+  end
+
   setTime("day")
   U.log("done -- " .. DIR)
 end

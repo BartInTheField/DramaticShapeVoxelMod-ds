@@ -102,7 +102,12 @@
 
   **Outdoors only**, by the same `Map.isOutdoor` test the sky already rests
   on: indoors keeps the noon rig, the neutral tint and no sky -- a cave at
-  midnight is exactly as dark as a cave at noon. A battle staged on an
+  midnight is exactly as dark as a cave at noon. Viridian Forest is the case
+  between, a CANOPY map (DayNight.CANOPY): there is no sky to paint and no
+  sun to see, so the shadow rig stays the mod's fixed noon light -- all that
+  ever filtered through the leaves -- but night still FALLS in a forest, so
+  of everything the clock does, exactly one thing reaches it: the hour's
+  tint, in free-roam and staged battles alike. A battle staged on an
   outdoor map fights under the hour: the night sky behind the arena, the
   tint on the mons, the sunset taking the arena's shadows with it; an indoor
   arena is untouched. The engine's own `world.tod` hook is answered

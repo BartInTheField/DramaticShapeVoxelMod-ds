@@ -114,7 +114,10 @@ the sun, the shadow map and the hour's tint. The lamps come on through dusk,
 burn all night, and are mostly out again by dawn.
 
 **Outdoors only.** Indoors keeps the noon rig, the neutral tint and no sky:
-a cave at midnight is exactly as dark as a cave at noon. A battle staged on
+a cave at midnight is exactly as dark as a cave at noon. Viridian Forest is
+the case between — a **canopy** map: no sky and the light through the
+leaves stays at the mod's fixed noon angle, but the hour's *tint* still
+falls through, so night reaches the forest floor. A battle staged on
 an outdoor map fights under the hour — night void behind the arena, tinted
 mons, sunset taking the arena's shadows with it — and an indoor arena is
 untouched. The engine's `world.tod` hook is answered
