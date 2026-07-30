@@ -31,6 +31,7 @@ local ShadowMap = V.require("ShadowMap")
 local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
 local Sky = V.require("Sky")
+local DayNight = V.require("DayNight")
 
 local Voxel3D = {}
 
@@ -201,6 +202,7 @@ local SHADER = [[
 
   uniform vec3 ghostColor;    // the flat silhouette colour
   uniform float ghost;        // 0 = shade normally, 1 = flatten to it
+  uniform vec3 dayTint;       // the hour's light on the world; 1,1,1 = noon
 
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     vec4 p = Texel(tex, tc);
@@ -208,7 +210,9 @@ local SHADER = [[
     // blending keeps those texels out of the depth buffer, so a model never
     // carves a transparent hole out of whatever stands behind it
     if (p.a < 0.5) discard;
-    vec3 rgb = p.rgb * vShade * sunlight(vSun);
+    // the hour's tint multiplies like the sun terms do: it is LIGHT, the
+    // same warm or moonlit cast on every surface, not a palette swap
+    vec3 rgb = p.rgb * vShade * sunlight(vSun) * dayTint;
 #ifdef VOXEL_GRID
     // darken what is there rather than painting a colour, so a seam across
     // dark grass and one across a white roof each stay in their own palette
@@ -427,6 +431,43 @@ function Voxel3D.horizonY(h)
   return (y / w * 0.5 + 0.5) * h
 end
 
+-- ------- the hour's light
+--
+-- What the scene shader multiplies every surface by (see dayTint in the
+-- shader). Set per pass by whoever knows what map is being drawn --
+-- VoxelScene for free-roam, BattleScene for the arena -- because "is this
+-- outdoors" is the map's question, not this pass's. Neutral until somebody
+-- answers it, so a caller that never does draws exactly what it always drew.
+Voxel3D.tint = { 1, 1, 1 }
+
+-- The sun or moon disc's place on this camera's canvas, or nil when the
+-- body is set, on the southern half of the sky, or behind the camera.
+--
+-- The direction comes from DayNight (true bearing, squashed elevation) and
+-- goes through the SAME matrix the geometry is drawn with, as a point at
+-- infinity -- exactly how horizonY finds the vanishing line. So the disc's
+-- azimuth is honest: it stands over the point on the horizon its shadows
+-- point away from, at every pitch, fov, window shape and zoom.
+--
+-- Must run after beginScene has set Voxel3D.vp for this frame's camera.
+function Voxel3D.skyBody(w, h)
+  local m = Voxel3D.vp
+  local b = m and DayNight.body()
+  if not b then return nil end
+  local x = m[1] * b.dx + m[2] * b.dy + m[3] * b.dz
+  local y = m[5] * b.dx + m[6] * b.dy + m[7] * b.dz
+  local ww = m[13] * b.dx + m[14] * b.dy + m[15] * b.dz
+  if ww <= 1e-6 then return nil end
+  local amt, color = DayNight.glow()
+  return {
+    x = (x / ww * 0.5 + 0.5) * w,
+    y = (y / ww * 0.5 + 0.5) * h,
+    moon = b.moon,
+    glowAmt = amt,
+    glowColor = color,
+  }
+end
+
 -- ----------------------------------------------------------------- scene --
 
 -- Begin the 3D pass into a `w` x `h` pixel canvas centred on world
@@ -480,7 +521,10 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
     -- w / vw is this frame's pixels per WORLD pixel, which is the size a diorama
     -- pixel is on screen: the sky's dither grid is cut to that, so its squares
     -- are the same size as the world's own and follow every resize and zoom.
-    Sky.paint(w, h, sky, Voxel3D.horizonY(h), w / math.max(1, vw or w))
+    -- The banded sky also hangs the hour's sun or moon (skyBody projects it
+    -- through this very camera); a flat sky has no bands and hangs nothing.
+    Sky.paint(w, h, sky, Voxel3D.horizonY(h), w / math.max(1, vw or w),
+              sky.bands and Voxel3D.skyBody(w, h) or nil)
   else
     love.graphics.clear(0, 0, 0, 0, true, true)
   end
@@ -514,6 +558,8 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
   -- start out flattening everything it drew.
   pcall(sh.send, sh, "ghost", 0)
   pcall(sh.send, sh, "ghostColor", Voxel3D.GHOST_COLOR)
+  -- the hour's light, as the caller last set it (see Voxel3D.tint)
+  pcall(sh.send, sh, "dayTint", Voxel3D.tint or { 1, 1, 1 })
   -- the curved world bends about the camera's focus, so the horizon keeps
   -- a fixed distance ahead of the player rather than sitting on the map.
   -- A placed camera may decline it outright (Voxel3D.camera.curve = 0).

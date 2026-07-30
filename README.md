@@ -34,6 +34,7 @@ menu.
 | `6`, or the **T-SHIFT** options row | OFF → 1 → 2 → 3 → OFF (miniature blur) |
 | `7`, or the **V-CURVE** options row | OFF → 1 → 2 → 3 — bend the world over the horizon |
 | `8`, or the **3D-BTL** options row | ON / OFF — fight on the map instead of on a white field |
+| the **DAYTIME** options row | DAY / NIGHT / DUSK / DAWN / CYCLE — what time it is outdoors |
 
 **3D-BTL** is on by default and is independent of **VOXEL**: battles draw
 on the world whether or not the free-roam camera is pitched over.
@@ -58,11 +59,56 @@ everything else here, so GRAY gets four greys and CLASSIC four greens.
 Overworld only — a battle's placed camera looks up from under the horizon and
 keeps its flat sky.
 
-Tunables live at the top of `lib/Sky.lua`: `Sky.PALETTE` (lightest first; its
-length is the band count), `Sky.DITHER`, `Sky.DITHER_START` (how far down each
-band the checker begins — lower is a wider blend, `1` switches it off), and
-`Sky.SPAN` (how much of the frame the bands cover on the rungs whose horizon is
-off-screen).
+Tunables live at the top of `lib/Sky.lua` — `Sky.DITHER`, `Sky.DITHER_START`
+(how far down each band the checker begins — lower is a wider blend, `1`
+switches it off), `Sky.SPAN` (how much of the frame the bands cover on the
+rungs whose horizon is off-screen), and `Sky.DISC_FRAC` (the sun and moon's
+size, as a fraction of the frame) — and the palettes live in `lib/DayNight.lua`
+(`DayNight.PALETTES`, one per phase, lightest first), because the sky belongs
+to the clock:
+
+## What time it is
+
+The **DAYTIME** row is one twenty-minute clock — ten minutes of sun, ten of
+moon. `DAY`, `NIGHT`, `DUSK` and `DAWN` are pins on that dial (noon,
+mid-night, sunset, sunrise) and `CYCLE` lets it run, picking up from
+whichever pin was showing. Everything is a pure function of the clock, so
+the pinned DUSK is exactly the running cycle stopped at sunset. Setting
+**VOXEL** to `FULL` switches DAYTIME to `CYCLE` with the rest of the preset.
+
+The **sun and moon hang in the sky**, projected through the same matrix the
+geometry is drawn with, so each stands over the point on the horizon its
+shadows point away from at any pitch, window shape or zoom. Noon is this
+mod's existing sun to the digit — southeast, 45° up, overhead behind the
+north-facing camera and correctly out of frame — and the arc swings north at
+both ends, so the disc stands in frame through dawn and dusk, half-set on
+the horizon line. The moon walks the northern sky all night, due north at
+mid-night. Both are cell art on the sky's own grid, sized by the frame, and
+scissored to the sky's region: a setting body slips below the horizon point
+and is gone — never under the map.
+
+The **sky, the shadows and the light follow**. Six-band phase palettes
+blend along the dial and re-quantise onto the 5-bit lattice — the evening
+bending through a golden-hour waypoint and both edges of the night through
+a violet civil twilight, because a straight lerp between complements
+bottoms out in grey — and a dithered, posterised glow warms the bands
+around the low sun through the twilights.
+The shadow shear comes off the clock (opposite the body's bearing,
+cotangent-long, clamped at twice the caster's height), fading out over the
+last twelve degrees before the horizon so sunset hands off to moonrise
+through a soft shadowless gap; moonlight presses at about two-thirds the
+sun's weight. The scene shader multiplies every surface by the hour's tint —
+neutral at noon, warm at the twilights, dim blue under the moon.
+
+**Outdoors only.** Indoors keeps the noon rig, the neutral tint and no sky:
+a cave at midnight is exactly as dark as a cave at noon. A battle staged on
+an outdoor map fights under the hour — night void behind the arena, tinted
+mons, sunset taking the arena's shadows with it — and an indoor arena is
+untouched. The engine's `world.tod` hook is answered
+(`MORNING`/`DAY`/`EVENING`/`NIGHT`), so palette or music packs keyed to the
+period ride this clock for free. In `CYCLE`, the time is written into the
+mod's own bucket in the save file when the game saves, and read back when
+the save is opened; a save with no clock in it starts at day.
 
 While a battle can be staged on the map — **3D-BTL** on, or **VOXEL** on
 `FULL`, which owns that row — the engine's **BATTLE LAYOUT** row is set to

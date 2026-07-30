@@ -56,6 +56,64 @@
   The overworld only. A battle is a staged shot whose placed camera has the
   horizon above the frame, so the arena keeps exactly the flat sky it had.
 
+- **A day/night cycle**, on a new **DAYTIME** options row: `DAY`, `NIGHT`,
+  `DUSK`, `DAWN`, `CYCLE`. One twenty-minute clock underneath all five -- ten
+  minutes of sun, ten of moon -- where the four named settings are PINS on
+  that dial (noon, mid-night, sunset, sunrise) and `CYCLE` lets it run,
+  picking up from whichever pin the player was just looking at. Everything is
+  a pure function of the clock, so the pinned DUSK is exactly the running
+  cycle stopped at sunset. Setting **VOXEL** to `FULL` switches DAYTIME to
+  `CYCLE` along with the rest of the preset.
+
+  **The sun and the moon are in the sky**, and their positions are honest:
+  the disc is the light's own direction projected through the same matrix the
+  geometry is drawn with, so it stands over the point on the horizon its
+  shadows point away from, at every pitch, window shape and zoom. The sun's
+  noon is this mod's existing sun to the digit -- southeast, 45 degrees up,
+  overhead behind the north-facing camera and correctly out of frame -- and
+  its arc swings north at both ends, so the disc stands IN frame through dawn
+  and dusk, rising half-set on the horizon. The moon arcs the northern sky
+  all night, due north (screen centre) at mid-night, with scaled crater
+  cells. Both are cell art on the sky's own dither grid, sized by the frame
+  (a celestial body's apparent size is an angle, so zooming the ground does
+  not swell it), and both are SCISSORED to the sky's region: the horizon
+  point is where a setting body disappears -- it never hangs under the map.
+
+  **The sky follows the clock.** Phase palettes -- the daytime blues,
+  gold-to-violet dawn, a hotter gold-to-indigo dusk, moonlit navy -- six
+  bands each now, blended along the dial and re-quantised onto the 5-bit
+  lattice, so every mixed frame is still a colour the hardware could show.
+  The blends bend through designed WAYPOINTS rather than straight across --
+  a golden hour on the way into dusk, a violet civil twilight either side of
+  the night -- because day's blue and dusk's gold are near-complements, and
+  a straight lerp between complements bottoms out in dishwater grey. Through the twilights a posterised, checker-dithered GLOW
+  warms the bands around the low sun -- painted light, not an airbrush. The
+  blends are 75 seconds wide either side of each twilight and the pins land
+  on their phase palette unmixed.
+
+  **The shadows follow the sun and the moon.** The shear every shadow is
+  thrown by (direction opposite the body's bearing, length its elevation's
+  cotangent, clamped at twice the caster's height) comes off the clock, the
+  shadow map's signature carries it, and the light's press fades out over the
+  last twelve degrees before the horizon -- so sunset hands off to moonrise
+  through a soft shadowless gap, and moonlight presses at about two-thirds
+  the sun's weight. The scene shader also multiplies every surface by the
+  hour's tint: neutral at noon, warm at the twilights, dim blue at night.
+
+  **Outdoors only**, by the same `Map.isOutdoor` test the sky already rests
+  on: indoors keeps the noon rig, the neutral tint and no sky -- a cave at
+  midnight is exactly as dark as a cave at noon. A battle staged on an
+  outdoor map fights under the hour: the night sky behind the arena, the
+  tint on the mons, the sunset taking the arena's shadows with it; an indoor
+  arena is untouched. The engine's own `world.tod` hook is answered
+  (`MORNING`/`DAY`/`EVENING`/`NIGHT`), so palette or music packs keyed to the
+  period ride this clock for free.
+
+  **The clock rides the save slot.** On the engine's `save.writing` event the
+  cycle's time is written into the mod's own save-file bucket
+  (`save.modData.DRAMATIC_SHAPE`), and read back when a save is opened. A
+  save with no clock in it starts at day.
+
 - **A fade out of a battle, where there used to be a hard cut.** The engine
   wipes INTO a fight with one of the original's eight transitions and cuts
   straight out of it: `BattleState:finish` pops itself and the map is simply

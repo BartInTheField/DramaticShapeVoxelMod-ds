@@ -41,7 +41,9 @@ local VoxelScene = V.require("VoxelScene")
 local BattleCam = V.require("BattleCam")
 local BattleBillboard = V.require("BattleBillboard")
 local VoxelGrid = V.require("VoxelGrid")
+local DayNight = V.require("DayNight")
 local PaletteFX = require("src.render.PaletteFX")
+local Map = require("src.world.Map")
 
 local BattleScene = {}
 
@@ -215,7 +217,11 @@ BattleScene.monCards = monCards
 local function shadowSignature(state, arena, terrain, nbMesh, token)
   local host = arena.map or state.map
   local parts = { "battle", host.id, arena.x, arena.y, arena.shape,
-                  tostring(terrain), tostring(token or 0) }
+                  tostring(terrain), tostring(token or 0),
+                  -- the cycle keeps running through a fight, and an arena lit
+                  -- from somewhere new must be re-cast from there
+                  math.floor(ShadowMap.KX * 128),
+                  math.floor(ShadowMap.KZ * 128) }
   for i = 1, #nbMesh do parts[#parts + 1] = tostring(nbMesh[i]) end
   return table.concat(parts, ",")
 end
@@ -298,6 +304,13 @@ function BattleScene.render(state, arena, textures, token)
   local host = arena.map or state.map
   local neighbors = (host == state.map) and (state.neighbors or {}) or {}
 
+  -- the hour's light reaches the arena exactly as it reaches free-roam: the
+  -- shared rig follows the clock on an outdoor floor and stays at noon on an
+  -- indoor one, and the same tint multiplies the staged shot
+  local outdoor = host.def and Map.isOutdoor(host.def) or false
+  DayNight.applyRig(outdoor)
+  Voxel3D.tint = DayNight.tint(outdoor)
+
   -- shares the free-roam mode's request/evict bookkeeping, so a battle warms
   -- exactly the meshes walking around would have and nothing extra
   local terrain, nbMesh = prefetchArena(state, host)
@@ -342,9 +355,12 @@ function BattleScene.render(state, arena, textures, token)
 
   Voxel3D.camera = cam
   -- the sun is turned up for the arena and put back afterwards, so the
-  -- free-roam world it shares this module with keeps its own weight
+  -- free-roam world it shares this module with keeps its own weight -- and
+  -- the hour still has the last word: a sunset fades the arena's shadows
+  -- out and the moon presses more softly, exactly as it does outside
   local sunWas = Voxel3D.SHADOW_ALPHA
   Voxel3D.SHADOW_ALPHA = BattleScene.SHADOW_ALPHA
+                         * DayNight.shadowScale(outdoor)
   -- and the wireframe is ON for a battle whatever the V-GRID row says. The
   -- arena is a staged shot rather than the world being walked through, and
   -- the seams are what make it read as built rather than photographed. Forced

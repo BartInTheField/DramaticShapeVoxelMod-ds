@@ -293,8 +293,12 @@ end
 Pipelines.setLevel("voxel", 2)
 local hookedRows = Runtime.call("ui.options.rows", function(_, r) return r end,
                                { data = Data }, { { id = "text_speed" } })
-T.eq(#hookedRows, 4, "the options hook added a row per setting")
+T.eq(#hookedRows, 5, "the options hook added a row per setting")
 local grid, curve, battles = hookedRows[2], hookedRows[3], hookedRows[4]
+local daytime = hookedRows[5]
+T.eq(daytime.label, "DAYTIME", "the day/night row carries its label")
+T.eq(daytime.value(), "DAY",
+  "and starts pinned to DAY -- no time set means it is day")
 T.eq(grid.label, "V-GRID", "the grid row carries its label")
 T.eq(grid.value(), "OFF", "the grid starts off")
 T.eq(curve.label, "V-CURVE", "the curve row carries its label")
@@ -1129,21 +1133,25 @@ T.check(skyRGB("gbc_inv")[3] ~= blue[3],
 do
 local Sky = run.loader.exports.DRAMATIC_SHAPE.lib.require("Sky")
 local Voxel3D = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
 
 local function luma(c) return 0.299 * c[1] + 0.587 * c[2] + 0.114 * c[3] end
 
--- the palette is the band list: add a colour and the sky gains a band
-for i, c in ipairs(Sky.PALETTE) do
+-- the palette is the band list, and it belongs to the CLOCK now: DayNight
+-- owns one per phase and blends between them. The row defaults to DAY, so
+-- what the sky paints here is the day palette -- still every inch a GBC one.
+local dayPal = DayNight.PALETTES.day
+for i, c in ipairs(dayPal) do
   T.check(c[1] % 8 == 0 and c[2] % 8 == 0 and c[3] % 8 == 0,
     "palette entry " .. i .. " is a colour a Game Boy Color could show -- five "
     .. "bits a channel, so every one is a multiple of 8")
   T.check(c[3] > c[1], "and it is blue: more blue than red")
 end
-T.eq(#Sky.PALETTE, 4, "four of them, which is one GBC background palette")
+T.eq(#dayPal, 6, "six of them: twilight needs the rungs, and day matches")
 
 Voxel.angle = TOP
 local skyGrad = skyRGB("gbc")
-T.eq(#(skyGrad.bands or {}), #Sky.PALETTE,
+T.eq(#(skyGrad.bands or {}), #dayPal,
   "the sky arrives with one band per palette entry")
 
 for i, band in ipairs(skyGrad.bands) do
@@ -1155,7 +1163,7 @@ for i, band in ipairs(skyGrad.bands) do
 end
 -- read backwards out of the palette, which is stored in shade order (lightest
 -- first) so a display mode's own four colours drop straight in
-local deepest = Sky.PALETTE[#Sky.PALETTE]
+local deepest = dayPal[#dayPal]
 T.check(math.abs(skyGrad.bands[1][1] - deepest[1] / 255) < 1e-9,
   "the top band is the palette's deep rung, unmixed")
 
@@ -1174,8 +1182,10 @@ T.eq(skyGrad[4], 1, "and the tween strength still rides on the descriptor")
 -- frame, so there would be no gradient to see from down there anyway.
 local flat = VoxelScene.skyColor(outside, 1)
 T.eq(flat.bands, nil, "a battle's arena sky is the flat fill, not the gradient")
-T.check(luma(flat) < luma(palest),
-  "and it is the ramp's own sky rung, unchanged: not the gradient's pale end")
+T.check(math.abs(flat[1] - palest[1]) < 1e-9
+        and math.abs(flat[3] - palest[3]) < 1e-9,
+  "and it is the hour's haze, so a staged fight stands under the same sky "
+  .. "free-roam does -- navy at midnight, gold at dusk")
 
 -- the same call, the same numbers, and the same TABLE: the bands are memoised
 -- per display mode, so a frame that paints the sky allocates nothing to do it
@@ -1900,6 +1910,200 @@ while exitGame.stack:top() ~= exitOw do exitGame.stack:pop() end
 T.eq(Exit.veil(), nil, "and a fade popped from under itself veils nothing")
 
 Exit.modeOn = realModeOn
+end
+
+-- ------- the day/night cycle
+--
+-- One twenty-minute clock, and everything is a pure function of it: the
+-- pinned DAYTIME settings are fixed times on the dial, CYCLE lets it run,
+-- and the sun, the moon, the shadows, the sky and the tint all read the same
+-- number. What is checked here is the dial itself, the noon-exactness pledge
+-- (DAY is the mod's existing sun, to the digit), the arcs' visibility (the
+-- camera looks north, so the discs must actually cross the northern sky),
+-- and the clock's ride through the save file.
+do
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+local ShadowMap = run.loader.exports.DRAMATIC_SHAPE.lib.require("ShadowMap")
+local Voxel3D = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
+local Voxel = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelState")
+
+-- the dial and its pins
+T.eq(DayNight.setting:get(), "day", "no time set means DAY: the default pin")
+T.eq(DayNight.time(), 300, "and DAY is noon on the dial")
+local PINS = { day = 300, night = 900, dusk = 600, dawn = 0 }
+for name, t in pairs(PINS) do
+  DayNight.setting:sync(name)
+  T.eq(DayNight.time(), t, name .. " pins the clock to " .. t)
+end
+
+-- CYCLE picks up from the pin the player was just looking at
+DayNight.setting:sync("dusk")
+DayNight.update(0)
+DayNight.setting:sync("cycle")
+DayNight.update(0)
+T.eq(DayNight.clock, 600, "stepping onto CYCLE picks up from the pin: dusk")
+DayNight.update(30)
+T.check(math.abs(DayNight.time() - 630) < 1e-9, "and the clock then runs")
+DayNight.clock = 1195
+DayNight.update(10)
+T.check(math.abs(DayNight.clock - 5) < 1e-9,
+  "the dial wraps at twenty minutes, back into dawn")
+
+-- the sun: noon is the mod's existing sun, exactly
+local kx, kz, moon = DayNight.shearAt(300)
+T.check(not moon, "noon is the sun's")
+T.check(math.abs(kx - (-0.85)) < 1e-9 and math.abs(kz - (-0.55)) < 1e-9,
+  ("DAY throws the shadows the mod always threw: (%.4f, %.4f)"):format(kx, kz))
+local kx0, kz0 = DayNight.shearAt(0)
+T.check(math.abs(math.sqrt(kx0 * kx0 + kz0 * kz0) - DayNight.K_MAX) < 1e-9,
+  "a rising sun throws a LONG shadow, clamped -- never an infinite one")
+T.eq(DayNight.strengthAt(0), 0, "and at the horizon it presses nothing")
+T.eq(DayNight.strengthAt(300), 1, "at noon it presses in full")
+
+-- the moon: due north at mid-night, pressing softly south
+local mkx, mkz, mmoon = DayNight.shearAt(900)
+T.check(mmoon, "mid-night is the moon's")
+T.check(math.abs(mkx) < 1e-9, "due north: no east-west drift at all")
+T.check(math.abs(mkz - 1 / math.tan(math.rad(40))) < 1e-9,
+  "shadows fall south, away from it, cot(40) long")
+
+-- the palettes: pins land on their phase palette unmixed, blends stay on
+-- the 5-bit lattice
+local function palEq(a, b)
+  for i = 1, #a do
+    for ch = 1, 3 do if a[i][ch] ~= b[i][ch] then return false end end
+  end
+  return #a == #b
+end
+T.check(palEq(DayNight.palette(300), DayNight.PALETTES.day),
+  "noon paints the day palette, unmixed")
+T.check(palEq(DayNight.palette(600), DayNight.PALETTES.dusk),
+  "the dusk pin paints dusk proper -- the blend is centred on it, not over it")
+T.check(palEq(DayNight.palette(0), DayNight.PALETTES.dawn),
+  "and dawn's pin paints dawn")
+local mid = DayNight.palette(562)         -- halfway through day -> dusk
+for i, c in ipairs(mid) do
+  T.check(c[1] % 8 == 0 and c[2] % 8 == 0 and c[3] % 8 == 0,
+    "blended band " .. i .. " is re-quantised onto the GBC lattice")
+end
+T.check(mid[1][3] < DayNight.PALETTES.day[1][3]
+        and mid[1][3] > DayNight.PALETTES.dusk[1][3],
+  "and sits between the two phases it blends")
+-- day's blue horizon and dusk's gold one are near-complements, and a
+-- straight lerp between complements bottoms out in grey -- so the evening
+-- path bends through the golden-hour waypoint, and halfway down the blend
+-- the horizon band must already be WARM
+T.check(mid[1][1] > mid[1][3],
+  "mid-evening the horizon is gold, not the grey between blue and gold")
+-- and the far side of sunset bends through violet the same way: halfway
+-- from dusk to night the horizon is rose, not the taupe between gold and navy
+local ev = DayNight.palette(645)[1]
+T.check(ev[1] > ev[2] and ev[3] > ev[2],
+  "mid-fall of night the horizon is violet-rose, not grey")
+T.eq(DayNight.palette(300), DayNight.palette(300.4),
+  "the palette is memoised within the second, not rebuilt per frame")
+
+-- the tint: noon is neutral, night is dim and blue, indoors is always noon
+local tn = DayNight.tint(true, 900)
+T.check(tn[1] < 1 and tn[3] > tn[1], "night light is dim and leans blue")
+T.eq(DayNight.tint(true, 300)[1], 1, "noon multiplies by one")
+T.eq(DayNight.tint(false, 900)[1], 1,
+  "a cave at midnight is exactly as dark as a cave at noon: neutral indoors")
+
+-- the twilight glow: gold at the sun's horizons, never for the moon
+local amt, gc = DayNight.glow(600)
+T.check(math.abs(amt - 1) < 1e-9, "dusk glows in full")
+T.check(gc[1] > gc[3], "and warm: more red than blue")
+T.eq((DayNight.glow(300)), 0, "noon does not glow")
+T.eq((DayNight.glow(900)), 0, "and the moon rises silver, not gold")
+
+-- the discs cross the sky the camera can actually see
+Voxel.angle = math.rad(75)
+Voxel3D.camera = nil
+Voxel3D.vp = Voxel3D.viewProjection(0, 0, 320, 288)
+local horizon = Voxel3D.horizonY(288)
+
+DayNight.setting:sync("night")
+local mb = Voxel3D.skyBody(320, 288)
+T.check(mb and mb.moon, "at the NIGHT pin the moon is in frame")
+T.check(math.abs(mb.x - 160) < 8,
+  ("due north is screen centre: got x %.1f"):format(mb.x))
+T.check(mb.y > 0 and mb.y < horizon,
+  ("hanging above the horizon point: y %.1f vs %.1f"):format(mb.y, horizon))
+
+DayNight.setting:sync("day")
+T.eq(Voxel3D.skyBody(320, 288), nil,
+  "the noon sun is overhead behind the camera -- correctly not in frame")
+
+DayNight.setting:sync("dawn")
+local db = Voxel3D.skyBody(320, 288)
+T.check(db and not db.moon, "at the DAWN pin the rising sun is in frame")
+T.check(db.x > 160 and db.x < 320,
+  ("north of east is screen right: got x %.1f"):format(db.x))
+T.check(math.abs(db.y - horizon) < 2,
+  "standing on the horizon point, half-risen")
+T.check(db.glowAmt > 0.9, "and wrapped in the dawn glow")
+
+DayNight.setting:sync("dusk")
+local sb = Voxel3D.skyBody(320, 288)
+T.check(sb and sb.x < 160, "the DUSK sun sets screen LEFT -- north of west")
+
+-- the rig: outdoor follows the clock, indoor is pinned to noon
+DayNight.setting:sync("night")
+DayNight.applyRig(true)
+T.check(math.abs(ShadowMap.KX - mkx) < 1e-9
+        and math.abs(ShadowMap.KZ - mkz) < 1e-9,
+  "outdoors at night the sun pass is lit by the moon")
+T.check(math.abs(Voxel3D.SHADOW_ALPHA - DayNight.ALPHA_MOON) < 1e-9,
+  "at the moon's own softer weight")
+DayNight.applyRig(false)
+T.check(math.abs(ShadowMap.KX - (-0.85)) < 1e-9
+        and math.abs(ShadowMap.KZ - (-0.55)) < 1e-9,
+  "indoors the rig stays the mod's noon sun, whatever the clock says")
+T.check(math.abs(Voxel3D.SHADOW_ALPHA - DayNight.ALPHA_SUN) < 1e-9,
+  "at the weight it always had")
+T.eq(DayNight.shadowScale(false), 1, "an indoor arena keeps its full shadows")
+T.check(math.abs(DayNight.shadowScale(true, 900)
+                 - DayNight.ALPHA_MOON / DayNight.ALPHA_SUN) < 1e-9,
+  "an outdoor arena under the moon presses at the moon's ratio")
+T.check(DayNight.shadowScale(true, 600) < 1e-9,
+  "and a sunset takes the arena's shadows with it")
+
+-- the engine's own vocabulary, for map.palette and music.select
+T.eq(DayNight.tod(300), "DAY", "noon is DAY")
+T.eq(DayNight.tod(900), "NIGHT", "mid-night is NIGHT")
+T.eq(DayNight.tod(0), "MORNING", "dawn is MORNING")
+T.eq(DayNight.tod(600), "EVENING", "dusk is EVENING")
+
+-- the clock rides the save slot
+local modApi = run.loader.exports.DRAMATIC_SHAPE.lib.mod
+DayNight.setting:sync("cycle")
+DayNight.clock = 777
+DayNight.store()
+DayNight.clock = 5
+DayNight.restore()
+T.eq(DayNight.clock, 777, "the clock survives the round trip through mod.save")
+modApi.save:set(DayNight.SAVE_KEY, nil)
+DayNight.restore()
+T.eq(DayNight.clock, 300, "a save with no clock in it starts at day")
+
+-- arriving at FULL sets the clock going
+local Game = require("src.core.Game")
+local hadSave = Game.save
+Game.save = { options = {} }
+DayNight.setting:sync("day")
+defs.voxel.update(0, 2)               -- any rung that is not FULL
+defs.voxel.update(0, 1)               -- and the arrival
+T.eq(DayNight.setting:get(), "cycle",
+  "FULL switches DAYTIME to CYCLE -- the diorama gets its running sky")
+Game.save = hadSave
+
+-- put the room back the way it was found
+DayNight.setting:sync("day")
+DayNight.clock = 300
+DayNight.applyRig(false)
+Voxel3D.tint = { 1, 1, 1 }
+Voxel3D.vp = nil
 end
 
 Pipelines.reset()

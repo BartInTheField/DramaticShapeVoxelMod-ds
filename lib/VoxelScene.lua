@@ -21,6 +21,7 @@ local TileShape = V.require("TileShape")
 local TerrainAtlas = V.require("TerrainAtlas")
 local Voxel = V.require("VoxelState")
 local Sky = V.require("Sky")
+local DayNight = V.require("DayNight")
 local PaletteFX = require("src.render.PaletteFX")
 local Map = require("src.world.Map")
 
@@ -121,7 +122,14 @@ end
 function VoxelScene.skyColor(map, t)
   if not (map and map.def and Map.isOutdoor(map.def)) then return nil end
   if not t or t <= 0 then return nil end
-  return VoxelScene.skyShade(SKY_SHADE, t)
+  local sky = VoxelScene.skyShade(SKY_SHADE, t)
+  -- outdoors the flat fill follows the CLOCK: it becomes the hour's haze --
+  -- gold at dusk, navy at night -- so a battle staged on the map at
+  -- midnight is under a midnight void, not a noon one. Free-roam is
+  -- unchanged by this: Sky.dress overwrites the fill with the same value.
+  local haze = Sky.haze()
+  if haze then sky[1], sky[2], sky[3] = haze[1], haze[2], haze[3] end
+  return sky
 end
 
 -- The free-roam sky: the flat one above, dressed with the banded gradient
@@ -470,6 +478,12 @@ local function shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh)
   -- standing perfectly still
   put(vw); put(vh)
   put(math.floor((V.require("VoxelState").angle or 0) * 512))
+  -- the sun itself: the cycle swings the shear as the clock runs, and a map
+  -- lit from somewhere new must be redrawn from there too. Quantised by the
+  -- rig's own step (DayNight.rigTime), so a running cycle redraws the map a
+  -- few times a minute rather than every frame.
+  put(math.floor(ShadowMap.KX * 128))
+  put(math.floor(ShadowMap.KZ * 128))
   put(tostring(terrain))
   for i = 1, #nbMesh do put(tostring(nbMesh[i])) end
   for _, p in ipairs(posed) do
@@ -546,6 +560,14 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
 
   local cam = state.camera
   local cx, cy = cam.x + vw / 2, cam.y + vh / 2
+
+  -- the hour's light, before anything is cast or drawn: point the shared
+  -- rig at the clock (or at noon, indoors -- a cave at midnight is exactly
+  -- as dark as a cave at noon) and set the tint the scene shader multiplies
+  -- every surface by
+  local outdoor = state.map.def and Map.isOutdoor(state.map.def) or false
+  DayNight.applyRig(outdoor)
+  Voxel3D.tint = DayNight.tint(outdoor)
 
   local function atlasFor(map)
     return TerrainAtlas.forMap(map, modeColors(paletteFor, map))

@@ -79,6 +79,7 @@ local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
 local OverworldBattle = V.require("OverworldBattle")
 local BattleExit = V.require("BattleExit")
+local DayNight = V.require("DayNight")
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
 -- calls this, and it is defined further down with the settings it drives.
@@ -158,6 +159,11 @@ mod.content.render_pipelines:register("voxel", {
     -- would fight anyone who changed one deliberately.
     applyFull(level)
     Voxel.update(dt, level)
+    -- the day/night clock, on the same always-running tick: Pipelines.update
+    -- runs whatever the level, so time passes with the mode off, through
+    -- battles and menus, and a CYCLE evening falls mid-fight exactly as it
+    -- would mid-walk
+    DayNight.update(dt)
     -- The overworld battle rides this hook rather than owning a pipeline of
     -- its own, because it owns no pass of the FRAME: it draws under a battle
     -- screen the engine composites, which is not a stage the registry has.
@@ -287,6 +293,10 @@ applyFull = function(level)
   -- is solved against (OverworldBattle.forceOG); FULL has just switched staged
   -- fights on, so the layout follows them.
   OverworldBattle.forceOG(Game)
+  -- FULL is the whole diorama, and a diorama with a running sky is more of
+  -- one: the clock is set going (CYCLE is the ladder's last rung). Set, not
+  -- held, like everything else here -- the player can pin it back afterwards.
+  DayNight.setting:setIndex(#DayNight.setting.values, Game)
   if Game.writeOptions then pcall(Game.writeOptions, Game) end
 end
 
@@ -309,6 +319,10 @@ local SETTINGS = {
   { OverworldBattle.setting,
     "Fight on the map: the battle draws over the nearest clear ground, "
     .. "shot over the shoulder with a slow parallax drift." },
+  { DayNight.setting,
+    "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
+    .. "or let CYCLE run it -- ten minutes of sun, ten of moon, with the "
+    .. "shadows, the sky and the light following." },
 }
 
 local schema = {}
@@ -689,6 +703,37 @@ mod.content.transitions:register(BattleExit.ID, {
 })
 
 BattleExit.install()
+
+-- ------- what time it is
+--
+-- The cycle's clock rides the SAVE SLOT (save.modData, via mod.save): what
+-- time it is in Kanto is a fact about that journey, like where the player is
+-- standing. Written on the engine's save.writing event -- the moment before
+-- the bytes hit disk -- and read back whenever a save is opened or begun. A
+-- save with no clock in it starts at day; that is DayNight.restore's
+-- fallback, and also the DAYTIME row's own default.
+mod.events:on("save.writing", function()
+  DayNight.store()
+end)
+
+mod.events:on("save.loaded", function()
+  DayNight.restore()
+end)
+
+mod.events:on("save.created", function()
+  DayNight.restore()
+end)
+
+-- The engine's own time-of-day seam. OverworldState:timeOfDay() is an
+-- eternal "DAY" until a mod answers here; answering it hands the period to
+-- the map.palette hook (ctx.tod) and music.select, so a palette or music
+-- pack keyed to night works with this mod's clock for free. next() first: a
+-- mod loaded before this one that already moved the time keeps its answer.
+mod.hooks:wrap("world.tod", function(next, tod, ctx)
+  local out = next(tod, ctx)
+  if out ~= tod then return out end
+  return DayNight.tod()
+end)
 
 mod.exports.version = "1.1.1"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
