@@ -362,30 +362,39 @@ local function fit(cx, cy, vw, vh)
   ShadowMap.bias = ShadowMap.slack / math.max(1, far - near)
 end
 
--- A CASTER sunk slightly down the sun ray before it is drawn into the map.
+-- How much of the compare's forgiveness a snugged caster takes back, 0..1.
+-- Short of 1 on purpose: at exactly 1 the card's own fragments compare
+-- against their own stored depth on a float-equality knife edge and can
+-- speckle. The tenth left over is dozens of times the packed depth's
+-- quantization -- ample for that -- and leaves the contact gap around a
+-- quarter of a world pixel at any sun, which no zoom resolves.
+ShadowMap.SNUG = 0.9
+
+-- A CASTER snugged up the sun ray -- moved TOWARD the light -- before it is
+-- drawn into the map.
 --
 -- The depth compare forgives `slack` world pixels (BIAS + the SLOPE term)
 -- so lit surfaces do not acne against their own texels -- but that same
 -- forgiveness is what lets the ground right next to a standing figure read
--- as lit: the first `slack` of its shadow falls inside the compare's
--- tolerance, so on screen the shadow starts that far from the feet, and the
--- gap grows as the sun drops (the same bias reaches further horizontally
--- the more oblique the ray). Peter-panning, in the literature; it went
--- unseen while the sun hung at a fixed 45 degrees and shows plainly at a
--- day/night golden hour.
+-- as lit: a receiver within `slack` of its blocker along the ray passes the
+-- test, so the first stretch of every shadow is forgiven away and on screen
+-- it starts that far from the feet, further the lower the sun. The classic
+-- peter-panning; unseen while the sun hung at a fixed 45 degrees, plain at
+-- a day/night golden hour or under the moon.
 --
--- Storing the card that much DEEPER along the ray cancels the bias for the
--- shadow it throws -- the root lands back under the feet -- while touching
--- nothing else: the card's own lookup now reads a deeper stored value and
--- is more confidently lit, no terrain moved, and the acne margin the slack
--- exists for is intact. For sprite cards and other thin stand-ins only;
--- sinking the TERRAIN would cancel the bias everywhere, which is the acne.
+-- Moving the card ALONG ITS OWN RAY changes nothing about where its shadow
+-- falls -- every point stays on the same light ray -- but moving it toward
+-- the sun stores it SHALLOWER, so a ground point right at the foot is
+-- already `slack` deeper than the stored blocker and fails the lit test:
+-- the root lands back under the feet. Nothing else is touched -- no
+-- terrain moved, so the acne margin the slack exists for is intact where
+-- it matters. For sprite cards and other thin stand-ins only.
 --
 -- Valid between begin() and finish(), which is when `slack` matches the
 -- frustum the map is being drawn with.
-function ShadowMap.sink(model)
+function ShadowMap.snug(model)
   local f = sunDir()
-  local s = ShadowMap.slack
+  local s = -ShadowMap.slack * ShadowMap.SNUG
   return Mat4.mul(Mat4.translate(f[1] * s, f[2] * s, f[3] * s),
                   model or IDENTITY)
 end

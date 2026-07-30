@@ -100,6 +100,19 @@ through a soft shadowless gap; moonlight presses at about two-thirds the
 sun's weight. The scene shader multiplies every surface by the hour's tint —
 neutral at noon, warm at the twilights, dim blue under the moon.
 
+The **windows are glass**. The panes in the overworld art — the framed
+squares on building fronts and the small lights in doors — are found by
+*shape* in the tileset image itself (a black border row, black-flanked glass
+rows, a closing border; no tile ids anywhere), and marked on a mask texture
+the scene shader samples alongside the atlas. By day a thin glint crosses
+them **while you move** — the sweep is fed by the camera's own travel and
+dies within a beat of standing still, because a reflection is something the
+viewpoint does — with the art still visible through it. After dark they are
+**lit from inside**:
+the pane's own shine pattern carried into a warm lamp colour, exempt from
+the sun, the shadow map and the hour's tint. The lamps come on through dusk,
+burn all night, and are mostly out again by dawn.
+
 **Outdoors only.** Indoors keeps the noon rig, the neutral tint and no sky:
 a cave at midnight is exactly as dark as a cave at noon. A battle staged on
 an outdoor map fights under the hour — night void behind the arena, tinted

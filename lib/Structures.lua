@@ -55,6 +55,14 @@ local Structures = {}
 -- must match ChunkMesher's ring (3 border blocks, in tiles)
 local RING = 12
 
+-- how far past the map body cells still get the hull. A route's ring is
+-- nearly as big as its body; modelling all of it costs hundreds of
+-- thousands of quads of border trees nobody walks near. Beyond this,
+-- pinned cells simply are not claimed and fall through to the mesher's
+-- plain box -- cheap distant scenery. (Declared up here rather than
+-- beside buildCylinders because forMap's grid resolve reads it too.)
+local ROUND_RING = 4
+
 -- object-mode gates
 local OBJECT_MAX_ROWS = 6          -- a prop is at most 48px of drawing
 local OBJECT_MAX_QUADS = 4096      -- safety cap per cluster
@@ -154,12 +162,34 @@ function Structures.forMap(map)
   local TileRenderer = require("src.render.TileRenderer")
   local borderId = TileRenderer.borderBlockFor(map)
   local borderBlk = borderId and tileset.blocks[borderId + 1] or nil
+  -- TREES fill stops at ROUND_RING instead of running the full RING.
+  -- Only that far out does a tree cell get carved into a hull; past it
+  -- the cells fall through to the mesher's plain box, and a slab of
+  -- flat-topped boxes beside the modelled wall reads as a painted-on
+  -- plateau -- the wall looking like it was cut off with scissors. So
+  -- the far ring is simply not built: beyond ROUND_RING tileLookup
+  -- answers nil, which is the same "nothing out there" BLACK already
+  -- produces and every pass below already copes with. The cut lands on
+  -- the carve boundary exactly -- the 2x2-cell canopy scan starts at
+  -- floor(-RING/2) and RING, ROUND_RING and the body are all multiples
+  -- of 4 tiles, so no group is left half-resolved at the edge.
+  --
+  -- WATER and the other tilesets' own borders keep the full ring: a flat
+  -- sheet of water is what water looks like from above anyway, and an
+  -- interior's border is black already.
+  local hullRingOnly = borderBlk and def.tileset == "OVERWORLD"
+                       and (TileRenderer.voidFill or "trees") == "trees"
   local tw2, th2 = tw, th
   local function tileLookup(tx, ty)
     if tx >= 0 and ty >= 0 and tx < tw2 and ty < th2 then
       return map:tileAt(tx, ty)
     end
     if not borderBlk then return nil end
+    if hullRingOnly and (tx < -ROUND_RING or ty < -ROUND_RING
+                         or tx >= tw2 + ROUND_RING
+                         or ty >= th2 + ROUND_RING) then
+      return nil
+    end
     return borderBlk[(ty % 4) * 4 + (tx % 4) + 1] or 0
   end
   local shapeAt, tileAt = {}, {}
@@ -192,6 +222,7 @@ function Structures.forMap(map)
   -- still overdraws a walker's feet even though characters stamp over
   -- terrain.)
   S = { shapeAt = shapeAt, tileAt = tileAt, outdoor = Map.isOutdoor(def),
+        hideBareRing = hullRingOnly or nil,
         runs = {}, skip = {}, ground = {}, doorFold = {}, objectQuads = {},
         grassQuads = {}, flowerQuads = {}, roundStamps = {}, figures = {} }
   Buildings.build(S, map, pixels(tileset), perRow)
@@ -887,13 +918,6 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows)
   end
   return quads, bg
 end
-
--- how far past the map body cells still get the hull. A route's ring is
--- nearly as big as its body; modelling all of it costs hundreds of
--- thousands of quads of border trees nobody walks near. Beyond this,
--- pinned cells simply are not claimed and fall through to the mesher's
--- plain box -- cheap distant scenery.
-local ROUND_RING = 4
 
 -- Hull templates dedupe GLOBALLY per (tileset, four tiles, ground set):
 -- the same four-tile tree repeats for hundreds of cells on a map and

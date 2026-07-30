@@ -427,6 +427,18 @@ local function runGeometry(map, bodyOnly, masks, sink)
         s = nil
       end
 
+      -- Under the TREES fill the border wall is MODELLED or it is not there
+      -- (see Structures' hullRingOnly): a ring cell nothing claimed would
+      -- be a flat-topped box standing beside carved trunks, which reads as
+      -- a painted-on plateau rather than forest. Structures already stops
+      -- the ring at the carve distance; this catches the odd cell inside it
+      -- that the 2x2 grouping could not take -- a canopy whose partners
+      -- fall outside the shortened ring is left unclaimed, and one strip of
+      -- boxes along an edge is the whole artefact this avoids.
+      if not inBody and S.hideBareRing and not S.skip[k] then
+        s = nil
+      end
+
       if s and S.skip[k] then
         -- an object stands here; paint its synthesized ground and let the
         -- prebuilt prism quads (appended below) carry the art

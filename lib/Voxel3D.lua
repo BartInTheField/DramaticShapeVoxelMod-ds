@@ -32,6 +32,7 @@ local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
 local Sky = V.require("Sky")
 local DayNight = V.require("DayNight")
+local GlassMask = V.require("GlassMask")
 
 local Voxel3D = {}
 
@@ -203,6 +204,11 @@ local SHADER = [[
   uniform vec3 ghostColor;    // the flat silhouette colour
   uniform float ghost;        // 0 = shade normally, 1 = flatten to it
   uniform vec3 dayTint;       // the hour's light on the world; 1,1,1 = noon
+  uniform Image glassMask;    // opaque where the atlas texel is window glass
+  uniform float glassNight;   // 0 = daylight .. 1 = the lamps are on
+  uniform float glassPhase;   // the glint's phase: advances with TRAVEL
+  uniform float glassGlint;   // and its strength: 0 while standing still
+  uniform float glassOn;      // 0 for sprite-sheet draws (see Voxel3D.glass)
 
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     vec4 p = Texel(tex, tc);
@@ -218,6 +224,30 @@ local SHADER = [[
     // dark grass and one across a white roof each stay in their own palette
     rgb *= 1.0 - gridDark * voxelSeam(vGrid);
 #endif
+    // WINDOW GLASS, marked per atlas texel by the mask (see GlassMask).
+    // By day a thin diagonal glint crosses the panes WHILE THE VIEW MOVES
+    // -- the phase is fed by the camera's own travel and the strength dies
+    // within a beat of standing still, because a reflection is something
+    // the viewpoint does: still camera, still glass. It lifts the texel
+    // toward sky-white and leaves the art visible through it. After dark
+    // the pane is LIT: the texel's own shine pattern carried into a warm
+    // lamp colour, replacing the shaded answer above -- so a lit window
+    // ignores the sun, every shadow and the hour's tint, exactly as a
+    // window with a lamp behind it does.
+    // glassOn gates the whole thing per DRAW: the mask is shaped like the
+    // tileset atlas, and only meshes textured FROM that atlas may consult
+    // it -- a character samples its own sprite sheet, whose coordinates
+    // land on the mask's pane rectangles by accident and would stripe the
+    // cast with lamplight at night.
+    float glass = Texel(glassMask, tc).a * glassOn;
+    if (glass > 0.0) {
+      float sweep = sin((sc.x + sc.y) * 0.04 - glassPhase);
+      float glint = pow(max(sweep, 0.0), 20.0) * 0.55 * glassGlint;
+      vec3 pane = mix(rgb, vec3(0.93, 0.97, 1.0), glint * glass);
+      float shine = dot(p.rgb, vec3(0.299, 0.587, 0.114));
+      vec3 lamp = vec3(1.0, 0.84, 0.5) * (0.5 + 0.55 * shine);
+      rgb = mix(pane, lamp, glassNight * glass);
+    }
     // The hidden player is a SHAPE, not a dimmed picture of itself. Tinting
     // through `color` could only multiply the sprite's own pixels, which
     // darkens each one by its own amount and keeps the character's internal
@@ -440,6 +470,19 @@ end
 -- answers it, so a caller that never does draws exactly what it always drew.
 Voxel3D.tint = { 1, 1, 1 }
 
+-- The window-glass pass, set the same way and for the same reason: the
+-- MASK belongs to the map's tileset (GlassMask.texture) and how lit the
+-- panes are belongs to the hour and to being outdoors at all
+-- (DayNight.windowLight). nil / 0 -- the defaults -- draw no glass effect.
+Voxel3D.glassMask = nil
+Voxel3D.glassNight = 0
+
+-- the glint, fed by the camera's TRAVEL rather than by a clock (see
+-- VoxelScene.glintStep): the phase is radians already wrapped to 2pi, and
+-- the strength is 0 whenever the view has been still for a beat
+Voxel3D.glassPhase = 0
+Voxel3D.glassGlint = 0
+
 -- The sun or moon disc's place on this camera's canvas, or nil when the
 -- body is set, on the southern half of the sky, or behind the camera.
 --
@@ -560,6 +603,16 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
   pcall(sh.send, sh, "ghostColor", Voxel3D.GHOST_COLOR)
   -- the hour's light, as the caller last set it (see Voxel3D.tint)
   pcall(sh.send, sh, "dayTint", Voxel3D.tint or { 1, 1, 1 })
+  -- the window glass: the tileset's mask (or the blank -- the sampler is
+  -- declared either way, and unbound is a driver-dependent crash), how lit
+  -- the panes are, and the movement-fed glint as the caller last set it
+  local mask = Voxel3D.glassMask or GlassMask.blank()
+  if mask then pcall(sh.send, sh, "glassMask", mask) end
+  pcall(sh.send, sh, "glassNight", Voxel3D.glassNight or 0)
+  pcall(sh.send, sh, "glassPhase", Voxel3D.glassPhase or 0)
+  pcall(sh.send, sh, "glassGlint", Voxel3D.glassGlint or 0)
+  -- on until a sprite pass says otherwise, reset per frame like `ghost`
+  pcall(sh.send, sh, "glassOn", 1)
   -- the curved world bends about the camera's focus, so the horizon keeps
   -- a fixed distance ahead of the player rather than sitting on the map.
   -- A placed camera may decline it outright (Voxel3D.camera.curve = 0).
@@ -679,6 +732,19 @@ function Voxel3D.seams(on)
   if not (active and activeShader) then return end
   pcall(activeShader.send, activeShader, "gridDark",
         on and VoxelGrid.DARK or 0)
+end
+
+-- Whether what is drawn next may consult the glass mask. false for the
+-- length of a sprite-sheet pass, true to put it back.
+--
+-- Same shape as seams(), for the same reason: the mask means "this ATLAS
+-- texel is window glass", so it is only an answer for meshes textured from
+-- the tileset atlas. A sprite sheet's coordinates land wherever they land
+-- on it, and at night that painted lamplight stripes down whoever was
+-- standing in the wrong part of their own sheet.
+function Voxel3D.glass(on)
+  if not (active and activeShader) then return end
+  pcall(activeShader.send, activeShader, "glassOn", on and 1 or 0)
 end
 
 function Voxel3D.endGhost()
@@ -866,6 +932,8 @@ function Voxel3D.invalidate()
   ShadowMap.invalidate()
   -- the sky is part of this pass and holds a shader of its own
   Sky.invalidate()
+  -- and the glass masks are textures of this context too
+  GlassMask.invalidate()
 end
 
 return Voxel3D

@@ -114,6 +114,31 @@
   (`save.modData.DRAMATIC_SHAPE`), and read back when a save is opened. A
   save with no clock in it starts at day.
 
+- **Window glass.** The panes in the overworld art -- the framed squares on
+  building fronts, the small lights in doors -- are found by SHAPE in the
+  tileset image (a black border row, four or five black-flanked glass rows,
+  a closing border), at pixel granularity because the door's pane straddles
+  a 2x2 tile block. No tile ids are hardcoded: a conversion that draws its
+  own windows in the same idiom gets glass for free. The scan yields a mask
+  texture aligned to the tileset atlas, which the scene shader samples with
+  the same coordinates the terrain does -- so the effect lands on any wall,
+  at any angle, in free-roam and staged battles alike, with no geometry
+  work.
+
+  By day a thin diagonal glint crosses the panes WHILE THE VIEW MOVES: the
+  sweep's phase is fed by the camera's own travel and its strength fades out
+  within a beat of standing still -- a reflection is something the viewpoint
+  does, so still camera means still glass. It lifts the texels toward
+  sky-white and leaves the diagonal shine art visible through it. The mask
+  is consulted only by meshes textured from the tileset atlas
+  (Voxel3D.glass), never by sprite sheets, whose coordinates would land on
+  the panes' atlas positions by accident.
+  After dark the panes are LIT: the texel's own pattern carried into a warm
+  lamp colour, replacing the shaded answer entirely -- a lit window ignores
+  the sun, every shadow and the hour's tint, exactly as a window with a lamp
+  behind it does. The lamps follow the clock (DayNight.windowLight): on
+  through dusk, full all night, mostly out by dawn, and never lit indoors.
+
 - **A fade out of a battle, where there used to be a hard cut.** The engine
   wipes INTO a fight with one of the original's eight transitions and cuts
   straight out of it: `BattleState:finish` pops itself and the map is simply
@@ -166,14 +191,31 @@
   against its own texels, and that same forgiveness lit the first `slack` of
   every cast shadow -- so the shadow started a bias-width away from the feet,
   further the lower the sun reached (the classic peter-panning, invisible at
-  the old fixed 45 degrees and plain at a day/night golden hour). Sprite
-  cards -- characters, authored figures, flowers, battle mons -- are now
-  drawn into the shadow map sunk exactly `slack` down the sun ray
-  (`ShadowMap.sink`), which cancels the bias for the shadow they throw and
-  nothing else: no terrain moved, so the acne margin is untouched, and the
-  shadow root lands back under the feet at every hour.
+  the old fixed 45 degrees and plain at a day/night golden hour or under the
+  moon). Sprite cards -- characters, authored figures, flowers, battle mons
+  -- are now drawn into the shadow map snugged TOWARD the sun along their
+  own ray (`ShadowMap.snug`): moving along the ray changes nothing about
+  where a shadow falls, but storing the card shallower takes three quarters
+  of the forgiveness back for the shadow it throws -- and for nothing else:
+  no terrain moved, so the acne margin is untouched where it matters, and
+  the quarter left keeps the card off the float-equality knife edge against
+  its own stored depth. The shadow root lands back under the feet at every
+  hour.
 
 ### Changed
+
+- **Under `VOID FILL: TREES` the border wall is modelled trees or nothing.**
+  Only the first block past the map body gets carved into round trunks and
+  canopies; the two blocks past that were too far out to be worth the quads,
+  so they fell through to the mesher's plain box and came out as a flat-topped
+  slab of tree ART sitting beside the modelled forest -- a painted-on plateau,
+  and the more obvious the lower the camera got. Rather than pay to carve
+  hulls nobody walks near, the wall now simply STOPS where the carving does:
+  `Structures` does not build the ring past that distance (the same "nothing
+  out there" `BLACK` already produces), and the mesher drops any cell inside
+  it the 2x2 canopy grouping could not claim, so no strip of boxes survives at
+  a corner. `WATER` and every indoor border are untouched -- a flat sheet of
+  water is what water looks like from above anyway.
 
 - **The two HP boxes snap to the window's edges during a staged battle.** The
   battle screen is 160x144 in the middle of the window and the world is the

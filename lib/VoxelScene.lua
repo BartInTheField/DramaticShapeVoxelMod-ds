@@ -1,4 +1,4 @@
--- Voxel world mode: assemble and draw one frame of the 3D scene.
+﻿-- Voxel world mode: assemble and draw one frame of the 3D scene.
 --
 -- World space is world pixels and shares its origin with the 2D paths, so
 -- the terrain mesh needs no transform at all and a connected map just
@@ -457,6 +457,34 @@ local function posesOf(state, spriteColors)
   return posed, me
 end
 
+-- ------- the glint's drive
+--
+-- A reflection is something the VIEWPOINT does, so the window glint is fed
+-- by the camera's own travel rather than by a clock: its phase advances
+-- with distance covered and its strength fades in over a few steps of
+-- walking and back out within a beat of standing still. Stand still and
+-- the glass is still; move and the light crosses it.
+VoxelScene.GLINT_RATE = 0.22     -- radians of sweep per world pixel travelled
+VoxelScene.GLINT_IN = 0.12      -- strength gained per moving frame
+VoxelScene.GLINT_OUT = 0.08     -- and lost per resting frame
+
+function VoxelScene.glintStep(g, cx, cy)
+  local dist = 0
+  if g.x then
+    dist = math.abs(cx - g.x) + math.abs(cy - g.y)
+  end
+  g.x, g.y = cx, cy
+  g.phase = ((g.phase or 0) + dist * VoxelScene.GLINT_RATE) % (2 * math.pi)
+  if dist > 0.05 then
+    g.amp = math.min(1, (g.amp or 0) + VoxelScene.GLINT_IN)
+  else
+    g.amp = math.max(0, (g.amp or 0) - VoxelScene.GLINT_OUT)
+  end
+  return g
+end
+
+local glint = {}
+
 -- A stamp of everything the sun pass depends on. Nothing in it moving
 -- means the shadow map it produced last frame is still exactly right, and
 -- redrawing the whole world from the sun would buy nothing -- which is
@@ -521,23 +549,23 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
   -- flower billboards live outside the terrain mesh (they draw after the
   -- characters, pulled -- see render), but the sun still sees them: a
   -- handful of cutouts per meadow, unlike the grass left out below.
-  -- Every thin card from here down is SUNK slightly along the ray
-  -- (ShadowMap.sink) so its shadow keeps contact with its feet instead of
-  -- starting a bias-width away.
+  -- Every thin card from here down is SNUGGED toward the sun along its own
+  -- ray (ShadowMap.snug) so its shadow keeps contact with its feet instead
+  -- of starting a bias-width away.
   ShadowMap.draw(ChunkMesher.flowers(state.map), atlasFor(state.map),
-                 ShadowMap.sink(nil))
+                 ShadowMap.snug(nil))
   for _, nb in ipairs(state.neighbors or {}) do
     ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
-                   ShadowMap.sink(Mat4.translate(nb.ox, 0, nb.oy)))
+                   ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
   end
   -- authored figures cast too, for the same reason the flowers do: a
   -- handful of cards per map, and a person with no shadow reads as pasted on
   eachFigure(state.map, 0, 0, function(mesh, _, caster)
-    ShadowMap.draw(mesh, atlasFor(state.map), ShadowMap.sink(caster))
+    ShadowMap.draw(mesh, atlasFor(state.map), ShadowMap.snug(caster))
   end)
   for _, nb in ipairs(state.neighbors or {}) do
     eachFigure(nb.map, nb.ox, nb.oy, function(mesh, _, caster)
-      ShadowMap.draw(mesh, atlasFor(nb.map), ShadowMap.sink(caster))
+      ShadowMap.draw(mesh, atlasFor(nb.map), ShadowMap.snug(caster))
     end)
   end
   for _, p in ipairs(posed) do
@@ -546,7 +574,7 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
     local mesh = SpriteBillboards.shadowQuad(def, frame)
     if mesh then
       ShadowMap.draw(mesh, p.sprite:resolveImage(),
-                     ShadowMap.sink(
+                     ShadowMap.snug(
                        Voxel3D.casterMatrix(p.px, p.py, p.gh + (p.lift or 0),
                                             mirror)))
     end
@@ -573,6 +601,15 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   local outdoor = state.map.def and Map.isOutdoor(state.map.def) or false
   DayNight.applyRig(outdoor)
   Voxel3D.tint = DayNight.tint(outdoor)
+  -- and the window glass: the tileset's own panes (found in its art --
+  -- GlassMask), lit after dark. Outdoors only, like everything the clock
+  -- touches, which also keeps any pane-shaped art in an interior tileset
+  -- from picking up a glint.
+  local GlassMask = V.require("GlassMask")
+  Voxel3D.glassMask = outdoor and GlassMask.texture(state.map.tileset) or nil
+  Voxel3D.glassNight = outdoor and DayNight.windowLight() or 0
+  local g = VoxelScene.glintStep(glint, cx, cy)
+  Voxel3D.glassPhase, Voxel3D.glassGlint = g.phase, g.amp
 
   local function atlasFor(map)
     return TerrainAtlas.forMap(map, modeColors(paletteFor, map))
@@ -614,6 +651,11 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
     Voxel3D.endShadows()
   end
 
+  -- Sprite sheets from here to the figure pass: their texture coordinates
+  -- mean nothing to the tileset-shaped glass mask, so the glass is off or
+  -- the panes' atlas positions stripe the cast with lamplight at night
+  Voxel3D.glass(false)
+
   -- The player's silhouette goes down BEFORE the characters, so the only
   -- thing it can meet in the depth buffer is the WORLD -- terrain, buildings,
   -- trees. Drawn after the solid pass it would meet the player's own card
@@ -645,6 +687,9 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
     drawEntity(p.sprite, p.px, p.py, p.facing, p.phase, p.flip, p.gh,
                p.colors, p.lift)
   end
+  -- back on for everything textured from the atlas again -- figures, grass
+  -- and flowers all sample it, where the mask's coordinates are honest
+  Voxel3D.glass(true)
   -- Authored figures, alongside the characters and with the same lean and
   -- the same camera-ward pull -- they ARE characters as far as the artwork
   -- is concerned, just ones the tileset draws instead of a sprite sheet.

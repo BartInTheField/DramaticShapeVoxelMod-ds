@@ -393,6 +393,32 @@ function DayNight.body(t)
   }
 end
 
+-- Maps under a CANOPY: not outdoor -- there is no sky to paint and no sun
+-- or moon to see, so the shadow rig stays the mod's fixed noon light,
+-- which is all that ever filtered through the leaves -- but not a sealed
+-- room either: night still FALLS in them. Of everything the clock does,
+-- exactly one thing reaches a canopy map: the hour's tint.
+DayNight.CANOPY = { VIRIDIAN_FOREST = true }
+
+function DayNight.isCanopy(map)
+  return (map and map.id and DayNight.CANOPY[map.id]) and true or false
+end
+
+-- How lit the WINDOWS are, 0..1 -- the lamps behind the glass, not the sky.
+-- They come on through dusk (a lit window against a sunset is half the point
+-- of having either), burn all night, and are mostly out again by dawn:
+-- people wake before it is bright, they do not read at sunrise.
+local LAMPS = { night = 1, violet = 1, dusk = 0.7, dawn = 0.25 }
+
+function DayNight.windowLight(t)
+  local mix = DayNight.mix(t or DayNight.time())
+  local lit = 0
+  for name, w in pairs(mix) do
+    lit = lit + (LAMPS[name] or 0) * w
+  end
+  return lit
+end
+
 -- The period name for the engine's world.tod hook (map.palette ctx.tod,
 -- music.select): the dominant phase, in the vocabulary day/night mods use.
 local TOD = { day = "DAY", golden = "DAY", night = "NIGHT",

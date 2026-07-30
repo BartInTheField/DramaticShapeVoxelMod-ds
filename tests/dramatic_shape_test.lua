@@ -2111,21 +2111,99 @@ end
 -- The depth compare forgives `slack` world pixels so lit ground does not
 -- acne, and that forgiveness detaches a standing card's shadow from its
 -- feet by the same amount -- worse the lower the sun. Cards are drawn into
--- the map sunk exactly `slack` down the ray, which cancels the bias for the
--- shadow they throw and nothing else.
+-- the map snugged TOWARD the sun along their own ray -- which moves their
+-- stored depth and nothing about where their shadow falls -- taking most of
+-- the forgiveness back for the shadow they throw and for nothing else.
 do
 local ShadowMap = run.loader.exports.DRAMATIC_SHAPE.lib.require("ShadowMap")
 local Mat4 = run.loader.exports.DRAMATIC_SHAPE.lib.require("Mat4")
 local dir = ShadowMap.sunDir()
-local m = ShadowMap.sink(nil)
-T.check(math.abs(m[4] - dir[1] * ShadowMap.slack) < 1e-9
-        and math.abs(m[8] - dir[2] * ShadowMap.slack) < 1e-9
-        and math.abs(m[12] - dir[3] * ShadowMap.slack) < 1e-9,
-  "sink() moves a caster exactly `slack` down the sun ray")
-local sunk = ShadowMap.sink(Mat4.translate(10, 0, 6))
-T.check(math.abs(sunk[4] - (10 + dir[1] * ShadowMap.slack)) < 1e-9
-        and math.abs(sunk[12] - (6 + dir[3] * ShadowMap.slack)) < 1e-9,
+local s = -ShadowMap.slack * ShadowMap.SNUG
+local m = ShadowMap.snug(nil)
+T.check(math.abs(m[4] - dir[1] * s) < 1e-9
+        and math.abs(m[8] - dir[2] * s) < 1e-9
+        and math.abs(m[12] - dir[3] * s) < 1e-9,
+  "snug() moves a caster toward the sun -- AGAINST the light's travel")
+T.check(m[8] > 0, "which is upward: the sun is above the world it lights")
+T.check(ShadowMap.SNUG < 1,
+  "and takes back less than the whole forgiveness, so a card cannot land "
+  .. "on the float-equality knife edge against its own stored depth")
+local snugged = ShadowMap.snug(Mat4.translate(10, 0, 6))
+T.check(math.abs(snugged[4] - (10 + dir[1] * s)) < 1e-9
+        and math.abs(snugged[12] - (6 + dir[3] * s)) < 1e-9,
   "and composes over the caster's own transform, not instead of it")
+end
+
+-- ------- the glass in the windows
+--
+-- Panes are found by SHAPE in the tileset art -- a black border row, four
+-- or five black-flanked glass rows, a closing border -- at pixel
+-- granularity, because the door's pane straddles a 2x2 tile block and the
+-- building's sits a row down inside its tile. The scan takes a pure reader,
+-- so the geometry is checked here without an image in sight.
+do
+local GlassMask = run.loader.exports.DRAMATIC_SHAPE.lib.require("GlassMask")
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+local Voxel3D = run.loader.exports.DRAMATIC_SHAPE.lib.require("Voxel3D")
+
+local W, H = 32, 16
+local blackAt = {}
+local function paint(x, y) blackAt[y * W + x] = true end
+local function pane(x0, y0, rows, hole)
+  for c = 1, 6 do paint(x0 + c, y0); paint(x0 + c, y0 + rows + 1) end
+  for r = 1, rows do
+    paint(x0, y0 + r); paint(x0 + 7, y0 + r)
+    if hole and r == 2 then paint(x0 + 3, y0 + r) end
+  end
+end
+pane(8, 1, 5)              -- a building pane, one row down inside its tile
+pane(20, 3, 4)             -- a door pane, straddling a tile row boundary
+pane(0, 8, 5, true)        -- a near-miss: one black texel inside the glass
+
+local function getPixel(x, y)
+  if blackAt[y * W + x] then return 0, 0, 0 end
+  return 0.66, 0.66, 0.66
+end
+
+local rects = GlassMask.scan(getPixel, W, H)
+T.eq(#rects, 2, "the scan finds the two real panes and rejects the near-miss")
+T.check(rects[1].x == 9 and rects[1].y == 2
+        and rects[1].w == 6 and rects[1].h == 5,
+  "the building pane's glass is the 6x5 interior, border excluded")
+T.check(rects[2].x == 21 and rects[2].y == 4
+        and rects[2].w == 6 and rects[2].h == 4,
+  "the door pane's glass is the 6x4 interior, wherever it sits in the grid")
+
+-- black is the BORDER black, not the art's dark grey rung
+T.check(GlassMask._isBlack(0, 0, 0), "true black is border")
+T.check(not GlassMask._isBlack(85 / 255, 85 / 255, 85 / 255),
+  "the dark grey shade is not")
+
+-- the lamps behind the glass follow the clock, not the sky's own light
+T.eq(DayNight.windowLight(300), 0, "no lamps at noon")
+T.eq(DayNight.windowLight(900), 1, "all of them at mid-night")
+T.check(math.abs(DayNight.windowLight(600) - 0.7) < 1e-9,
+  "they come on through dusk -- lit windows against the sunset")
+T.check(DayNight.windowLight(645) > 0.9,
+  "and are fully on by the fall of night")
+T.check(math.abs(DayNight.windowLight(0) - 0.25) < 1e-9,
+  "mostly out again by dawn")
+
+-- the pass defaults to no glass at all until a scene says otherwise
+T.eq(Voxel3D.glassMask, nil, "no mask bound by default")
+T.eq(Voxel3D.glassNight, 0, "and the lamps off")
+
+-- the glint is fed by TRAVEL, not by a clock: still camera, still glass
+local g = {}
+VoxelScene.glintStep(g, 100, 100)
+T.eq(g.amp, 0, "the first frame establishes position and shows no sheen")
+for i = 1, 12 do VoxelScene.glintStep(g, 100 + i, 100) end
+T.eq(g.amp, 1, "a dozen frames of walking fades the glint fully in")
+local held = g.phase
+T.check(held > 0 and held < 2 * math.pi, "with the phase advanced by the travel")
+for _ = 1, 20 do VoxelScene.glintStep(g, 112, 100) end
+T.eq(g.amp, 0, "standing still fades it back out within a beat")
+T.eq(g.phase, held, "and the phase does not move while the camera does not")
 end
 
 Pipelines.reset()
