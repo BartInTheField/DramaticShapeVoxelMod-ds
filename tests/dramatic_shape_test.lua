@@ -2106,6 +2106,28 @@ Voxel3D.tint = { 1, 1, 1 }
 Voxel3D.vp = nil
 end
 
+-- ------- a shadow keeps hold of the feet that throw it
+--
+-- The depth compare forgives `slack` world pixels so lit ground does not
+-- acne, and that forgiveness detaches a standing card's shadow from its
+-- feet by the same amount -- worse the lower the sun. Cards are drawn into
+-- the map sunk exactly `slack` down the ray, which cancels the bias for the
+-- shadow they throw and nothing else.
+do
+local ShadowMap = run.loader.exports.DRAMATIC_SHAPE.lib.require("ShadowMap")
+local Mat4 = run.loader.exports.DRAMATIC_SHAPE.lib.require("Mat4")
+local dir = ShadowMap.sunDir()
+local m = ShadowMap.sink(nil)
+T.check(math.abs(m[4] - dir[1] * ShadowMap.slack) < 1e-9
+        and math.abs(m[8] - dir[2] * ShadowMap.slack) < 1e-9
+        and math.abs(m[12] - dir[3] * ShadowMap.slack) < 1e-9,
+  "sink() moves a caster exactly `slack` down the sun ray")
+local sunk = ShadowMap.sink(Mat4.translate(10, 0, 6))
+T.check(math.abs(sunk[4] - (10 + dir[1] * ShadowMap.slack)) < 1e-9
+        and math.abs(sunk[12] - (6 + dir[3] * ShadowMap.slack)) < 1e-9,
+  "and composes over the caster's own transform, not instead of it")
+end
+
 Pipelines.reset()
 run.release()
 

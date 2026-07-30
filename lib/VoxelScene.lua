@@ -520,20 +520,24 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
   end
   -- flower billboards live outside the terrain mesh (they draw after the
   -- characters, pulled -- see render), but the sun still sees them: a
-  -- handful of cutouts per meadow, unlike the grass left out below
-  ShadowMap.draw(ChunkMesher.flowers(state.map), atlasFor(state.map), nil)
+  -- handful of cutouts per meadow, unlike the grass left out below.
+  -- Every thin card from here down is SUNK slightly along the ray
+  -- (ShadowMap.sink) so its shadow keeps contact with its feet instead of
+  -- starting a bias-width away.
+  ShadowMap.draw(ChunkMesher.flowers(state.map), atlasFor(state.map),
+                 ShadowMap.sink(nil))
   for _, nb in ipairs(state.neighbors or {}) do
     ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
-                   Mat4.translate(nb.ox, 0, nb.oy))
+                   ShadowMap.sink(Mat4.translate(nb.ox, 0, nb.oy)))
   end
   -- authored figures cast too, for the same reason the flowers do: a
   -- handful of cards per map, and a person with no shadow reads as pasted on
   eachFigure(state.map, 0, 0, function(mesh, _, caster)
-    ShadowMap.draw(mesh, atlasFor(state.map), caster)
+    ShadowMap.draw(mesh, atlasFor(state.map), ShadowMap.sink(caster))
   end)
   for _, nb in ipairs(state.neighbors or {}) do
     eachFigure(nb.map, nb.ox, nb.oy, function(mesh, _, caster)
-      ShadowMap.draw(mesh, atlasFor(nb.map), caster)
+      ShadowMap.draw(mesh, atlasFor(nb.map), ShadowMap.sink(caster))
     end)
   end
   for _, p in ipairs(posed) do
@@ -542,8 +546,9 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
     local mesh = SpriteBillboards.shadowQuad(def, frame)
     if mesh then
       ShadowMap.draw(mesh, p.sprite:resolveImage(),
-                     Voxel3D.casterMatrix(p.px, p.py, p.gh + (p.lift or 0),
-                                          mirror))
+                     ShadowMap.sink(
+                       Voxel3D.casterMatrix(p.px, p.py, p.gh + (p.lift or 0),
+                                            mirror)))
     end
   end
 

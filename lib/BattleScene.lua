@@ -237,17 +237,21 @@ local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
   for i, nb in ipairs(neighbors) do
     ShadowMap.draw(nbMesh[i], atlasFor(nb.map), Mat4.translate(nb.ox, 0, nb.oy))
   end
-  ShadowMap.draw(ChunkMesher.flowers(host), atlasFor(host), nil)
+  -- thin cards are sunk along the ray (ShadowMap.sink) so their shadows
+  -- keep contact with their bases instead of starting a bias-width away
+  ShadowMap.draw(ChunkMesher.flowers(host), atlasFor(host),
+                 ShadowMap.sink(nil))
   for _, nb in ipairs(neighbors) do
     ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
-                   Mat4.translate(nb.ox, 0, nb.oy))
+                   ShadowMap.sink(Mat4.translate(nb.ox, 0, nb.oy)))
   end
 
   -- the mons themselves, as the same cards the camera will see. Their alpha
   -- is the silhouette, so what lands on the ground is the shape of the
   -- Pokemon rather than a blob standing in for one.
   for _, card in ipairs(cards or {}) do
-    ShadowMap.draw(BattleBillboard.mesh(), card.tex, card.model)
+    ShadowMap.draw(BattleBillboard.mesh(), card.tex,
+                   ShadowMap.sink(card.model))
   end
 
   ShadowMap.finish(sig)

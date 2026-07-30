@@ -161,6 +161,18 @@
   Pokemon go solid white for those frames, silhouette and all, and nothing
   else in the frame moves.
 
+- **A standing figure's shadow detached from its feet under a low sun.** The
+  shadow compare forgives `slack` world pixels so lit ground does not acne
+  against its own texels, and that same forgiveness lit the first `slack` of
+  every cast shadow -- so the shadow started a bias-width away from the feet,
+  further the lower the sun reached (the classic peter-panning, invisible at
+  the old fixed 45 degrees and plain at a day/night golden hour). Sprite
+  cards -- characters, authored figures, flowers, battle mons -- are now
+  drawn into the shadow map sunk exactly `slack` down the sun ray
+  (`ShadowMap.sink`), which cancels the bias for the shadow they throw and
+  nothing else: no terrain moved, so the acne margin is untouched, and the
+  shadow root lands back under the feet at every hour.
+
 ### Changed
 
 - **The two HP boxes snap to the window's edges during a staged battle.** The
