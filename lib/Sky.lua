@@ -16,11 +16,13 @@
 -- as four stripes. No clouds, nothing moving.
 --
 -- NOTHING IS RESAMPLED, which is the whole of why it is drawn this way. There is
--- no baked 160x144 picture scaled up to the window, no downsized buffer blown
--- back up, no texture of any kind: one full-region rectangle through a shader
--- that answers every pixel from its own canvas coordinate. A pixel of sky is
--- computed at the size it is displayed at, so there is nothing for a filter to
--- soften and nothing to go stale when the window or the zoom changes.
+-- no baked 160x144 picture scaled up to the window and no downsized buffer blown
+-- back up: one full-region rectangle through a shader that answers every pixel
+-- from its own canvas coordinate. A pixel of sky is computed at the size it is
+-- displayed at, so there is nothing for a filter to soften and nothing to go
+-- stale when the window or the zoom changes. The shader does bind one texture,
+-- but it is a palette rather than an image -- the bands, one texel each, sampled
+-- nearest (see rampFor, and why it is not a uniform array).
 --
 -- THE PIXEL GRID follows the zoom for the same reason. Bands and dither cells
 -- are measured in DIORAMA pixels -- the pass's own pixels-per-world-pixel, handed
@@ -51,13 +53,11 @@ local V = ...
 local DayNight = V.require("DayNight")
 local PaletteFX = require("src.render.PaletteFX")
 
-local unpack = table.unpack or unpack
-
 local Sky = {}
 
--- The shader carries a fixed-size array, because a GLSL uniform array is a
--- fixed size; eight leaves headroom over DayNight's six-band phase palettes
--- without paying for more.
+-- The most bands a phase palette may paint with. Eight leaves headroom over
+-- DayNight's six-band ones without paying for more; the ramp the shader reads
+-- them from is built at the width actually used, so the cap costs nothing.
 Sky.MAX_BANDS = 8
 
 -- The checkerboard between bands. DITHER_START is how far down a band it begins,
@@ -84,7 +84,7 @@ Sky.SPAN = 0.23
 --
 -- Memoised, because this runs once a frame and the answer only moves when the
 -- mode does.
-local cache = { bands = nil, key = {} }
+local cache = { bands = nil, key = {}, ramp = nil }
 
 function Sky.bands()
   local pal = DayNight.palette()
@@ -101,6 +101,11 @@ function Sky.bands()
     end
   end
   if same then return cache.bands end
+
+  -- the ramp is these bands as a texture (see rampFor); a new list is a new
+  -- ramp, and the old one is nothing's to keep
+  if cache.ramp and cache.ramp.release then pcall(cache.ramp.release, cache.ramp) end
+  cache.ramp, cache.rampFor = nil, nil
 
   local bands = {}
   for i = 1, n do
@@ -150,17 +155,18 @@ end
 
 -- ------- the pass
 --
--- One rectangle, one shader, no texture. Every pixel answers for itself from its
--- canvas coordinate, so the sky is drawn at exactly the resolution it is
--- displayed at -- there is no image being scaled and so nothing to be soft.
+-- One rectangle, one shader. Every pixel answers for itself from its canvas
+-- coordinate, so the sky is drawn at exactly the resolution it is displayed at
+-- -- there is no image being scaled and so nothing to be soft. The one texture
+-- bound is the band ramp, which is a PALETTE and not a picture: n texels wide,
+-- sampled nearest, one lookup per pixel (see rampFor).
 --
 -- `cell` quantises BOTH the band edges and the dither: the y a pixel is judged
 -- by is the top of its own cell row, so a whole cell row is one colour and every
 -- edge in the sky lands on the diorama's pixel grid.
 local SHADER_SRC = [[
-#define MAXB %d
-uniform vec3 bands[MAXB];
-uniform int count;
+uniform Image ramp;     // the bands, one texel each, top of the sky first
+uniform float count;    // how many texels wide that ramp is
 uniform float edge;     // the sky's bottom, in canvas pixels
 uniform float cell;     // the diorama's pixel size, in canvas pixels
 uniform float start;    // where the checker begins inside a band
@@ -170,26 +176,23 @@ uniform vec2 glowPos;   // the sun disc, in canvas pixels
 uniform float glowInvR; // 1 / the glow's reach
 uniform vec3 glowColor;
 
-// Indexed through a loop counter, which every GLSL ES compiler accepts for a
-// uniform array; a bare bands[idx] is not portable.
-vec3 bandAt(int idx) {
-  vec3 c = bands[0];
-  for (int i = 1; i < MAXB; i++) {
-    if (i == idx) { c = bands[i]; }
-  }
-  return c;
+// Band `i`, read from its own texel centre. The index is clamped rather than
+// trusted: `pos` below can land exactly on `count` when the arithmetic is
+// carried at mediump -- which is the fragment default on GLSL ES -- and a
+// sample past the last band must be the last band, not whatever is off the
+// end of the image.
+vec3 bandAt(float i) {
+  return Texel(ramp, vec2((clamp(i, 0.0, count - 1.0) + 0.5) / count, 0.5)).rgb;
 }
 
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
-  float n = float(count);
   float row = floor(sc.y / cell) * cell;              // top of this cell row
-  float pos = clamp(row / max(edge, 1.0), 0.0, 0.999999) * n;
-  float base = floor(pos);
-  int idx = int(base);
-  vec3 c = bandAt(idx);
+  float pos = min(row / max(edge, 1.0), 1.0) * count;
+  float base = min(floor(pos), count - 1.0);
+  vec3 c = bandAt(base);
   float parity = mod(floor(sc.x / cell) + floor(sc.y / cell), 2.0);
-  if (idx < count - 1 && (pos - base) > start) {
-    if (parity < 0.5) { c = bandAt(idx + 1); }
+  if (base < count - 1.0 && (pos - base) > start) {
+    if (parity < 0.5) { c = bandAt(base + 1.0); }
   }
   // The sunset's warmth, radiating from the disc: posterised to a few rungs
   // and checker-dithered between them -- the same 8-bit move as the bands,
@@ -207,14 +210,66 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
 }
 ]]
 
+-- ------- the ramp
+--
+-- The bands as a one-texel-per-band TEXTURE rather than as a uniform array,
+-- which is what they used to be: `uniform vec3 bands[8]`, filled from Lua and
+-- read through a loop counter. On desktop GL that is as portable as it looks.
+-- On Android it was not. The sky's lower bands came back BLACK -- a hard-edged
+-- strip running from partway down the gradient to the horizon point, with the
+-- moon still drawn correctly over it, and with the haze BELOW the sky (the
+-- palest band again, but delivered by love.graphics.clear instead of by the
+-- array) landing in exactly the right colour. Same colour, two routes, one of
+-- them black: the fault was the array, not the palette.
+--
+-- Which of the ES failure modes it was hardly matters -- a driver that
+-- truncates a partially-filled array, a fragment uniform budget the guaranteed
+-- floor of which is sixteen vectors (eight bands plus the glow plus LOVE's own
+-- built-ins is over it), a reflection that finds bands[0] and nothing after --
+-- because they all have the same shape: slots past the first few read as zero,
+-- and zero is black.
+--
+-- A sampler has none of them. One texture unit replaces eight uniform vectors,
+-- there is no array to index and no budget to overrun, and a texel that does
+-- not exist cannot read as black because the image is built at exactly the
+-- width the shader divides by. Nearest and clamped, so a sample lands on one
+-- band's own colour and an out-of-range one lands on the end band rather than
+-- on nothing.
+--
+-- Rebuilt only when the bands move, which is when the clock or the display
+-- mode does; Sky.bands drops it as it rebuilds the list it is made from.
+local function rampFor(bands)
+  if cache.ramp and cache.rampFor == bands then return cache.ramp end
+  if not (love.image and love.image.newImageData
+          and love.graphics and love.graphics.newImage) then return nil end
+  local n = #bands
+  if n < 1 then return nil end
+  local ok, data = pcall(love.image.newImageData, n, 1)
+  if not (ok and data) then return nil end
+  for i = 1, n do
+    local c = bands[i]
+    pcall(data.setPixel, data, i - 1, 0, c[1], c[2], c[3], 1)
+  end
+  local built, img = pcall(love.graphics.newImage, data)
+  if not (built and img) then return nil end
+  -- nearest: a band is a flat colour, not something to interpolate between.
+  -- clamp: the shader clamps its index too, so this is the second of two
+  -- guards against ever sampling off the end -- and it returns the edge band.
+  pcall(img.setFilter, img, "nearest", "nearest")
+  pcall(img.setWrap, img, "clamp", "clamp")
+  cache.ramp, cache.rampFor = img, bands
+  return img
+end
+
+Sky._rampFor = rampFor            -- named for the suite
+
 local shader = nil            -- nil = untried, false = unavailable
 
 local function getShader()
   if shader == nil then
     shader = false
     if love.graphics and love.graphics.newShader then
-      local ok, sh = pcall(love.graphics.newShader,
-                           SHADER_SRC:format(Sky.MAX_BANDS))
+      local ok, sh = pcall(love.graphics.newShader, SHADER_SRC)
       if ok and sh then
         shader = sh
       elseif V and V.mod and V.mod.log then
@@ -358,12 +413,13 @@ function Sky.paint(w, h, sky, horizonY, cell, body)
 
   local glowAmt = body and not body.moon and (body.glowAmt or 0) or 0
   local sh = getShader()
+  local ramp = sh and rampFor(bands)
+  if not ramp then sh = nil end       -- no ramp, no gradient: paint it flat
   if sh then
     local sent = pcall(function()
-      -- one send per band would be one uniform lookup per band; the array takes
-      -- them all at once, and it must be the LAST argument or Lua truncates the
-      -- unpack to a single value
-      sh:send("bands", unpack(bands))
+      -- the bands arrive as a texture, one texel each, and `count` is that
+      -- texture's width -- see rampFor for why they are not a uniform array
+      sh:send("ramp", ramp)
       sh:send("count", #bands)
       sh:send("edge", edge)
       sh:send("cell", cell)
@@ -399,9 +455,12 @@ function Sky.paint(w, h, sky, horizonY, cell, body)
 end
 
 -- Drop the compiled shader (window resize, hot reload), so a re-created graphics
--- context builds a new one instead of drawing with a handle from the old.
+-- context builds a new one instead of drawing with a handle from the old. The
+-- ramp is a GPU object on the same context and goes with it.
 function Sky.invalidate()
   shader = nil
+  if cache.ramp and cache.ramp.release then pcall(cache.ramp.release, cache.ramp) end
+  cache.ramp, cache.rampFor = nil, nil
 end
 
 return Sky
