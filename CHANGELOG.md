@@ -82,6 +82,22 @@
 
 ### Changed
 
+- **TILT and GBC FX are off the OPTIONS menu entirely while this mod is
+  installed.** Both fight the diorama and both were already half-taken: the
+  mode's own key forces them off on every press, and the registry switches
+  TILT off whenever a world pipeline takes the pass. What was left was two
+  rows a player could set and watch get reverted -- TILT being the flat fake
+  of what this mode does for real, and GBC FX a full-screen present pass over
+  the top of the whole thing.
+
+  Dropped AND held at zero, which is the part that matters: hiding a live
+  setting is a trap, because a save written before the mod was installed can
+  carry TILT 3 and a row that is not there cannot turn it back off. Pinned
+  wherever the value could arrive from -- the menu opening, a save being
+  loaded or begun -- so there is no route by which either is on and
+  unreachable. Uninstalling the mod puts both rows back, at whatever they were
+  last set to.
+
 - **The battle's text box and menus are frosted glass, like the HUDs.** The
   HUD blocks got panels because black glyphs on grass are not readable. The box
   at the bottom had the opposite problem and the same cause: it is drawn as an

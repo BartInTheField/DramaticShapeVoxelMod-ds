@@ -210,6 +210,53 @@ T.eq(layoutGame.save.options.battleLayout, "og",
 Battles.setting:setIndex(1, layoutGame)
 end
 
+-- ------- TILT and GBC FX are off the menu entirely
+--
+-- Two ENGINE rows, taken away for as long as this mod is installed. Both fight
+-- the diorama and both were already half-taken -- the mode's own key forces
+-- them off on every press, and the registry switches TILT off whenever a world
+-- pipeline takes the pass -- so what was left was two rows a player could set
+-- and watch get reverted.
+--
+-- Dropped AND held at zero, which is the part that matters: a save written
+-- before the mod was installed can carry TILT 3, and a row that is not there
+-- is a row that cannot turn it back off.
+do
+local fxGame = {
+  data = Data,
+  save = { options = { tilt = 3, gbcfx = 2, pipelines = {}, modOptions = {} } },
+  mods = { modOptions = {} },
+  writeOptions = function() end,
+}
+local Tilt = require("src.render.Tilt")
+local GBCFX = require("src.render.GBCFX")
+Tilt.setLevel(3)
+GBCFX.setLevel(2)
+
+local fxRows = Runtime.call("ui.options.rows", function(_, r) return r end,
+                            fxGame,
+                            { { id = "tilt" }, { id = "gbcfx" },
+                              { id = "colors" }, { id = "pipeline:voxel" } })
+local fxIds = {}
+for _, row in ipairs(fxRows) do fxIds[row.id] = true end
+T.check(not fxIds["tilt"], "TILT is off the OPTIONS menu")
+T.check(not fxIds["gbcfx"], "and so is GBC FX")
+T.check(fxIds["colors"] and fxIds["pipeline:voxel"],
+  "with every other row the engine offered still on it")
+
+T.eq(fxGame.save.options.tilt, 0,
+  "a save that had TILT on is pinned back to off, not left on with no row")
+T.eq(fxGame.save.options.gbcfx, 0, "and GBC FX with it")
+T.eq(Tilt.level, 0, "the live level follows, so the frame is not still tilted")
+
+-- and FULL, which returns early from the rows hook, must not be a way back in
+Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
+local fullFx = Runtime.call("ui.options.rows", function(_, r) return r end,
+                            fxGame, { { id = "tilt" }, { id = "gbcfx" } })
+T.eq(#fullFx, 0, "under FULL they are gone too -- its early return is below them")
+Pipelines.setLevel("voxel", 2)
+end
+
 -- ------- and off FULL, the rows come back, grouped with the mode
 --
 -- The engine splices a pipeline row in beside TILT and lands a mod's own

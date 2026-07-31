@@ -14,9 +14,8 @@ return {
       "the battle's text box and menu are frosted glass over that ground rather than an opaque white slab, on the same panels the HUDs sit on",
       "the map's NPCs are culled for the length of a battle, so the wipe plays over an empty map",
       "a battle's letterbox voids go black rather than white, because the battle canvas is no longer white",
-      "VOXEL and the engine's TILT are mutually exclusive -- turning one on switches the other off",
-      "hotkeys 3 and 5 are taken over from the engine's TILT and GBC FX; both remain on the OPTIONS menu",
-      "the VOXEL key (3) turns TILT and GBC FX off on every press -- both fight the diorama, and 3 is now the only key that reaches either",
+      "the engine's TILT and GBC FX rows are taken OFF the OPTIONS menu and held at off for as long as this mod is installed -- TILT is the flat fake of what this mode does for real, GBC FX is a full-screen pass over the top of it; uninstalling puts both rows back",
+      "hotkeys 3 and 5 are taken over from those two, which have no key and no row while this is loaded",
     },
     added = {
       "VOXEL options row and hotkey 3 (OFF / 15 / 35 / 50 / 75 degrees)",

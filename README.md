@@ -40,6 +40,13 @@ menu.
 **3D-BTL** is on by default and is independent of **VOXEL**: battles draw
 on the world whether or not the free-roam camera is pitched over.
 
+Two of the engine's own rows are taken away while this mod is installed:
+**TILT**, which is the flat fake of what this mode does for real, and **GBC
+FX**, a full-screen present pass over the top of the diorama. Both are held at
+off rather than merely hidden — a row that is not there cannot switch off a
+value an older save arrived with. Uninstall and both come back, at whatever
+they were last set to.
+
 Everything the battle screen draws as a box — the two HUD blocks, the text
 box and the menus over it — sits on frosted glass rather than on the white
 field it used to have behind it: the world underneath, blurred and laid back
