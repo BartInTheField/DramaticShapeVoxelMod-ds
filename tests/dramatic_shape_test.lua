@@ -116,11 +116,16 @@ T.eq(byLabel.VOXEL.value(), "FULL", "the row renders the current rung's label")
 local Runtime = require("src.mods.Runtime")
 local VoxelState = run.loader.exports.DRAMATIC_SHAPE.lib.require("VoxelState")
 
--- ------- FULL is a preset that owns the other rows
+-- ------- FULL is a preset that owns the rows describing the LOOK
 --
 -- While it is selected the settings it drives come OFF the menu -- including
 -- T-SHIFT, which is a pipeline row the engine spliced in. A row that no
 -- longer decides anything is worse than no row.
+--
+-- The two BATTLE rows are the exception and stay. 3D-BTL decides what a fight
+-- is drawn over and BACK SPRITES how it is framed; neither is a knob on the
+-- diorama the preset is a preset FOR. FULL sets them on arrival and then lets
+-- go, which is what makes it a preset rather than a lock.
 Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
 local fullRows = Runtime.call("ui.options.rows", function(_, r) return r end,
                               { data = Data },
@@ -133,8 +138,13 @@ T.check(not fullIds["pipeline:tiltshift"],
   "FULL takes T-SHIFT off the menu -- it owns the blur")
 T.check(not fullIds["DRAMATIC_SHAPE:grid"], "and V-GRID")
 T.check(not fullIds["DRAMATIC_SHAPE:curve"], "and V-CURVE")
-T.check(not fullIds["DRAMATIC_SHAPE:battles"], "and 3D-BTL")
 T.check(not fullIds["DRAMATIC_SHAPE:daytime"], "and DAYTIME")
+
+-- but the battle rows survive it: they are not knobs on the look, and FULL
+-- sets them once rather than holding them, so a player who wants the classic
+-- back sprite (or no staged fights at all) can still say so from inside FULL
+T.check(fullIds["DRAMATIC_SHAPE:battles"], "3D-BTL is still on the menu under FULL")
+T.check(fullIds["DRAMATIC_SHAPE:battleBack"], "and BACK SPRITES with it")
 
 -- DAYTIME is not only hidden under FULL, it is HELD at SYNC: the row cannot
 -- be reached while FULL owns it, so a value changed underneath (the mod
@@ -200,14 +210,26 @@ Runtime.call("ui.options.rows", function(_, r) return r end, layoutGame,
 T.eq(layoutGame.save.options.battleLayout, "wide",
   "and WIDE is left alone once no battle can be staged on the map")
 
--- FULL owns the 3D-BTL row, so it pins the layout even with that row switched
--- off underneath it
+-- and FULL does not override that. It used to: the preset owned the 3D-BTL row
+-- and hid it, so "FULL is selected" was a safe stand-in for "battles are
+-- staged". The row is on the menu under FULL now and can be switched off
+-- there, so the stand-in would pin BATTLE LAYOUT to OG for a fight that is
+-- never staged. The ROW decides, which is what every other reader of this
+-- setting already believed.
 Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
 Runtime.call("ui.options.rows", function(_, r) return r end, layoutGame,
              { { id = "battleLayout" } })
-T.eq(layoutGame.save.options.battleLayout, "og",
-  "FULL pins the layout on its own, because it owns the row that would")
+T.eq(layoutGame.save.options.battleLayout, "wide",
+  "with 3D-BTL off, FULL leaves the layout alone -- it no longer owns that row")
+
+-- switch the row back on and the pin comes back with it, FULL or no FULL.
+-- (Arriving at FULL for real runs applyFull, which switches the row on -- so
+-- in the game the pin still follows the preset, by way of the row.)
 Battles.setting:setIndex(1, layoutGame)
+Runtime.call("ui.options.rows", function(_, r) return r end, layoutGame,
+             { { id = "battleLayout" } })
+T.eq(layoutGame.save.options.battleLayout, "og",
+  "and the row switched back on pins it again, from inside FULL")
 end
 
 -- ------- TILT and GBC FX are off the menu entirely
@@ -249,11 +271,15 @@ T.eq(fxGame.save.options.tilt, 0,
 T.eq(fxGame.save.options.gbcfx, 0, "and GBC FX with it")
 T.eq(Tilt.level, 0, "the live level follows, so the frame is not still tilted")
 
--- and FULL, which returns early from the rows hook, must not be a way back in
+-- and FULL, which takes its own branch through the rows hook, must not be a
+-- way back in
 Pipelines.setLevel("voxel", VoxelState.FULL_LEVEL)
 local fullFx = Runtime.call("ui.options.rows", function(_, r) return r end,
                             fxGame, { { id = "tilt" }, { id = "gbcfx" } })
-T.eq(#fullFx, 0, "under FULL they are gone too -- its early return is below them")
+local fullFxIds = {}
+for _, row in ipairs(fullFx) do fullFxIds[row.id] = true end
+T.check(not fullFxIds["tilt"] and not fullFxIds["gbcfx"],
+  "under FULL they are gone too -- the drop is above every branch")
 Pipelines.setLevel("voxel", 2)
 end
 
@@ -2013,106 +2039,255 @@ T.eq(onAt["DRAMATIC_SHAPE:battleBack"] - onAt["DRAMATIC_SHAPE:battles"], 1,
 Battles.backSetting:setIndex(1, backGame)          -- and off for the rows below
 end
 
+-- ------- the hour reaches the FLAT world too
+--
+-- The clock reaches the diorama through the voxel shader's tint uniform, which
+-- the 2D tile path never runs. With the mode off the same evening left the flat
+-- world at permanent noon.
+--
+-- The fix is one multiplied rectangle, and the whole difficulty is WHERE. Not
+-- on the world canvas -- in a colorized mode that is grayscale art the palette
+-- shader classifies by RED CHANNEL, so tinting first would move every pixel
+-- into the wrong shade bucket rather than darkening it. Not over the finished
+-- frame either, or the dialog boxes darken with the world they are held up in
+-- front of. Between the two, which is the one instant with no engine seam in
+-- it -- worldPresent only runs when a pipeline drew the world, which in flat
+-- mode is exactly what did not happen.
+--
+-- So the boundary is found by identity: `blit` passes the canvas it is
+-- compositing as the first argument, so the first draw of the renderer's UI
+-- canvas IS the moment the world is finished and the paper has not started.
+-- That is what this drives -- the gates, and the ordering.
+do
+local DayTint = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayTint")
+local DayNight = run.loader.exports.DRAMATIC_SHAPE.lib.require("DayNight")
+
+-- the map the hour is asked about is the one the player is standing on, read
+-- off the live game rather than passed in -- so there has to be one
+local Game = require("src.core.Game")
+local owWas = Game.overworld
+Game.overworld = { map = { id = "ROUTE_1", def = { tileset = "OVERWORLD" } } }
+
+-- ------- the gates
+--
+-- A frame with a pipeline's world image in it was tinted inside that
+-- pipeline's own shader; painting again would apply the hour twice.
+DayNight.setting:sync("night")
+T.check(DayTint.forFrame({ worldActive = true, worldOverride = {} }) == nil,
+  "a frame a render pipeline drew is left alone -- it tinted itself")
+T.check(DayTint.forFrame({ worldActive = false }) == nil,
+  "and so is a frame with no world in it at all, like a menu over nothing")
+T.check(DayTint.forFrame(nil) == nil, "and no renderer, no tint")
+
+-- midday is a multiply by white, so it is skipped rather than drawn: a game
+-- with the clock at DAY issues not one extra call
+DayNight.setting:sync("day")
+T.check(DayTint.forFrame({ worldActive = true }) == nil,
+  "at midday the tint is white, so nothing is painted")
+
+-- and a room has no sky to take its light from, which is the same answer
+-- DayNight.tint gives on its own and the same one applyRig gives the sun
+DayNight.setting:sync("night")
+T.check(DayTint.forFrame({ worldActive = true }) ~= nil,
+  "at night, outdoors, there is a tint to paint")
+Game.overworld = { map = { id = "OAKS_LAB", def = { tileset = "HOUSE" } } }
+T.check(DayTint.forFrame({ worldActive = true }) == nil,
+  "but indoors the hour does not reach the floor")
+Game.overworld = { map = { id = "ROUTE_1", def = { tileset = "OVERWORLD" } } }
+
+-- ------- and the ordering, driven through the real wrap
+--
+-- A stand-in renderer whose endFrame issues the two draws the real one does,
+-- in the real order: the world canvas, then the UI canvas.
+DayNight.setting:sync("night")
+local Renderer = require("src.render.Renderer")
+local realEnd, realHook = Renderer.endFrame, Renderer.dramaticShapeTintHook
+local log = {}
+local uiCanvas, worldPixels = { "the UI canvas" }, { "the world canvas" }
+Renderer.dramaticShapeTintHook = nil
+Renderer.endFrame = function(self)
+  log[#log + 1] = "world"
+  love.graphics.draw(worldPixels, 0, 0)
+  log[#log + 1] = "ui"
+  love.graphics.draw(self.canvas, 0, 0)
+  love.graphics.draw(self.canvas, 0, 0)   -- a second SGB zone's quad
+end
+DayTint.install()
+
+local realRect = love.graphics.rectangle
+love.graphics.rectangle = function(...)
+  log[#log + 1] = "tint"
+  return realRect(...)
+end
+Renderer.endFrame({ canvas = uiCanvas, worldActive = true, map = true })
+love.graphics.rectangle = realRect
+
+T.eq(table.concat(log, ","), "world,ui,tint",
+  "the tint lands after the world is composited and before the UI blit draws")
+local painted = 0
+for _, step in ipairs(log) do if step == "tint" then painted = painted + 1 end end
+T.eq(painted, 1,
+  "once, not once per SGB zone quad the UI blit issues")
+
+-- a frame the gates decline must not leave the shim installed on love.graphics
+local drawWas = love.graphics.draw
+Renderer.endFrame({ canvas = uiCanvas, worldActive = true, worldOverride = {} })
+T.eq(love.graphics.draw, drawWas,
+  "a declined frame does not leave a wrapper on love.graphics.draw")
+
+Renderer.endFrame, Renderer.dramaticShapeTintHook = realEnd, realHook
+Game.overworld = owWas
+DayNight.setting:sync("sync")
+end
+
 -- ------- and a pinned back pic is not a stencil
 --
 -- Gen 1 battle pics are two-bit art whose lightest shade is WHITE, and the
 -- decoded PNGs key that shade to alpha 0 -- free on a white field, a hole with
 -- the world showing through over a route. BattlePics puts the paper back.
 --
--- It used to do that by flood-filling the outside and filling what the flood
--- could not reach, which is exact and, on this game's art, fills NOTHING: a
--- Gen 1 figure is an open drawing and its belly reaches the border through the
--- gap between two legs. Every mon was a stencil, most obviously the back pic
--- pinned to the menu, which is drawn flat over the tiles rather than shaded
--- like a card. So paper is also anything with ink to its left AND right AND
--- ABOVE it -- what the figure is drawn over.
+-- It does that by flooding the background INWARD and filling whatever the
+-- background cannot reach. Started at the image border that finds nothing at
+-- all -- a Gen 1 figure is an open drawing, and its belly walks out between
+-- two legs and off the bottom of the frame -- so every mon was a stencil.
 --
--- The asymmetry is the load-bearing part, so it is what this drives at. A pic
--- is cropped flush at the FEET, so half a mon's belly has bare frame edge
--- under it: ask for ink below as well and a clean channel of world shows
--- through the middle of the figure, which is the bug that got reported.
+-- So the flood starts at the edges of the ARTWORK'S OWN BOX, and at three of
+-- them: left, right and top. The bottom is closed, because it is not a side
+-- the background is behind -- it is where the drawing was CUT. A pic is
+-- bottom-aligned in its slot with the margin all at the top, so a mon's lowest
+-- row is the last row it was given. Seed that cut and the background pours up
+-- inside the figure, which was the channel of world showing through the middle
+-- of a Clefairy.
 --
--- Driven against a hand-drawn figure with exactly that shape -- ears with sky
--- between them, a belly, legs, and a bottom edge flush with the frame.
--- NOTHING in it is enclosed: every transparent pixel inside walks out between
--- the legs and off that bottom edge, so the flood-fill rule alone leaves this
--- figure exactly as it found it.
+-- Both halves are driven here, because getting one right at the other's
+-- expense is exactly what went wrong twice: an earlier rule that filled
+-- anything with ink to its left, right and above closed the channel and then
+-- filled the notch between a Rattata's ears and the gap between its body and
+-- its tail, which are background and have the drawing over them.
 do
 local BattlePics = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattlePics")
 
-local FIGURE = {
+-- Run one hand-drawn figure through the real BattlePics and hand back a
+-- reader over what came out. The pic is faked at the readback seam, which is
+-- the only thing between this and the pixels the engine would have blitted.
+local function fill(rows)
+  local W, H = #rows[1], #rows
+  local built = nil
+  local function fakeData()
+    local px = {}
+    for y = 0, H - 1 do
+      for x = 0, W - 1 do
+        px[y * W + x] = rows[y + 1]:sub(x + 1, x + 1) == "#" and 1 or 0
+      end
+    end
+    return {
+      px = px,
+      getDimensions = function() return W, H end,
+      getPixel = function(self, x, y) return 0, 0, 0, self.px[y * W + x] end,
+      setPixel = function(self, x, y, r, g, b, a) self.px[y * W + x] = a end,
+    }
+  end
+
+  local realNewCanvas, realNewImage = love.graphics.newCanvas, love.graphics.newImage
+  love.graphics.newCanvas = function()
+    return { setFilter = function() end, release = function() end,
+             newImageData = fakeData }
+  end
+  love.graphics.newImage = function(data)
+    built = data
+    return { setFilter = function() end }
+  end
+  local pic = { getDimensions = function() return W, H end }
+  local out = BattlePics.filled(pic)
+  love.graphics.newCanvas, love.graphics.newImage = realNewCanvas, realNewImage
+  -- deliberately NOT invalidated: each figure brings its own pic, and the
+  -- cache check at the bottom needs one of them still in there
+  return out, pic, built and function(x, y) return built.px[y * W + x] > 0.5 end
+end
+
+-- ------- the cut at the feet, which is what the closed bottom edge is for
+local out, pic, opaque = fill({
   "..#..#..",   -- two ears, with sky between them
   "..#..#..",
   "..####..",   -- and the head closing under them
-  ".#....#.",   -- belly: sides beside it, head over it, bare frame under it
+  ".#....#.",   -- belly: nothing under it but the edge the drawing stops at
   ".#....#.",
   ".#....#.",
-  ".#.##.#.",   -- legs, with the gap between them open to the bottom edge
-  ".#.##.#.",   -- which the frame cuts flush, exactly as a battle pic is cut
-}
-local W, H = #FIGURE[1], #FIGURE
+  ".#.##.#.",   -- legs, with the gap between them running down to that edge
+  ".#.##.#.",
+})
+T.check(out ~= pic and opaque, "the pic comes back rebuilt: there was paper to put back")
 
-local function fakeData(rows)
-  local px = {}
-  for y = 0, H - 1 do
-    for x = 0, W - 1 do
-      px[y * W + x] = rows[y + 1]:sub(x + 1, x + 1) == "#" and 1 or 0
-    end
-  end
-  return {
-    px = px,
-    getDimensions = function() return W, H end,
-    getPixel = function(self, x, y)
-      local a = self.px[y * W + x]
-      return 0, 0, 0, a
-    end,
-    setPixel = function(self, x, y, r, g, b, a) self.px[y * W + x] = a end,
-  }
-end
-
-local built = nil
-local realNewCanvas, realNewImage = love.graphics.newCanvas, love.graphics.newImage
-love.graphics.newCanvas = function()
-  return { setFilter = function() end, release = function() end,
-           newImageData = function() return fakeData(FIGURE) end }
-end
-love.graphics.newImage = function(data)
-  built = data
-  return { setFilter = function() end, dramaticShapeFilled = true }
-end
-
-local pic = { getDimensions = function() return W, H end }
-local out = BattlePics.filled(pic)
-love.graphics.newCanvas, love.graphics.newImage = realNewCanvas, realNewImage
-
-T.check(out ~= pic and built ~= nil,
-  "the pic comes back rebuilt: there was paper to put back")
-local function opaque(x, y) return built.px[y * W + x] > 0.5 end
-
--- the belly, filled edge to edge. Every one of these has bare frame under it
--- rather than ink, which is the case that used to leave a channel of world
--- showing straight down the middle of the mon
 T.check(opaque(2, 3) and opaque(3, 4) and opaque(5, 5),
-  "the figure's white insides are filled back in, so it is not see-through")
+  "the belly is filled edge to edge -- no channel of world down the middle")
+T.check(opaque(2, 7),
+  "and so is the notch between its legs, which the same cut runs through")
 
--- the sky between two ears is NOT paper, and this is what the third ray is
--- for: nothing is drawn over it
+-- the sky between two ears reaches the top of the box, so it is background
 T.check(not opaque(3, 0) and not opaque(4, 1),
-  "the sky between its ears stays sky -- there is no drawing over it")
+  "the sky between its ears stays sky")
+-- and everything outside the artwork's own box is never touched, which is what
+-- keeps the silhouette cutting cleanly instead of standing in a white rectangle
+T.check(not opaque(0, 0) and not opaque(7, 0), "the corners stay transparent")
+T.check(not opaque(0, 4) and not opaque(7, 4), "and the columns beside it")
 
--- the outside is untouched, which is what keeps the silhouette cutting
--- cleanly against the world instead of standing in a white box
-T.check(not opaque(0, 0) and not opaque(7, 0),
-  "the corners it never covered stay transparent")
-T.check(not opaque(0, 4) and not opaque(7, 4),
-  "and so do the columns beside it -- ink on one side is not being inside")
+-- ------- and a pocket that drains out to the SIDE is background, however
+-- much of the drawing is over it
+--
+-- This is the regression the ray rule caused: ink to the left, ink to the
+-- right, ink above, and still plainly the gap between a body and a tail.
+-- Every transparent pixel in this one drains out through the notch at (2,3)
+-- and away to the left, so NONE of it is paper -- and a pic with no paper to
+-- put back is handed straight back, unrebuilt. That identity IS the assertion:
+-- under the ray rule this figure came back rebuilt with the pocket filled in.
+local gapOut, gapPic = fill({
+  "..#####.",   -- a brow, with the drawing over the pocket
+  "..#...#.",
+  "..#...#.",
+  "....###.",   -- which opens at the left, and drains out that way
+  "..#####.",
+  "..#####.",
+})
+T.eq(gapOut, gapPic,
+  "a pocket the background can walk into from the side is not paper")
 
--- the notch between the legs, on the other hand, has a belly over it and legs
--- either side, so it is paper. The hardware drew white there too
-T.check(opaque(2, 7), "the notch between its legs is under the drawing")
+-- ------- and neither is a wide MOUTH along the bottom
+--
+-- Two things meet the underside of a figure. A DRAIN is where the drawing ran
+-- out -- a belly leaking through the inch between a body and a leg -- and is
+-- sealed. A MOUTH is the space between two legs, background that happens to be
+-- enclosed on three sides, and is left open so the world shows through a
+-- trainer's stride. Width tells them apart, and on this game's art the drains
+-- run 3-4 pixels and the mouths 10-17, so BattlePics.DRAIN sits at 6.
+--
+-- This figure's stride is eight wide, so nothing in it is paper and it comes
+-- back unrebuilt -- the identity again.
+local strideOut, stridePic = fill({
+  "..##############..",
+  "..##############..",
+  "..##############..",
+  "..###........###..",   -- a stride eight wide, past the drain cut
+  "..###........###..",
+  "..###........###..",
+})
+T.eq(strideOut, stridePic,
+  "the world shows through the gap between a trainer's legs")
 
--- and the answer is cached on the image, so a pic costs one readback a
--- session rather than one a frame
+-- the same figure with a two-pixel gap IS a drain, and fills
+local drainOut, drainPic, drain = fill({
+  "..##############..",
+  "..##############..",
+  "..##############..",
+  "..######..######..",   -- a belly running out, not a stride
+  "..######..######..",
+  "..######..######..",
+})
+T.check(drainOut ~= drainPic and drain and drain(8, 4),
+  "a narrow one is where the drawing ran out, and is paper")
+
+-- the answer is cached on the image, so a pic costs one readback a session
+-- rather than one a frame -- checked on the first figure, which is still in
+-- there because fill() does not clear it
 T.eq(BattlePics.filled(pic), out, "the rebuilt pic is cached on the original")
 BattlePics.invalidate()
 end

@@ -46,20 +46,44 @@
   gap between its legs. Read across all 305 of the game's battle pics, that
   rule finds an enclosed hole in exactly none of them.
 
-  So a second rule: paper is what the figure is drawn OVER. A transparent
-  pixel with ink somewhere to its left AND to its right AND above it is under
-  the drawing and gets filled; the sky between a pair of ears has nothing over
-  it and stays sky, the ground beside a foot has nothing on one side of it and
-  stays ground. The silhouette is untouched either way, so the mon still cuts
-  cleanly against the world. Three running scans, cached per pic.
+  The fix is to start the flood somewhere else: at the edges of the ARTWORK'S
+  OWN BOUNDING BOX, and at three of them -- left, right and top. The bottom is
+  closed, because it is not a side the background is behind, it is where the
+  drawing was CUT. A pic is bottom-aligned in its slot with all the margin at
+  the top, so a mon's lowest row is the last row it was given and everything
+  below the belly simply stops. Treat that cut as open and the background
+  pours up inside the figure, which is the channel of world that used to show
+  through a Clefairy.
 
-  Asking for ink BELOW as well was the obvious first cut and it is wrong,
-  which took a second pass to find: a battle pic is cropped flush at the feet,
-  bottom-aligned in its slot with all the margin at the top, so half of any
-  mon's belly has bare frame edge under it. Requiring it left a clean vertical
-  channel of world showing straight down the middle of a Clefairy. Below
-  cannot be accepted on its own either, or the whole sky over a mon's head
-  fills in -- it has the mon under it. The asymmetry is the rule.
+  That is exact rather than a heuristic: nothing is filled because of what
+  surrounds it, only because the background provably cannot reach it. Which is
+  why it needs no idea whether it is holding a front pic or a back one -- the
+  sky between a pair of ears reaches the top edge and stays sky, the gap
+  between a body and a raised tail reaches the side and stays gap, the belly
+  reaches neither and is paper. The silhouette is untouched, so the mon still
+  cuts cleanly against the world.
+
+  It replaces the border flood outright rather than sitting beside it, since
+  anything the border could not reach the box edges cannot reach either.
+
+  The bottom edge needs one more distinction, because two different things
+  meet the underside of a figure. A DRAIN is where the drawing ran out -- a
+  belly whose white carries on down until the artist stopped, leaking out
+  through the inch between a body and a leg -- and is sealed. A MOUTH is the
+  space between two legs, background that happens to be enclosed on three
+  sides, and is left open so the world shows through a trainer's stride.
+
+  Width tells them apart, and on this game's art it is not a close call.
+  Measured along the bottom of every battle pic, the drains run 3 and 4 pixels
+  (Clefairy's back, Wartortle's back, Red's back) and the mouths run 10, 12, 14
+  and 17 (a Rattata's underbelly, Blue's stride, Brock's, a Pikachu's back).
+  Nothing lands between 4 and 10, so the cut is taken at 6 with room either
+  side rather than tuned to one sprite. Apart from that number the rule stays
+  exact.
+
+  Front pics come back untouched, and not by being special-cased: they are
+  near-solid silhouettes with almost nothing inside them to fill, so their own
+  shape is what says so.
 
   Both mons were affected -- the cards in the arena as much as anything -- so
   this lands wherever a battle pic is drawn over the world, not just under
@@ -80,7 +104,56 @@
   the menu has no position in the scene to be shadowed at, so it carries the
   hour and not the weather.
 
+### Added
+
+- **The hour reaches the FLAT world too, not just the diorama.** DAYTIME drove
+  the 3D pass through the voxel shader's own tint uniform -- a uniform the 2D
+  tile path never runs -- so with VOXEL off, the same evening that fell on the
+  diorama left the flat world at permanent noon. One clock, two worlds, one of
+  them ignoring it. Outdoor maps now get the same multiply, painted as one
+  rectangle over the composited world.
+
+  The whole difficulty is WHERE, and it is worth writing down. Not on the world
+  canvas: in a colorized mode that canvas is grayscale art and the blit that
+  puts it on screen runs it through the palette shader, which classifies each
+  pixel into a shade BY ITS RED CHANNEL -- multiply a night blue over it first
+  and every pixel lands in the wrong bucket, so the world does not darken, it
+  changes colour. Not over the finished frame either, or the dialog boxes and
+  menus darken along with the world they are held up in front of, which is the
+  same reason the tilt-shift blur is a `worldPresent` and not a `present`.
+
+  Which leaves the instant between the world blit and the UI blit, and the
+  engine has no seam there -- `worldPresent` only runs when a PIPELINE produced
+  the world, which in flat mode is precisely what did not happen. So
+  `Renderer:endFrame` is wrapped and the UI canvas's own draw is watched for:
+  `blit` passes the canvas it is compositing as the first argument, so the
+  first draw of `Renderer.canvas` IS the boundary, by identity rather than by
+  counting. The shader and scissor that call arrives under belong to the UI
+  blit already in progress, so both are put aside for the rectangle and handed
+  straight back.
+
+  Skipped entirely when a pipeline drew the frame (it tinted itself, and twice
+  is wrong), indoors (a room has no sky to take its light from), and at midday
+  (a multiply by white) -- so a game with the clock at DAY issues not one extra
+  call.
+
 ### Changed
+
+- **FULL no longer takes the two battle rows off the menu.** It still owns the
+  rows that describe the LOOK -- the wireframe, the horizon bend, the blur, the
+  hour -- because it is a preset for the diorama and a row that no longer
+  decides anything is worse than no row. 3D-BTL and BACK SPRITES are not that:
+  one decides what a fight is drawn OVER and the other how it is framed.
+  FULL still SETS both on arrival; it does not hold them, and leaving them
+  reachable is the difference between a preset and a lock.
+
+  This makes `stagedBattles()` honest as a side effect. It used to answer yes
+  under FULL as well, on the grounds that FULL owned the 3D-BTL row and
+  switched it on -- safe only while the row was hidden. With the row reachable
+  from inside FULL, that clause would have claimed staged battles for a preset
+  the player had just switched them off inside, pinning BATTLE LAYOUT to OG for
+  a fight that never gets staged. The row is the only thing that decides now,
+  which is what `OverworldBattle.begin` and `wantsFront` already believed.
 
 - **TILT and GBC FX are off the OPTIONS menu entirely while this mod is
   installed.** Both fight the diorama and both were already half-taken: the

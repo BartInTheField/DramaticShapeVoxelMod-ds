@@ -80,6 +80,7 @@ local WorldCurve = V.require("WorldCurve")
 local OverworldBattle = V.require("OverworldBattle")
 local BattleExit = V.require("BattleExit")
 local DayNight = V.require("DayNight")
+local DayTint = V.require("DayTint")
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
 -- calls this, and it is defined further down with the settings it drives.
@@ -285,13 +286,13 @@ applyFull = function(level)
   opts.zoom = 0
   Zoom.applyOptions(opts)
   -- battles on the map too: FULL means the whole mode, and a fight is where
-  -- half of it is spent. Set rather than forced -- the row is gone from the
-  -- menu while FULL is on, but a save that already had it off gets it on.
+  -- half of it is spent. Set and then LET GO of -- unlike the rows above, both
+  -- battle rows stay on the menu under FULL (see the rows hook), so this is
+  -- where the preset puts them and not where they are held.
   OverworldBattle.setting:setIndex(1, Game)
-  -- with both mons out there on it: BACK SPRITES keeps the player's own on the menu,
-  -- which is the one part of the old screen FULL is least about. Set rather
-  -- than held, like every other line here -- a player who wants their back pic
-  -- back can say so again on the row, or from the mod manager's page.
+  -- with both mons out there on it: BACK SPRITES keeps the player's own on the
+  -- menu, which is the one part of the old screen FULL is least about. Set the
+  -- same way, and changed back on the same row a keypress later.
   OverworldBattle.backSetting:setIndex(1, Game)
   -- and the battle screen the staged fight is composed for. WIDE re-lays that
   -- screen out on a 304x144 surface, which moves every anchor the arena camera
@@ -307,24 +308,36 @@ applyFull = function(level)
 end
 
 -- Whether a fight can be staged on the map, as far as the OPTIONS menu is
--- concerned: 3D-BTL is on, or FULL is selected -- which owns that row and
--- switches it on. Deliberately NOT gated on Voxel3D.available(): the engine
--- offers a pipeline's row whether or not the hardware can run it
--- (Pipelines.rows), so this mode's rows say ON on a machine without a depth
--- buffer too, and a menu that claims 3D battles are on must not also offer the
--- layout they cannot be drawn in.
+-- concerned: the 3D-BTL row, and nothing else.
+--
+-- It used to answer yes under FULL as well, on the grounds that FULL owned
+-- that row and switched it on. FULL no longer owns it -- the row stays on the
+-- menu under FULL and can be switched off there (see the rows hook) -- so that
+-- clause would now claim staged battles for a preset the player had just
+-- turned them off inside, pinning BATTLE LAYOUT to OG for a fight that is
+-- never staged. The row is the only thing that decides, which is what every
+-- other reader of this setting already believed: OverworldBattle.begin and
+-- wantsFront both gate on enabled() alone.
+--
+-- Deliberately NOT gated on Voxel3D.available(): the engine offers a
+-- pipeline's row whether or not the hardware can run it (Pipelines.rows), so
+-- this mode's rows say ON on a machine without a depth buffer too, and a menu
+-- that claims 3D battles are on must not also offer the layout they cannot be
+-- drawn in.
 local function stagedBattles()
-  local Pipelines = require("src.render.Pipelines")
-  return OverworldBattle.enabled() or Voxel.isFull(Pipelines.level("voxel"))
+  return OverworldBattle.enabled()
 end
 
 local SETTINGS = {
   { VoxelGrid.setting, "One-pixel wireframe along every voxel edge." },
   { WorldCurve.setting,
     "Bend the world down over the horizon, Animal Crossing style." },
+  -- `full` marks a row FULL does not take away. FULL owns the diorama's own
+  -- knobs; what a battle is drawn over, and how it is framed, are not that.
   { OverworldBattle.setting,
     "Fight on the map: the battle draws over the nearest clear ground, "
-    .. "shot over the shoulder with a slow parallax drift." },
+    .. "shot over the shoulder with a slow parallax drift.",
+    full = true },
   -- Only offered while a fight can actually be staged on the map: with 3D-BTL
   -- off the engine draws the classic screen, which is this row's ON already,
   -- and a row that no longer decides anything is worse than no row.
@@ -332,7 +345,7 @@ local SETTINGS = {
     "Keep your own Pokemon on the battle menu, seen from behind in its "
     .. "original slot, instead of standing it on the map facing the foe. "
     .. "The foe is still out there on its own tile.",
-    when = function() return stagedBattles() end },
+    when = function() return stagedBattles() end, full = true },
   { DayNight.setting,
     "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
     .. "let CYCLE run it -- ten minutes of sun, ten of moon, with the "
@@ -480,10 +493,12 @@ local function insertGrouped(out, extra)
   return out
 end
 
--- FULL owns every one of those settings, so while it is selected they are
--- taken off the menu rather than left to be changed under it -- including
--- T-SHIFT, which is a pipeline row the engine put there. A row that no
--- longer decides anything is worse than no row.
+-- FULL owns the settings that describe the LOOK, so while it is selected those
+-- are taken off the menu rather than left to be changed under it -- including
+-- T-SHIFT, which is a pipeline row the engine put there. A row that no longer
+-- decides anything is worse than no row.
+--
+-- The battle rows are the exception and they stay; see the rows hook.
 local function dropRow(out, id)
   for i = #out, 1, -1 do
     if type(out[i]) == "table" and out[i].id == id then table.remove(out, i) end
@@ -546,18 +561,31 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     OverworldBattle.forceOG(game)
     dropRow(out, "battleLayout")
   end
-  if Voxel.isFull(Pipelines.level("voxel")) then
-    -- FULL keeps every mod row off the menu (the early return skips the
-    -- insert below), and holds DAYTIME at SYNC while the row is unreachable
+  local full = Voxel.isFull(Pipelines.level("voxel"))
+  if full then
+    -- FULL owns the rows that PARAMETERISE the diorama -- the wireframe, the
+    -- horizon bend, the blur, the hour -- so those come off the menu and
+    -- DAYTIME is held at SYNC while its row is unreachable.
     DayNight.forceSync(game)
-    return dropRow(out, "pipeline:tiltshift")
+    dropRow(out, "pipeline:tiltshift")
   end
   local extra = {}
   for _, entry in ipairs(SETTINGS) do
-    -- a row whose own switch is off the table this frame (BACK SPRITES, which
-    -- needs a staged fight to be about) is left off with it; the mod manager's
-    -- page still carries every one of them
-    if not entry.when or entry.when() then extra[#extra + 1] = entry[1]:row() end
+    -- Two things decide whether a row is offered.
+    --
+    -- FULL: a preset that owns the look, so the rows that describe the look go
+    -- with it. The BATTLE rows are not that -- 3D-BTL decides what a fight is
+    -- drawn OVER and BACK SPRITES how it is framed, and neither is a knob on
+    -- the diorama FULL is a preset for. FULL still SETS them on arrival (see
+    -- applyFull); it does not hold them, so leaving them on the menu is the
+    -- difference between a preset and a lock.
+    --
+    -- And a row whose own switch is off the table this frame (BACK SPRITES,
+    -- which needs a staged fight to be about) is left off with it. The mod
+    -- manager's page carries every one of them either way.
+    local offered = (entry.full or not full)
+                    and (not entry.when or entry.when())
+    if offered then extra[#extra + 1] = entry[1]:row() end
   end
   return insertGrouped(out, extra)
 end)
@@ -772,6 +800,16 @@ mod.content.transitions:register(BattleExit.ID, {
 })
 
 BattleExit.install()
+
+-- ------- and the hour on the flat world
+--
+-- The clock reaches the diorama through the voxel shader's own tint uniform,
+-- which the 2D tile path never runs -- so with the mode off, the same evening
+-- that fell on the diorama left the flat world at permanent noon. One clock,
+-- two worlds, one of them ignoring it. DayTint paints the same multiply over
+-- the composited flat world, between the world blit and the UI blit; the
+-- reasoning for that exact instant is in the file.
+DayTint.install()
 
 -- ------- what time it is
 --
