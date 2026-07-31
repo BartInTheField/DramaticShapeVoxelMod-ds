@@ -288,6 +288,11 @@ applyFull = function(level)
   -- half of it is spent. Set rather than forced -- the row is gone from the
   -- menu while FULL is on, but a save that already had it off gets it on.
   OverworldBattle.setting:setIndex(1, Game)
+  -- with both mons out there on it: BACK keeps the player's own on the menu,
+  -- which is the one part of the old screen FULL is least about. Set rather
+  -- than held, like every other line here -- a player who wants their back pic
+  -- back can say so again on the row, or from the mod manager's page.
+  OverworldBattle.backSetting:setIndex(1, Game)
   -- and the battle screen the staged fight is composed for. WIDE re-lays that
   -- screen out on a 304x144 surface, which moves every anchor the arena camera
   -- is solved against (OverworldBattle.forceOG); FULL has just switched staged
@@ -320,6 +325,14 @@ local SETTINGS = {
   { OverworldBattle.setting,
     "Fight on the map: the battle draws over the nearest clear ground, "
     .. "shot over the shoulder with a slow parallax drift." },
+  -- Only offered while a fight can actually be staged on the map: with 3D-BTL
+  -- off the engine draws the classic screen, which is this row's ON already,
+  -- and a row that no longer decides anything is worse than no row.
+  { OverworldBattle.backSetting,
+    "Keep your own Pokemon on the battle menu, seen from behind in its "
+    .. "original slot, instead of standing it on the map facing the foe. "
+    .. "The foe is still out there on its own tile.",
+    when = function() return stagedBattles() end },
   { DayNight.setting,
     "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
     .. "let CYCLE run it -- ten minutes of sun, ten of moon, with the "
@@ -499,7 +512,12 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     return dropRow(out, "pipeline:tiltshift")
   end
   local extra = {}
-  for _, entry in ipairs(SETTINGS) do extra[#extra + 1] = entry[1]:row() end
+  for _, entry in ipairs(SETTINGS) do
+    -- a row whose own switch is off the table this frame (BACK, which needs a
+    -- staged fight to be about) is left off with it; the mod manager's page
+    -- still carries every one of them
+    if not entry.when or entry.when() then extra[#extra + 1] = entry[1]:row() end
+  end
   return insertGrouped(out, extra)
 end)
 
@@ -745,7 +763,7 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "1.2.1"
+mod.exports.version = "1.3.0"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
 -- camera without reaching into this mod's file layout
 mod.exports.lib = V

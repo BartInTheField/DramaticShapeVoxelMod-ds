@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.3.0
+
+### Added
+
+- **BACK, a new row under 3D-BTL: your own Pokémon stays on the battle menu.**
+  The staged shot stands both mons on the map, which is the mode's whole claim
+  -- and it costs the framing Gen 1 is most recognisable by: your own Pokémon,
+  seen from behind, sitting on top of the battle menu with its feet on the box.
+
+  With BACK on the foe is still geometry standing on its own tile at the far
+  end of the arena, and the player's side goes back to being the GB's own flat
+  back pic in the GB's own slot: same art, same 2x, same feet on row 96. It is
+  the engine's own pics layer that draws it, through the `onlySide` argument
+  that layer already takes, so every pic effect -- the grow-out-of-the-ball,
+  the faint slide, the damage blink, the send-out trainer pic -- comes along
+  unchanged and none of it is reimplemented.
+
+  Nothing else about the shot moves. The arena, the camera and the drift are
+  solved exactly as they were, so the foe stands where it always stood and the
+  player's cell is simply empty ground in the foreground. Two things follow the
+  setting: the `pokemon.sprite` hook stops asking for the front pic on the
+  player's side (it is a back view again, and the front art would be that mon
+  turned round to face the player it belongs to), and the move-animation offset
+  drops that side's contribution, because a pic that has not moved cannot have
+  moved the pair's centre.
+
+  OFF by default -- what the mode advertises is the two of them out there --
+  and only on the OPTIONS menu while 3D-BTL is on, since with staged battles
+  off the engine already draws exactly this.
+
+### Changed
+
+- **The battle's text box and menus are frosted glass, like the HUDs.** The
+  HUD blocks got panels because black glyphs on grass are not readable. The box
+  at the bottom had the opposite problem and the same cause: it is drawn as an
+  opaque white slab with a black border, which was the field's own colour back
+  when the field was white and is a sheet of paper laid over the bottom third
+  of the diorama now that it is not.
+
+  It gets exactly what the HUDs get -- the world behind it, blurred to frosted
+  glass and laid back down translucent, at the same frost and the same tint --
+  and it is measured into the same brightness verdict, so the ink over the menu
+  flips white with the ink over the HUDs rather than against it. Only the FILL
+  is taken away: the border, the text, the cursor and the down arrow are the
+  engine's own glyphs in their own places. The move menu's TYPE/PP box and
+  Mimic's copy menu get their own panels, trimmed to the rows above the box
+  below them so no pixel is frosted twice.
+
 ## 1.2.1
 
 ### Fixed

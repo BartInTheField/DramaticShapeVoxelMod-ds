@@ -306,9 +306,9 @@ end
 Pipelines.setLevel("voxel", 2)
 local hookedRows = Runtime.call("ui.options.rows", function(_, r) return r end,
                                { data = Data }, { { id = "text_speed" } })
-T.eq(#hookedRows, 5, "the options hook added a row per setting")
+T.eq(#hookedRows, 6, "the options hook added a row per setting")
 local grid, curve, battles = hookedRows[2], hookedRows[3], hookedRows[4]
-local daytime = hookedRows[5]
+local backRow, daytime = hookedRows[5], hookedRows[6]
 T.eq(daytime.label, "DAYTIME", "the day/night row carries its label")
 T.eq(daytime.value(), "SYNC",
   "and defaults to SYNC -- no value set follows the clock on the wall")
@@ -320,6 +320,12 @@ T.eq(battles.label, "3D-BTL", "the overworld-battle row carries its label")
 T.eq(battles.value(), "ON",
   "overworld battles are on by default -- the mode's headline is the world "
   .. "in 3D, and a battle is where the player spends half the game")
+T.eq(backRow.label, "BACK", "the back-pic row carries its label")
+T.eq(backRow.value(), "OFF",
+  "and is off by default -- what the mode advertises is BOTH mons out on the "
+  .. "map, so the classic slot is opt-in")
+T.check(backRow.id ~= battles.id and backRow.id:find("battleBack", 1, true),
+  "on its own key, so it persists beside 3D-BTL rather than over it")
 
 -- stepping writes through to the one place both rows read
 local settingGame = { save = { options = {} }, mods = { modOptions = {} } }
@@ -1866,6 +1872,98 @@ T.check(e[2] + e[4] <= hudRect.player[2],
   "the split falls between the two blocks, so neither is cut in half")
 T.eq(e[1], 0, "the bands are full width")
 T.eq(e[3], 160, "so a shaken HUD or a long name is carried out with its block")
+end
+
+-- ------- and the box at the bottom is on the same glass
+--
+-- The HUDs got frosted panels because black glyphs on grass are not readable.
+-- The text box had the opposite problem and the same cause: an opaque white
+-- slab over the bottom third of the diorama, which was the field's own colour
+-- back when the field was white. The rects here are what the glass is cut to,
+-- and they are a READ-ONLY mirror of drawTextArea's own branches -- so this is
+-- where a future engine that moves a box says so.
+do
+local rects = Battles.textRects({ phase = "messages" })
+T.check(rects.box ~= nil, "there is always a box: drawTextArea opens with one")
+T.eq(rects.box[2] + rects.box[4], 144,
+  "and it reaches the bottom of the frame")
+T.eq(rects.box[3], 160, "full width, like Font.drawBox(0, 12, 20, 6)")
+T.eq(rects.box[2], 96, "starting on the row the player's mon stands on")
+
+-- the menu the player picks FIGHT on is that same box, so nothing is added
+T.eq(Battles.textRects({ phase = "menu" }).moves, nil,
+  "the battle menu draws inside the box already there")
+
+-- the two phases that put a SECOND box above it get a second panel, trimmed
+-- to the rows above the first: two panels over the same pixels would frost it
+-- twice and leave a step along the seam
+for _, phase in ipairs({ "moveSelect", "mimicSelect" }) do
+  local more = Battles.textRects({ phase = phase })
+  local extra = more.moves or more.mimic
+  T.check(extra ~= nil, phase .. " raises a box of its own, and it is frosted")
+  T.eq(extra[2] + extra[4], more.box[2],
+    "which stops exactly where the box below it starts, so they never overlap")
+  T.check(extra[1] >= 0 and extra[1] + extra[3] <= 160 and extra[2] >= 0,
+    "and stays inside the frame the battle is drawn in")
+end
+
+-- AskName blanks the field on purpose -- the nickname prompt is meant to sit
+-- on nothing -- so there is no box and no glass under one
+T.eq(next(Battles.textRects({ phase = "menu", blankForAskName = true })), nil,
+  "the nickname prompt's blank field gets no glass")
+T.eq(next(Battles.textRects(nil)), nil, "and no battle, no boxes")
+end
+
+-- ------- BACK: the player's own mon stays on the menu
+--
+-- The staged shot stands both mons on the map, which costs the framing Gen 1
+-- is most recognisable by: your own Pokemon seen from behind, sitting on the
+-- battle menu. BACK hands that back without giving up the fight on the map --
+-- the foe is still geometry on its own tile.
+do
+T.eq(Battles.backSetting:get(), false,
+  "BACK is off by default: both mons out on the map is what the mode is")
+T.eq(Battles.backPinned(), false, "so nothing is pinned to the menu")
+
+local backGame = { save = { options = { modOptions = {} } },
+                   mods = { modOptions = {} } }
+Battles.setting:setIndex(1, backGame)              -- 3D-BTL on
+Battles.backSetting:setIndex(2, backGame)          -- BACK on
+T.eq(Battles.backPinned(), true, "switched on, the back pic is pinned")
+T.eq(backGame.save.options.modOptions.DRAMATIC_SHAPE.battleBack, true,
+  "and it persists on its own key, beside 3D-BTL rather than over it")
+T.eq(backGame.save.options.modOptions.DRAMATIC_SHAPE.battles, true,
+  "which is still where it always was")
+
+-- and it means nothing at all with staged battles off: there is no staged
+-- shot for a back pic to be pinned in front of, and the engine's own battle
+-- screen already draws exactly this
+Battles.setting:setIndex(2, backGame)
+T.eq(Battles.backPinned(), false,
+  "with 3D-BTL off the setting decides nothing, whatever it is left at")
+T.eq(Battles.backSetting:get(), true, "without being rewritten underneath")
+
+-- ...so the row comes off the menu with it, on the same reasoning the mod's
+-- other absent rows come off: a row that no longer decides anything is worse
+-- than no row
+local offRows = Runtime.call("ui.options.rows", function(_, r) return r end,
+                             backGame, { { id = "tilt" } })
+local offIds = {}
+for _, row in ipairs(offRows) do offIds[row.id] = true end
+T.check(offIds["DRAMATIC_SHAPE:battles"], "3D-BTL itself is still offered")
+T.check(not offIds["DRAMATIC_SHAPE:battleBack"],
+  "but BACK is off the menu while there is no staged fight to be about")
+
+Battles.setting:setIndex(1, backGame)
+local onRows = Runtime.call("ui.options.rows", function(_, r) return r end,
+                            backGame, { { id = "tilt" } })
+local onAt = {}
+for i, row in ipairs(onRows) do onAt[row.id] = i end
+T.check(onAt["DRAMATIC_SHAPE:battleBack"], "switched back on, so is the row")
+T.eq(onAt["DRAMATIC_SHAPE:battleBack"] - onAt["DRAMATIC_SHAPE:battles"], 1,
+  "directly under the row it belongs to")
+
+Battles.backSetting:setIndex(1, backGame)          -- and off for the rows below
 end
 
 -- ------- the way out of a battle is a fade, not a cut
