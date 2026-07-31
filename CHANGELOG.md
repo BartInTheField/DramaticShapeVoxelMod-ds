@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.7.31.1
+
+### Changed
+
+- Adopted CalVer (calver.org): versioned together with gen1recomp-ds. The
+  engine now reports a four-part `YYYY.M.D.MICRO` version, so this mod's
+  `game_version` drops its old `<2.0.0` ceiling (floor stays `>=0.1.37`) and
+  loads on CalVer engines. No behaviour change.
+
 ## 1.4.0
 
 ### Added
