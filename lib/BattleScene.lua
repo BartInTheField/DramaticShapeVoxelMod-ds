@@ -473,6 +473,11 @@ function BattleScene.render(state, arena, textures, token)
       -- the letterbox, so the depth-of-field pass can put its sharp band on
       -- the two marks rather than on a fraction of the window
       lx = lx, ly = ly, scale = s, pw = pw, ph = ph,
+      -- and the hour's light, for anything drawn over this shot that is NOT
+      -- geometry and so never went past the shader that applied it -- the back
+      -- pic pinned to the menu (see OverworldBattle.backPinned). Neutral
+      -- indoors, which is what DayNight.tint answers for a room.
+      tint = Voxel3D.tint,
     }
   end)
   -- the placed camera is ours for exactly this pass; anything else that

@@ -288,6 +288,11 @@ applyFull = function(level)
   -- half of it is spent. Set rather than forced -- the row is gone from the
   -- menu while FULL is on, but a save that already had it off gets it on.
   OverworldBattle.setting:setIndex(1, Game)
+  -- with both mons out there on it: BACK SPRITES keeps the player's own on the menu,
+  -- which is the one part of the old screen FULL is least about. Set rather
+  -- than held, like every other line here -- a player who wants their back pic
+  -- back can say so again on the row, or from the mod manager's page.
+  OverworldBattle.backSetting:setIndex(1, Game)
   -- and the battle screen the staged fight is composed for. WIDE re-lays that
   -- screen out on a 304x144 surface, which moves every anchor the arena camera
   -- is solved against (OverworldBattle.forceOG); FULL has just switched staged
@@ -320,6 +325,14 @@ local SETTINGS = {
   { OverworldBattle.setting,
     "Fight on the map: the battle draws over the nearest clear ground, "
     .. "shot over the shoulder with a slow parallax drift." },
+  -- Only offered while a fight can actually be staged on the map: with 3D-BTL
+  -- off the engine draws the classic screen, which is this row's ON already,
+  -- and a row that no longer decides anything is worse than no row.
+  { OverworldBattle.backSetting,
+    "Keep your own Pokemon on the battle menu, seen from behind in its "
+    .. "original slot, instead of standing it on the map facing the foe. "
+    .. "The foe is still out there on its own tile.",
+    when = function() return stagedBattles() end },
   { DayNight.setting,
     "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
     .. "let CYCLE run it -- ten minutes of sun, ten of moon, with the "
@@ -354,9 +367,12 @@ mod.options:define(schema)
 -- AND the engine's TILT on the same press.
 --
 -- Consequences worth being explicit about: while this mod is enabled, TILT
--- (3) and GBC FX (5) are unreachable by key. Both are still reachable on
--- the OPTIONS menu, and TILT is the one this mode supersedes anyway -- the
--- registry already forces it off whenever a world pipeline takes the pass.
+-- (3) and GBC FX (5) are unreachable by key -- and unreachable on the OPTIONS
+-- menu too, where both rows are taken away and both values held at zero (see
+-- pinEngineFx). Nothing is being hidden that still does something: TILT is the
+-- flat fake of what this mode does for real, the registry already forces it
+-- off whenever a world pipeline takes the pass, and GBC FX is a full-screen
+-- present pass over the top of the diorama. Uninstalling puts both back.
 --
 -- Everything the engine does around a pipeline hotkey has to happen here
 -- too, so the work is DELEGATED rather than reimplemented: Pipelines.hotkey
@@ -475,12 +491,50 @@ local function dropRow(out, id)
   return out
 end
 
+-- ------- TILT and GBC FX are gone while this mod is installed
+--
+-- Both fight the diorama, and both were already half-taken: the mode's own key
+-- (3) forces them off on every press, and the registry switches TILT off
+-- whenever a world pipeline takes the pass. What was left was two rows the
+-- player could set and watch get reverted -- TILT is the flat fake of what
+-- this mode does for real, and GBC FX is a full-screen present pass over the
+-- top of the whole thing.
+--
+-- So they come OFF the menu, and are HELD at zero rather than merely dropped.
+-- Hiding a live setting is a trap: a save written before the mod was installed
+-- can carry TILT 3, and a row that is not there is a row that cannot turn it
+-- back off. Pinned wherever the value could have arrived from -- the menu
+-- opening, a save being loaded or begun -- so there is no route by which one
+-- of them is on and unreachable.
+--
+-- Everything they did is still reachable: uninstall the mod and both rows are
+-- back, at whatever they were last set to.
+local function pinEngineFx(game)
+  game = game or require("src.core.Game")
+  local opts = game and game.save and game.save.options
+  local Tilt = require("src.render.Tilt")
+  local GBCFX = require("src.render.GBCFX")
+  local changed = false
+  if opts then
+    changed = (opts.tilt or 0) ~= 0 or (opts.gbcfx or 0) ~= 0
+    opts.tilt, opts.gbcfx = 0, 0
+  end
+  pcall(Tilt.setLevel, 0)
+  pcall(GBCFX.setLevel, 0)
+  if changed and game.writeOptions then pcall(game.writeOptions, game) end
+end
+
 -- call next() first and decorate what comes back, so every other mod's
 -- rows survive this one
 mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   local out = next(game, rows)
   if type(out) ~= "table" then return out end
   local Pipelines = require("src.render.Pipelines")
+  -- ahead of every branch below, including FULL's early return: these two are
+  -- off the menu whatever else this mod is or is not doing
+  pinEngineFx(game)
+  dropRow(out, "tilt")
+  dropRow(out, "gbcfx")
   -- BATTLE LAYOUT is the ENGINE's row, and this is the one place the mod takes
   -- one away. While a fight can be staged on the map, OG is the only layout it
   -- can be composed in (OverworldBattle.forceOG), so the value is pinned there
@@ -499,7 +553,12 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     return dropRow(out, "pipeline:tiltshift")
   end
   local extra = {}
-  for _, entry in ipairs(SETTINGS) do extra[#extra + 1] = entry[1]:row() end
+  for _, entry in ipairs(SETTINGS) do
+    -- a row whose own switch is off the table this frame (BACK SPRITES, which
+    -- needs a staged fight to be about) is left off with it; the mod manager's
+    -- page still carries every one of them
+    if not entry.when or entry.when() then extra[#extra + 1] = entry[1]:row() end
+  end
   return insertGrouped(out, extra)
 end)
 
@@ -728,10 +787,16 @@ end)
 
 mod.events:on("save.loaded", function()
   DayNight.restore()
+  -- a save written before this mod was installed can carry TILT or GBC FX
+  -- switched on, and their rows are not there to switch them back off (see
+  -- pinEngineFx). Answered here rather than only when the menu opens, so a
+  -- player who never opens it is not left playing under one.
+  pinEngineFx()
 end)
 
 mod.events:on("save.created", function()
   DayNight.restore()
+  pinEngineFx()
 end)
 
 -- The engine's own time-of-day seam. OverworldState:timeOfDay() is an
@@ -745,7 +810,7 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "1.2.1"
+mod.exports.version = "1.3.0"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
 -- camera without reaching into this mod's file layout
 mod.exports.lib = V

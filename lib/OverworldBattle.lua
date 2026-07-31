@@ -72,6 +72,38 @@ function OverworldBattle.enabled()
   return OverworldBattle.setting:get() and true or false
 end
 
+-- ------- BACK SPRITES: the player's own mon stays on the menu
+--
+-- The staged shot stands BOTH mons on the map, which is the mode's whole
+-- claim -- but it costs the one piece of framing Gen 1 is most recognisable
+-- by: your own Pokemon, seen from behind, sitting on top of the battle menu
+-- with its feet on the box. That silhouette is the series' shot.
+--
+-- So BACK SPRITES is offered as a middle setting rather than a compromise
+-- imposed on everyone. With it on the foe is still geometry standing on its
+-- tile at the far end of the arena, and the player's side goes back to being
+-- the GB's own flat back pic in the GB's own slot: same art, same 2x, same
+-- feet on row 96.
+-- Nothing else about the shot moves -- the arena, the camera and the drift are
+-- solved exactly as they were, so the foe stands where it always stood and the
+-- player's cell is simply empty ground in the foreground.
+--
+-- OFF by default: what the mode advertises is the pair of them out there.
+OverworldBattle.BACK_KEY = "battleBack"
+OverworldBattle.BACK_LABEL = "BACK SPRITES"
+
+OverworldBattle.backSetting = ModSetting.new(OverworldBattle.BACK_KEY,
+                                             OverworldBattle.BACK_LABEL,
+                                             { false, true }, { "OFF", "ON" })
+
+-- Gated on 3D-BTL rather than read alone: with staged battles off there is no
+-- staged shot for a back pic to be pinned in FRONT of, and the engine's own
+-- battle screen already draws exactly this.
+function OverworldBattle.backPinned()
+  if not OverworldBattle.enabled() then return false end
+  return OverworldBattle.backSetting:get() and true or false
+end
+
 -- ------- both mons face you
 --
 -- Standing on a map, seen from in front, a Pokemon showing you its BACK is
@@ -80,6 +112,10 @@ end
 -- player never really sees. So the player's side asks for the FRONT pic too,
 -- through the engine's own pokemon.sprite hook -- the seam that exists for
 -- exactly this, so no battle code has to be touched to get it.
+--
+-- Unless BACK SPRITES is on, the setting that asks for the back pic back:
+-- that mon is drawn in its own slot on the menu, seen from behind, and the
+-- front art would be it turned round to face the player it belongs to.
 --
 -- Answered BEFORE a battle exists, because the battler is built before the
 -- battle is pushed. So it cannot ask whether this fight is staged; it asks
@@ -91,6 +127,7 @@ local staged = { mapId = nil, ok = false }
 
 function OverworldBattle.wantsFront()
   if not OverworldBattle.enabled() then return false end
+  if OverworldBattle.backPinned() then return false end
   if not Voxel3D.available() then return false end
   -- required here rather than through the file's own helper: this runs
   -- while a battler is being built, which is before that helper is defined
@@ -140,6 +177,51 @@ OverworldBattle.HUD_RECT = {
   player = { 72, 56, 88, 40 },
 }
 
+-- ------- the box at the bottom, on the same glass
+--
+-- The HUDs got frosted panels because black glyphs on grass are not readable.
+-- The battle's text box and its menu had the opposite problem and the same
+-- cause: they are drawn as an OPAQUE WHITE slab with a black border, which was
+-- the field's own colour when the field was white and is a sheet of paper laid
+-- over the bottom third of the diorama now that it is not.
+--
+-- So the box gets exactly what the HUDs get: the world behind it, blurred to
+-- frosted glass and laid back down translucent, with the border and the text
+-- drawn over it unchanged, and the same brightness verdict flipping the ink
+-- when the ground under it is dark. Only the FILL is taken away -- every glyph
+-- the engine draws inside the box is still the engine's own, in its own place.
+--
+-- These are the boxes BattleState:drawTextArea lays down, as GB-frame rects.
+-- READ-ONLY duplicates of that function's own branches, the same kind of
+-- mirror hudLive is and for the same reason: there is no seam that reports "a
+-- move menu is up", and glass has to go down BEFORE the box that sits on it.
+-- The worst a future engine change can do is frost a rectangle nothing lands
+-- on, or leave a box unfrosted -- never break a battle.
+--
+-- Each rect stops where the next one starts rather than overlapping it: two
+-- panels over the same pixels would frost it twice and leave a visible step
+-- along the seam.
+OverworldBattle.TEXT_RECT = {
+  box = { 0, 96, 160, 48 },       -- Font.drawBox(0, 12, 20, 6), always
+  -- moveSelect's TYPE/PP box, Font.drawBox(0, 8, 11, 5), trimmed to the rows
+  -- above the box above -- its last tile row sits inside that one
+  moves = { 0, 64, 88, 32 },
+  -- mimicSelect's copy menu, Font.drawBox(0, 7, 16, 6), trimmed the same way
+  mimic = { 0, 56, 128, 40 },
+}
+
+function OverworldBattle.textRects(battle)
+  if not battle or battle.blankForAskName then return {} end
+  local r = OverworldBattle.TEXT_RECT
+  local out = { box = r.box }
+  if battle.phase == "moveSelect" then
+    out.moves = r.moves
+  elseif battle.phase == "mimicSelect" then
+    out.mimic = r.mimic
+  end
+  return out
+end
+
 -- ------- the HUDs, out at the window's own edges
 --
 -- The battle screen is 160x144 in the MIDDLE of the window and the world is the
@@ -186,6 +268,17 @@ function OverworldBattle.snapRects(shot)
     player = { px + p[1] * s, shot.ly + p[2] * s, p[3] * s, p[4] * s },
   }
   return rects, { enemy = ex, player = px }
+end
+
+-- A rect measured in the GB frame, in WORLD-canvas pixels: where the letterbox
+-- blit will actually put it. The text box has not moved anywhere -- it is drawn
+-- where it always was -- but its glass is laid into the world image alongside
+-- the HUDs' (see snapHUDs), which is the surface that reaches the screen a
+-- pixel to a pixel rather than magnified out of a 160x144 canvas.
+local function toWorld(rect, shot)
+  local s = shot.scale
+  return { shot.lx + rect[1] * s, shot.ly + rect[2] * s,
+           rect[3] * s, rect[4] * s }
 end
 
 -- ------- the live battle
@@ -471,6 +564,81 @@ local function withoutBackgroundFill(battle, fn)
   if not ok then error(err, 0) end
 end
 
+-- ------- the box, without its paper
+--
+-- Font.drawBox is a white fill and then six border glyphs, and the fill is the
+-- opaque slab the frosted panel underneath is there to replace. So for the
+-- length of one drawTextArea the white fills are dropped and everything else
+-- -- the border, the text, the cursor, the down arrow -- draws exactly as it
+-- always did, over the glass instead of over paper.
+--
+-- Every fill drawTextArea issues is one of those: the box's own, and the two
+-- eight-pixel cells MoveSelectionMenu wipes back to box white before it writes
+-- the border glyphs that hardware would have overwritten. Both are opaque
+-- white, both are paper, and both go.
+--
+-- The same shim shape as withoutBackgroundFill above, and scoped as tightly:
+-- installed around a single call, removed on the way out including on error,
+-- never live outside a battle frame this mode is drawing.
+local function withoutBoxFill(battle, fn)
+  local g = love.graphics
+  local rectangle = g.rectangle
+  g.rectangle = function(mode, ...)
+    if mode == "fill" then
+      local r, gr, b, a = g.getColor()
+      if r > 0.99 and gr > 0.99 and b > 0.99 and a > 0.99 then return end
+    end
+    return rectangle(mode, ...)
+  end
+  local ok, err = pcall(fn, battle)
+  g.rectangle = rectangle
+  if not ok then error(err, 0) end
+end
+
+-- ------- the hour's light, on a pic that is not geometry
+--
+-- Everything standing in the arena goes through the voxel shader, and that
+-- shader multiplies by the hour's tint: at dusk the whole diorama warms, at
+-- night it goes blue, and the two mons' cards go with it because they are
+-- drawn in the same pass as the ground they stand on.
+--
+-- A back pic pinned to the menu is not in that pass. It is the engine's own
+-- flat blit over the finished shot, so it arrived at noon while the world
+-- behind it was at midnight -- a mon lit by nothing in the frame.
+--
+-- So the tint is applied by hand, to that one draw. Every colour the pics
+-- layer sets is multiplied on its way past, which is the whole of it: the
+-- layer draws the pic with love.graphics.draw and LOVE multiplies by the draw
+-- colour, so tinting the colour tints the pixels -- and the alpha, the faint
+-- slide's fade and the blink's own colour all compose with it rather than
+-- being overwritten.
+--
+-- What this does NOT get is the sun: the cards are shadow-mapped, so one
+-- standing under a tree is darker than the tint alone, and this pic has no
+-- position in the scene to be shadowed at. It carries the hour and not the
+-- weather, which is the part the eye reads.
+local function withTint(tint, fn, ...)
+  if not tint then return fn(...) end
+  local r, g, b = tint[1] or 1, tint[2] or 1, tint[3] or 1
+  if r > 0.999 and g > 0.999 and b > 0.999 then return fn(...) end
+  local gfx = love.graphics
+  local setColor = gfx.setColor
+  gfx.setColor = function(cr, cg, cb, ca, ...)
+    if type(cr) == "table" then
+      return setColor({ (cr[1] or 1) * r, (cr[2] or 1) * g, (cr[3] or 1) * b,
+                        cr[4] }, cg, ...)
+    end
+    if cr == nil then return setColor(cr, cg, cb, ca, ...) end
+    return setColor(cr * r, (cg or 1) * g, (cb or 1) * b, ca, ...)
+  end
+  local ok, err = pcall(fn, ...)
+  gfx.setColor = setColor
+  -- the layer leaves whatever colour it last set, and that one is tinted;
+  -- hand the next caller plain white rather than a dimmed one
+  setColor(1, 1, 1, 1)
+  if not ok then error(err, 0) end
+end
+
 -- ------- the mons, as textures for the 3D pass
 --
 -- The two Pokemon are not composited over the world any more: they are quads
@@ -600,11 +768,19 @@ function OverworldBattle.flashing(battle)
 end
 
 -- Both sides, or nil when neither has anything to show.
+--
+-- One side under BACK SPRITES: the player's mon is not standing on the map at all
+-- there, it is on the menu, so it has no card to be a texture for -- and
+-- nothing downstream has to know that. No billboard, and no shadow on the
+-- ground under a mon that is not on it.
 function OverworldBattle.textures(battle)
   if not battle then return nil end
   local out = {}
   local okE, enemy = pcall(OverworldBattle.sideTexture, battle, "enemy")
-  local okP, player = pcall(OverworldBattle.sideTexture, battle, "player")
+  local okP, player = true, nil
+  if not OverworldBattle.backPinned() then
+    okP, player = pcall(OverworldBattle.sideTexture, battle, "player")
+  end
   out.enemy = okE and enemy or nil
   out.player = okP and player or nil
   if not (out.enemy or out.player) then return nil end
@@ -719,10 +895,44 @@ function OverworldBattle.install()
   -- before this screen is composited at all, so the flat pics layer has
   -- nothing left to do here. Skipped rather than left to draw underneath, or
   -- every Pokemon would appear twice: once on its tile and once in its slot.
+  --
+  -- Except under BACK SPRITES, where the player's side never became geometry and this
+  -- layer is the only thing that draws it. The engine's own onlySide argument
+  -- does the whole job: one call, the player's branches alone, in the slot and
+  -- at the scale the GB always put them -- feet on the box, 2x, back view.
   innerPics = BattleState.drawPicsLayer
-  function BattleState:drawPicsLayer(slide, sx, sy)
-    if self.dramaticShapeShot then return end
-    return innerPics(self, slide, sx, sy)
+  function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
+    local shot = self.dramaticShapeShot
+    if not shot then
+      return innerPics(self, slide, sx, sy, onlySide, skipMenuClip)
+    end
+    if OverworldBattle.backPinned() and onlySide ~= "enemy" then
+      -- under the hour's own light, like everything else in the frame -- see
+      -- withTint, and the tint BattleScene hands over with the shot.
+      --
+      -- Except on the wavy path, where the pic is baked into the GRAYSCALE bg
+      -- canvas for the zone pass to colour by region. That pass keys off the
+      -- red channel, and a night tint pulls red down -- it would not darken
+      -- the mon, it would remap it to the wrong shade. SE_WAVY_SCREEN lasts a
+      -- second and the hour survives it fine.
+      local tint = not self.grayPics and shot.tint or nil
+      return withTint(tint, innerPics, self, slide, sx, sy, "player",
+                      skipMenuClip)
+    end
+  end
+
+  -- The battle's text box and its menus, over the frosted glass laid down for
+  -- them rather than over their own white paper -- and their ink flipped with
+  -- the HUD's when the ground under the frame is dark, by the same rule and
+  -- off the same verdict.
+  local innerText = BattleState.drawTextArea
+  function BattleState:drawTextArea()
+    if not self.dramaticShapeShot then return innerText(self) end
+    local battle = self
+    if not self.dramaticShapeDark then return withoutBoxFill(battle, innerText) end
+    BattleHud.flipGlyphs(BattleScene.GB_W, BattleScene.GB_H, function()
+      withoutBoxFill(battle, innerText)
+    end)
   end
 
   -- Move animations are authored against the pics' fixed slots, and a single
@@ -740,10 +950,13 @@ function OverworldBattle.install()
     -- mons' projected positions, less the midpoint of the slots they used to
     -- sit in. A hit still lands on the mon it is aimed at.
     local a = OverworldBattle.ANCHOR
-    local dx = (shot.enemy[1] + shot.player[1]) / 2
-                 - (a.enemy[1] + a.player[1]) / 2
-    local dy = (shot.enemy[2] + shot.player[2]) / 2
-                 - (a.enemy[2] + a.player[2]) / 2
+    -- BACK SPRITES leaves the player's mon exactly where the GB put it, so that side
+    -- contributes no movement at all and the pair's centre has gone half as
+    -- far as the foe's mark did.
+    local px, py = shot.player[1], shot.player[2]
+    if OverworldBattle.backPinned() then px, py = a.player[1], a.player[2] end
+    local dx = (shot.enemy[1] + px) / 2 - (a.enemy[1] + a.player[1]) / 2
+    local dy = (shot.enemy[2] + py) / 2 - (a.enemy[2] + a.player[2]) / 2
     love.graphics.push()
     love.graphics.translate(math.floor(dx + 0.5), math.floor(dy + 0.5))
     local ok, err = pcall(innerAnim, self, colorized)
@@ -882,10 +1095,21 @@ function OverworldBattle.snapHUDs(battle, shot)
   local live = {}
   if enemy then live.enemy = rects.enemy end
   if player then live.player = rects.player end
+  -- and the text box's own glass, on the same pass. It stays in the middle of
+  -- the frame where the engine draws it -- only the HUDs were snapped out --
+  -- so its GB rect is mapped into the letterbox rather than to an edge.
+  for key, rect in pairs(OverworldBattle.textRects(battle)) do
+    live[key] = toWorld(rect, shot)
+  end
   -- measured under the SNAPPED rects: the panels are over whatever the world
   -- shows at the window's edges now, which is not what was behind them in the
-  -- middle of the frame
+  -- middle of the frame. ONE verdict over all of them, HUDs and box together,
+  -- for the reason BattleHud.verdict gives: a frame with white glyphs in the
+  -- corner and black ones on the menu reads as a bug rather than as adaptation.
   local dark = BattleHud.verdict(live, shot, true)
+  -- the box's own ink is flipped where the engine draws it, in the GB frame,
+  -- so the answer has to outlive this function (see drawHudPanels)
+  if session then session.dark = dark end
   local layer = OverworldBattle.hudTexture(battle, slide, dark)
   if not layer then return false end
 
@@ -911,23 +1135,29 @@ function OverworldBattle.snapHUDs(battle, shot)
   return true
 end
 
--- Lay the frosted glass down under whichever HUD is about to draw, and
--- record which way the glyphs have to flip.
+-- Lay the frosted glass down under whichever HUD and box are about to draw,
+-- and record which way the glyphs have to flip.
 --
--- The fallback path only: with the HUDs snapped out to the window's edges their
--- panels went with them, and there is nothing left inside the GB frame to lay
--- glass under.
+-- The panels are the fallback path only: normally the HUDs are snapped out to
+-- the window's edges and their glass, and the box's, went into the world image
+-- with them (snapHUDs). The VERDICT is needed either way -- the box's ink is
+-- drawn here, in the GB frame, whichever path laid the glass under it.
 function OverworldBattle.drawHudPanels(battle)
   local shot = battle.dramaticShapeShot
   battle.dramaticShapeDark = nil
-  if not shot or snapped() then return end
+  if not shot then return end
+  if snapped() then
+    battle.dramaticShapeDark = session and session.dark or nil
+    return
+  end
   local slide = (battle.introSlide or 0) * 4
   local enemy, player = OverworldBattle.hudLive(battle, slide)
-  if not (enemy or player) then return end
   local rect = OverworldBattle.HUD_RECT
   local live = {}
   if enemy then live.enemy = rect.enemy end
   if player then live.player = rect.player end
+  for key, r in pairs(OverworldBattle.textRects(battle)) do live[key] = r end
+  if not next(live) then return end
   local dark = BattleHud.verdict(live, shot)
   battle.dramaticShapeDark = dark
   for _, r in pairs(live) do BattleHud.panel(r, shot, dark) end

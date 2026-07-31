@@ -41,8 +41,15 @@ return {
   -- ------- routes
   -- narrow, deliberately: the route's interior is a 3-cell-wide lane and the
   -- wide shape only fits in the western connection border, which staged every
-  -- fight at the edge of the world instead of on the road
-  ["ROUTE_1"] = { x = 9, y = 16, shape = "narrow" },
+  -- fight at the edge of the world instead of on the road.
+  --
+  -- Of the seventeen spots the route has outside that border, fourteen are
+  -- this one mid-route clearing and the other three bury the near mon behind
+  -- a hedge -- which the clearance test passes, since it measures terrain
+  -- height along the sightline and a hedge in the apron row is not terrain.
+  -- So the choice is where in the clearing, and this is its west end: tree
+  -- line square behind the pair, nothing crossing either of them.
+  ["ROUTE_1"] = { x = 4, y = 14, shape = "narrow" },
   ["ROUTE_2"] = { x = 1, y = 49, shape = "wide" },
   ["ROUTE_3"] = { x = 57, y = 1, shape = "wide" },
   ["ROUTE_4"] = { x = 46, y = 7, shape = "wide" },

@@ -1,5 +1,119 @@
 # Changelog
 
+## 1.3.0
+
+### Added
+
+- **BACK SPRITES, a new row under 3D-BTL: your own Pokémon stays on the battle menu.**
+  The staged shot stands both mons on the map, which is the mode's whole claim
+  -- and it costs the framing Gen 1 is most recognisable by: your own Pokémon,
+  seen from behind, sitting on top of the battle menu with its feet on the box.
+
+  With BACK SPRITES on the foe is still geometry standing on its own tile at the far
+  end of the arena, and the player's side goes back to being the GB's own flat
+  back pic in the GB's own slot: same art, same 2x, same feet on row 96. It is
+  the engine's own pics layer that draws it, through the `onlySide` argument
+  that layer already takes, so every pic effect -- the grow-out-of-the-ball,
+  the faint slide, the damage blink, the send-out trainer pic -- comes along
+  unchanged and none of it is reimplemented.
+
+  Nothing else about the shot moves. The arena, the camera and the drift are
+  solved exactly as they were, so the foe stands where it always stood and the
+  player's cell is simply empty ground in the foreground. Two things follow the
+  setting: the `pokemon.sprite` hook stops asking for the front pic on the
+  player's side (it is a back view again, and the front art would be that mon
+  turned round to face the player it belongs to), and the move-animation offset
+  drops that side's contribution, because a pic that has not moved cannot have
+  moved the pair's centre.
+
+  OFF by default -- what the mode advertises is the two of them out there --
+  and only on the OPTIONS menu while 3D-BTL is on, since with staged battles
+  off the engine already draws exactly this.
+
+### Fixed
+
+- **Battle pics were see-through, and it took a back sprite on a tiled floor
+  to make it obvious.** Gen 1 pics are two-bit art whose lightest shade is
+  white, and the decoded PNGs key that shade to alpha 0 -- which cost nothing
+  when the field behind them was white too. Over a route, every belly, every
+  eye white and every highlight is a hole with the world showing through, and
+  the mon reads as a stencil.
+
+  `BattlePics` exists to put that paper back and, as written, put none of it
+  back. It flood-filled the outside from the border and filled what the flood
+  could not reach, which is exact and, on this game's art, empty: a Gen 1
+  figure is an open drawing, and its belly walks out to the border through the
+  gap between its legs. Read across all 305 of the game's battle pics, that
+  rule finds an enclosed hole in exactly none of them.
+
+  So a second rule: paper is what the figure is drawn OVER. A transparent
+  pixel with ink somewhere to its left AND to its right AND above it is under
+  the drawing and gets filled; the sky between a pair of ears has nothing over
+  it and stays sky, the ground beside a foot has nothing on one side of it and
+  stays ground. The silhouette is untouched either way, so the mon still cuts
+  cleanly against the world. Three running scans, cached per pic.
+
+  Asking for ink BELOW as well was the obvious first cut and it is wrong,
+  which took a second pass to find: a battle pic is cropped flush at the feet,
+  bottom-aligned in its slot with all the margin at the top, so half of any
+  mon's belly has bare frame edge under it. Requiring it left a clean vertical
+  channel of world showing straight down the middle of a Clefairy. Below
+  cannot be accepted on its own either, or the whole sky over a mon's head
+  fills in -- it has the mon under it. The asymmetry is the rule.
+
+  Both mons were affected -- the cards in the arena as much as anything -- so
+  this lands wherever a battle pic is drawn over the world, not just under
+  BACK SPRITES.
+
+- **The pinned back pic was lit at noon while the world behind it was not.**
+  Everything standing in the arena goes through the voxel shader, and that
+  shader multiplies by the hour's tint, so at dusk the diorama warms and at
+  night it goes blue -- the two mons' cards included, because they are drawn
+  in the same pass as the ground they stand on. A back pic pinned to the menu
+  is not in that pass; it is a flat blit over the finished shot, and it stayed
+  bright over a midnight route.
+
+  The same tint is now applied to that one draw, by multiplying every colour
+  the pics layer sets on its way past -- so the alpha, the faint slide's fade
+  and the damage blink all compose with it instead of being overwritten. What
+  it does not get is the sun: the cards are shadow-mapped and a pic pinned to
+  the menu has no position in the scene to be shadowed at, so it carries the
+  hour and not the weather.
+
+### Changed
+
+- **TILT and GBC FX are off the OPTIONS menu entirely while this mod is
+  installed.** Both fight the diorama and both were already half-taken: the
+  mode's own key forces them off on every press, and the registry switches
+  TILT off whenever a world pipeline takes the pass. What was left was two
+  rows a player could set and watch get reverted -- TILT being the flat fake
+  of what this mode does for real, and GBC FX a full-screen present pass over
+  the top of the whole thing.
+
+  Dropped AND held at zero, which is the part that matters: hiding a live
+  setting is a trap, because a save written before the mod was installed can
+  carry TILT 3 and a row that is not there cannot turn it back off. Pinned
+  wherever the value could arrive from -- the menu opening, a save being
+  loaded or begun -- so there is no route by which either is on and
+  unreachable. Uninstalling the mod puts both rows back, at whatever they were
+  last set to.
+
+- **The battle's text box and menus are frosted glass, like the HUDs.** The
+  HUD blocks got panels because black glyphs on grass are not readable. The box
+  at the bottom had the opposite problem and the same cause: it is drawn as an
+  opaque white slab with a black border, which was the field's own colour back
+  when the field was white and is a sheet of paper laid over the bottom third
+  of the diorama now that it is not.
+
+  It gets exactly what the HUDs get -- the world behind it, blurred to frosted
+  glass and laid back down translucent, at the same frost and the same tint --
+  and it is measured into the same brightness verdict, so the ink over the menu
+  flips white with the ink over the HUDs rather than against it. Only the FILL
+  is taken away: the border, the text, the cursor and the down arrow are the
+  engine's own glyphs in their own places. The move menu's TYPE/PP box and
+  Mimic's copy menu get their own panels, trimmed to the rows above the box
+  below them so no pixel is frosted twice.
+
 ## 1.2.1
 
 ### Fixed
