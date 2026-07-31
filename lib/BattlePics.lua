@@ -16,41 +16,49 @@
 -- image says which was which. There is no distinction to recover; there is one
 -- to draw.
 --
--- Two rules, and a pixel filled by either is paper:
+-- The rule is a flood fill from OUTSIDE the figure: whatever the background
+-- can reach is background, and whatever it cannot is paper. What makes that
+-- work is where the flood is allowed to start.
 --
---   ENCLOSED   the transparent region outside the figure is flood-filled from
---              the border, and anything transparent the flood cannot reach is
---              a hole the artwork closes on all sides.
+-- Start it at the image border and it fills everything and answers nothing.
+-- Gen 1 figures are open drawings and a belly is not a sealed room: it walks
+-- out between two legs and off the bottom of the frame. Run over all 352 of
+-- this game's battle pics, that finds an enclosed hole in NONE of them -- so
+-- it left every mon a stencil, which is the bug this file exists to fix and
+-- for a long time did not.
 --
---   UNDER THE  anything transparent with ink somewhere to its left AND to its
---   DRAWING    right AND above it.
+-- So the flood is started at the edges of the artwork's own BOUNDING BOX, and
+-- the left, the right and the top are seeded whole. The sky between a pair of
+-- ears reaches the top edge and stays sky; the gap between a body and a raised
+-- tail reaches the side and stays gap.
 --
--- The first is exact and catches almost nothing: Gen 1 pics are open figures,
--- and a belly reaches the border through the gap between two legs. Read across
--- all 305 of this game's battle pics, it fills an enclosed hole in none of them
--- -- so on its own it left every mon a stencil, which is the bug this file
--- exists to fix and did not.
+-- The BOTTOM is the interesting one, because two completely different things
+-- meet the underside of a figure and they have to be told apart.
 --
--- The second is the one that does the work: paper is what the figure is drawn
--- OVER, and a pixel with the drawing to either side of it and over it is under
--- the drawing. The sky above a pair of ears has nothing over it and stays sky;
--- the ground beside a foot has nothing on one side of it and stays ground.
+--   A DRAIN is where the drawing simply ran out -- a belly whose white carries
+--   on down until the artist stopped, leaking to the outside through the inch
+--   between a body and a leg. Seal it: what is above it is the mon.
 --
--- The asymmetry is the whole trick and it is not arbitrary. Look BELOW a pixel
--- and the question has no answer, because a battle pic is CROPPED FLUSH AT THE
--- FEET -- bottom-aligned in its slot, with the margin all at the top. Half of
--- any mon's belly has bare frame edge under it and nothing else, which is why
--- requiring ink below left a clean vertical channel of world showing through
--- the middle of a Clefairy. And below cannot be accepted on its own either, or
--- the entire sky over a mon's head fills in: it has the mon under it.
+--   A MOUTH is the space BETWEEN two legs, or under an arch. It is background
+--   that happens to be enclosed on three sides. Leave it open: the world
+--   should show through the gap in a trainer's stride.
 --
--- It is a heuristic and it is allowed to be one. What it fills that hardware
--- would not have distinguished is a deep notch -- the gap between two legs,
--- with a belly over it -- and the hardware drew white there too, so that is
--- the pixel the artist saw.
+-- What separates them is how WIDE the opening is, and on this game's art that
+-- is not a close call. Measured along the bottom of every battle pic: the
+-- drains run 3 and 4 pixels (Clefairy's back, Wartortle's back, Red's back)
+-- and the mouths run 10, 12, 14 and 17 (a Rattata's underbelly, Blue's stride,
+-- Brock's, a Pikachu's back). Nothing lands between 4 and 10, so the cut is
+-- taken at 6 with room either side rather than tuned to a single sprite.
 --
--- The silhouette is untouched either way, so the mon still cuts cleanly
--- against the world; only its insides stop being see-through.
+-- Apart from that one number the rule is exact: no pixel is filled for what
+-- surrounds it, only because the background provably cannot get to it. And it
+-- needs no idea whether it is holding a front pic, a back one or a trainer --
+-- fronts are near-solid silhouettes with almost nothing inside them to fill,
+-- and they come back untouched because that is what their own shape says, not
+-- because they were special-cased.
+--
+-- The silhouette is untouched, so the mon still cuts cleanly against the
+-- world; only its insides stop being see-through.
 --
 -- Read back off the GPU rather than off the asset, deliberately. What comes
 -- back is the pic the engine actually decided to draw -- species palette,
@@ -108,32 +116,78 @@ local function readBack(img)
   return ok and data or nil
 end
 
--- Mark every transparent pixel reachable from the border. That set is the
--- OUTSIDE; everything transparent it does not reach is an enclosed hole.
+-- The box the artwork actually occupies, or nil for a pic with no ink in it.
+--
+-- Not the image: a pic is centred in a 7x7-tile buffer and a small mon leaves
+-- whole rows and columns of nothing around itself. The bottom of THIS box is
+-- the cut the rule below turns on, and the bottom of the image is just empty
+-- frame some distance under it.
+local function inkBounds(data, w, h)
+  local x0, y0, x1, y1 = w, h, -1, -1
+  for y = 0, h - 1 do
+    for x = 0, w - 1 do
+      local _, _, _, a = data:getPixel(x, y)
+      if a > CUT then
+        if x < x0 then x0 = x end
+        if x > x1 then x1 = x end
+        if y < y0 then y0 = y end
+        if y > y1 then y1 = y end
+      end
+    end
+  end
+  if x1 < x0 then return nil end
+  return x0, y0, x1, y1
+end
+
+-- The widest opening along the bottom of a figure that still counts as a drain
+-- rather than a mouth. See the header for the measurements either side of it.
+BattlePics.DRAIN = 6
+
+-- Mark every transparent pixel the BACKGROUND can reach, flooding inward from
+-- the edges of the artwork's box: the left, the right and the top whole, and
+-- along the bottom only those openings wide enough to be background rather
+-- than the underside of a figure the drawing ran out of.
+--
+-- Confined to the box as well as seeded from it, so the empty frame under a
+-- short pic cannot walk around a sealed drain and come back up through it.
 --
 -- An explicit stack rather than recursion: a 56x56 pic is three thousand
 -- pixels and a keyed-out background is most of them, which is a deeper call
 -- chain than is worth risking for no gain.
-local function markOutside(data, w, h)
+local function markOutside(data, w, h, x0, y0, x1, y1)
   local outside = {}
   local stack, top = {}, 0
+  local function clear(x, y)
+    local _, _, _, a = data:getPixel(x, y)
+    return a <= CUT
+  end
   local function push(x, y)
-    if x < 0 or y < 0 or x >= w or y >= h then return end
+    if x < x0 or y < y0 or x > x1 or y > y1 then return end
     local key = y * w + x
     if outside[key] then return end
-    local _, _, _, a = data:getPixel(x, y)
-    if a > CUT then return end
+    if not clear(x, y) then return end
     outside[key] = true
     top = top + 1
     stack[top] = key
   end
-  for x = 0, w - 1 do
-    push(x, 0)
-    push(x, h - 1)
+  for x = x0, x1 do push(x, y0) end
+  for y = y0, y1 do
+    push(x0, y)
+    push(x1, y)
   end
-  for y = 0, h - 1 do
-    push(0, y)
-    push(w - 1, y)
+  -- the bottom, run by run: a wide one is the gap between two legs and lets
+  -- the world through, a narrow one is where a belly ran out and is sealed
+  local x = x0
+  while x <= x1 do
+    if clear(x, y1) then
+      local from = x
+      while x <= x1 and clear(x, y1) do x = x + 1 end
+      if (x - from) > BattlePics.DRAIN then
+        for k = from, x - 1 do push(k, y1) end
+      end
+    else
+      x = x + 1
+    end
   end
   while top > 0 do
     local key = stack[top]
@@ -145,52 +199,6 @@ local function markOutside(data, w, h)
     push(x, y + 1)
   end
   return outside
-end
-
--- Mark every transparent pixel with ink to its left, to its right and above.
---
--- Three running scans rather than three searches per pixel: sweeping each row
--- left to right carries "has there been ink yet" along with it, the same sweep
--- the other way, and one down the columns. Three passes over the image however
--- big the figure is.
-local function markUnderDrawing(data, w, h)
-  local ink = {}
-  for y = 0, h - 1 do
-    local row = y * w
-    for x = 0, w - 1 do
-      local _, _, _, a = data:getPixel(x, y)
-      if a > CUT then ink[row + x] = true end
-    end
-  end
-
-  local left, right, above = {}, {}, {}
-  for y = 0, h - 1 do
-    local row, seen = y * w, false
-    for x = 0, w - 1 do
-      left[row + x] = seen
-      seen = seen or ink[row + x] or false
-    end
-    seen = false
-    for x = w - 1, 0, -1 do
-      right[row + x] = seen
-      seen = seen or ink[row + x] or false
-    end
-  end
-  for x = 0, w - 1 do
-    local seen = false
-    for y = 0, h - 1 do
-      above[y * w + x] = seen
-      seen = seen or ink[y * w + x] or false
-    end
-  end
-
-  local under = {}
-  for key = 0, w * h - 1 do
-    if not ink[key] and left[key] and right[key] and above[key] then
-      under[key] = true
-    end
-  end
-  return under
 end
 
 -- The pic with its enclosed holes filled, or the pic itself when that could
@@ -206,14 +214,17 @@ function BattlePics.filled(img)
     local data = readBack(img)
     if not data then return end
     local w, h = data:getDimensions()
-    local outside = markOutside(data, w, h)
-    local under = markUnderDrawing(data, w, h)
+    local x0, y0, x1, y1 = inkBounds(data, w, h)
+    if not x0 then return end          -- a pic with nothing drawn in it
+    local outside = markOutside(data, w, h, x0, y0, x1, y1)
     local fill = BattlePics.FILL
     local changed = false
-    for y = 0, h - 1 do
+    -- only inside the box: everything beyond it is frame the artist never
+    -- reached, and filling that would put the mon in a white rectangle
+    for y = y0, y1 do
       local row = y * w
-      for x = 0, w - 1 do
-        if not outside[row + x] or under[row + x] then
+      for x = x0, x1 do
+        if not outside[row + x] then
           local _, _, _, a = data:getPixel(x, y)
           if a <= CUT then
             data:setPixel(x, y, fill[1], fill[2], fill[3], fill[4])
