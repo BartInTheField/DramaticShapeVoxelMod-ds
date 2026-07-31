@@ -9,12 +9,48 @@
 -- of every eye, the highlight down a Pikachu's cheek: all of it turns into a
 -- hole with the world showing through, and the mon reads as a stencil.
 --
--- So the paper is put back, and only where the paper was: the pic is read
--- back once, the transparent region OUTSIDE the figure is flood-filled from
--- the border, and every transparent pixel the flood could not reach -- every
--- hole enclosed by the artwork -- is filled opaque white. The silhouette is
--- untouched, so the mon still cuts cleanly against the world; only its
--- insides stop being see-through.
+-- So the paper is put back, and only where the paper was. Which pixels those
+-- are is the whole problem, and it has to be ANSWERED rather than looked up:
+-- the hardware drew the mon's white belly and the white field behind it with
+-- the same shade, the decoder keyed both to the same alpha, and nothing in the
+-- image says which was which. There is no distinction to recover; there is one
+-- to draw.
+--
+-- Two rules, and a pixel filled by either is paper:
+--
+--   ENCLOSED   the transparent region outside the figure is flood-filled from
+--              the border, and anything transparent the flood cannot reach is
+--              a hole the artwork closes on all sides.
+--
+--   UNDER THE  anything transparent with ink somewhere to its left AND to its
+--   DRAWING    right AND above it.
+--
+-- The first is exact and catches almost nothing: Gen 1 pics are open figures,
+-- and a belly reaches the border through the gap between two legs. Read across
+-- all 305 of this game's battle pics, it fills an enclosed hole in none of them
+-- -- so on its own it left every mon a stencil, which is the bug this file
+-- exists to fix and did not.
+--
+-- The second is the one that does the work: paper is what the figure is drawn
+-- OVER, and a pixel with the drawing to either side of it and over it is under
+-- the drawing. The sky above a pair of ears has nothing over it and stays sky;
+-- the ground beside a foot has nothing on one side of it and stays ground.
+--
+-- The asymmetry is the whole trick and it is not arbitrary. Look BELOW a pixel
+-- and the question has no answer, because a battle pic is CROPPED FLUSH AT THE
+-- FEET -- bottom-aligned in its slot, with the margin all at the top. Half of
+-- any mon's belly has bare frame edge under it and nothing else, which is why
+-- requiring ink below left a clean vertical channel of world showing through
+-- the middle of a Clefairy. And below cannot be accepted on its own either, or
+-- the entire sky over a mon's head fills in: it has the mon under it.
+--
+-- It is a heuristic and it is allowed to be one. What it fills that hardware
+-- would not have distinguished is a deep notch -- the gap between two legs,
+-- with a belly over it -- and the hardware drew white there too, so that is
+-- the pixel the artist saw.
+--
+-- The silhouette is untouched either way, so the mon still cuts cleanly
+-- against the world; only its insides stop being see-through.
 --
 -- Read back off the GPU rather than off the asset, deliberately. What comes
 -- back is the pic the engine actually decided to draw -- species palette,
@@ -111,6 +147,52 @@ local function markOutside(data, w, h)
   return outside
 end
 
+-- Mark every transparent pixel with ink to its left, to its right and above.
+--
+-- Three running scans rather than three searches per pixel: sweeping each row
+-- left to right carries "has there been ink yet" along with it, the same sweep
+-- the other way, and one down the columns. Three passes over the image however
+-- big the figure is.
+local function markUnderDrawing(data, w, h)
+  local ink = {}
+  for y = 0, h - 1 do
+    local row = y * w
+    for x = 0, w - 1 do
+      local _, _, _, a = data:getPixel(x, y)
+      if a > CUT then ink[row + x] = true end
+    end
+  end
+
+  local left, right, above = {}, {}, {}
+  for y = 0, h - 1 do
+    local row, seen = y * w, false
+    for x = 0, w - 1 do
+      left[row + x] = seen
+      seen = seen or ink[row + x] or false
+    end
+    seen = false
+    for x = w - 1, 0, -1 do
+      right[row + x] = seen
+      seen = seen or ink[row + x] or false
+    end
+  end
+  for x = 0, w - 1 do
+    local seen = false
+    for y = 0, h - 1 do
+      above[y * w + x] = seen
+      seen = seen or ink[y * w + x] or false
+    end
+  end
+
+  local under = {}
+  for key = 0, w * h - 1 do
+    if not ink[key] and left[key] and right[key] and above[key] then
+      under[key] = true
+    end
+  end
+  return under
+end
+
 -- The pic with its enclosed holes filled, or the pic itself when that could
 -- not be done (no pixel access, a driver that refused the readback). Never
 -- nil for a non-nil argument: a caller must always have something to draw.
@@ -125,12 +207,13 @@ function BattlePics.filled(img)
     if not data then return end
     local w, h = data:getDimensions()
     local outside = markOutside(data, w, h)
+    local under = markUnderDrawing(data, w, h)
     local fill = BattlePics.FILL
     local changed = false
     for y = 0, h - 1 do
       local row = y * w
       for x = 0, w - 1 do
-        if not outside[row + x] then
+        if not outside[row + x] or under[row + x] then
           local _, _, _, a = data:getPixel(x, y)
           if a <= CUT then
             data:setPixel(x, y, fill[1], fill[2], fill[3], fill[4])

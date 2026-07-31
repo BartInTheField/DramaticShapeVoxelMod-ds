@@ -288,7 +288,7 @@ applyFull = function(level)
   -- half of it is spent. Set rather than forced -- the row is gone from the
   -- menu while FULL is on, but a save that already had it off gets it on.
   OverworldBattle.setting:setIndex(1, Game)
-  -- with both mons out there on it: BACK keeps the player's own on the menu,
+  -- with both mons out there on it: BACK SPRITES keeps the player's own on the menu,
   -- which is the one part of the old screen FULL is least about. Set rather
   -- than held, like every other line here -- a player who wants their back pic
   -- back can say so again on the row, or from the mod manager's page.
@@ -513,7 +513,7 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   end
   local extra = {}
   for _, entry in ipairs(SETTINGS) do
-    -- a row whose own switch is off the table this frame (BACK, which needs a
+    -- a row whose own switch is off the table this frame (BACK SPRITES, which
     -- staged fight to be about) is left off with it; the mod manager's page
     -- still carries every one of them
     if not entry.when or entry.when() then extra[#extra + 1] = entry[1]:row() end

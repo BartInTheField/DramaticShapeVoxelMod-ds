@@ -320,7 +320,7 @@ T.eq(battles.label, "3D-BTL", "the overworld-battle row carries its label")
 T.eq(battles.value(), "ON",
   "overworld battles are on by default -- the mode's headline is the world "
   .. "in 3D, and a battle is where the player spends half the game")
-T.eq(backRow.label, "BACK", "the back-pic row carries its label")
+T.eq(backRow.label, "BACK SPRITES", "the back-pic row carries its label")
 T.eq(backRow.value(), "OFF",
   "and is off by default -- what the mode advertises is BOTH mons out on the "
   .. "map, so the classic slot is opt-in")
@@ -1918,17 +1918,17 @@ end
 --
 -- The staged shot stands both mons on the map, which costs the framing Gen 1
 -- is most recognisable by: your own Pokemon seen from behind, sitting on the
--- battle menu. BACK hands that back without giving up the fight on the map --
+-- battle menu. BACK SPRITES hands that back without giving up the fight on the map --
 -- the foe is still geometry on its own tile.
 do
 T.eq(Battles.backSetting:get(), false,
-  "BACK is off by default: both mons out on the map is what the mode is")
+  "BACK SPRITES is off by default: both mons out on the map is what the mode is")
 T.eq(Battles.backPinned(), false, "so nothing is pinned to the menu")
 
 local backGame = { save = { options = { modOptions = {} } },
                    mods = { modOptions = {} } }
 Battles.setting:setIndex(1, backGame)              -- 3D-BTL on
-Battles.backSetting:setIndex(2, backGame)          -- BACK on
+Battles.backSetting:setIndex(2, backGame)          -- BACK SPRITES on
 T.eq(Battles.backPinned(), true, "switched on, the back pic is pinned")
 T.eq(backGame.save.options.modOptions.DRAMATIC_SHAPE.battleBack, true,
   "and it persists on its own key, beside 3D-BTL rather than over it")
@@ -1952,7 +1952,7 @@ local offIds = {}
 for _, row in ipairs(offRows) do offIds[row.id] = true end
 T.check(offIds["DRAMATIC_SHAPE:battles"], "3D-BTL itself is still offered")
 T.check(not offIds["DRAMATIC_SHAPE:battleBack"],
-  "but BACK is off the menu while there is no staged fight to be about")
+  "but BACK SPRITES is off the menu while there is no staged fight to be about")
 
 Battles.setting:setIndex(1, backGame)
 local onRows = Runtime.call("ui.options.rows", function(_, r) return r end,
@@ -1964,6 +1964,110 @@ T.eq(onAt["DRAMATIC_SHAPE:battleBack"] - onAt["DRAMATIC_SHAPE:battles"], 1,
   "directly under the row it belongs to")
 
 Battles.backSetting:setIndex(1, backGame)          -- and off for the rows below
+end
+
+-- ------- and a pinned back pic is not a stencil
+--
+-- Gen 1 battle pics are two-bit art whose lightest shade is WHITE, and the
+-- decoded PNGs key that shade to alpha 0 -- free on a white field, a hole with
+-- the world showing through over a route. BattlePics puts the paper back.
+--
+-- It used to do that by flood-filling the outside and filling what the flood
+-- could not reach, which is exact and, on this game's art, fills NOTHING: a
+-- Gen 1 figure is an open drawing and its belly reaches the border through the
+-- gap between two legs. Every mon was a stencil, most obviously the back pic
+-- pinned to the menu, which is drawn flat over the tiles rather than shaded
+-- like a card. So paper is also anything with ink to its left AND right AND
+-- ABOVE it -- what the figure is drawn over.
+--
+-- The asymmetry is the load-bearing part, so it is what this drives at. A pic
+-- is cropped flush at the FEET, so half a mon's belly has bare frame edge
+-- under it: ask for ink below as well and a clean channel of world shows
+-- through the middle of the figure, which is the bug that got reported.
+--
+-- Driven against a hand-drawn figure with exactly that shape -- ears with sky
+-- between them, a belly, legs, and a bottom edge flush with the frame.
+-- NOTHING in it is enclosed: every transparent pixel inside walks out between
+-- the legs and off that bottom edge, so the flood-fill rule alone leaves this
+-- figure exactly as it found it.
+do
+local BattlePics = run.loader.exports.DRAMATIC_SHAPE.lib.require("BattlePics")
+
+local FIGURE = {
+  "..#..#..",   -- two ears, with sky between them
+  "..#..#..",
+  "..####..",   -- and the head closing under them
+  ".#....#.",   -- belly: sides beside it, head over it, bare frame under it
+  ".#....#.",
+  ".#....#.",
+  ".#.##.#.",   -- legs, with the gap between them open to the bottom edge
+  ".#.##.#.",   -- which the frame cuts flush, exactly as a battle pic is cut
+}
+local W, H = #FIGURE[1], #FIGURE
+
+local function fakeData(rows)
+  local px = {}
+  for y = 0, H - 1 do
+    for x = 0, W - 1 do
+      px[y * W + x] = rows[y + 1]:sub(x + 1, x + 1) == "#" and 1 or 0
+    end
+  end
+  return {
+    px = px,
+    getDimensions = function() return W, H end,
+    getPixel = function(self, x, y)
+      local a = self.px[y * W + x]
+      return 0, 0, 0, a
+    end,
+    setPixel = function(self, x, y, r, g, b, a) self.px[y * W + x] = a end,
+  }
+end
+
+local built = nil
+local realNewCanvas, realNewImage = love.graphics.newCanvas, love.graphics.newImage
+love.graphics.newCanvas = function()
+  return { setFilter = function() end, release = function() end,
+           newImageData = function() return fakeData(FIGURE) end }
+end
+love.graphics.newImage = function(data)
+  built = data
+  return { setFilter = function() end, dramaticShapeFilled = true }
+end
+
+local pic = { getDimensions = function() return W, H end }
+local out = BattlePics.filled(pic)
+love.graphics.newCanvas, love.graphics.newImage = realNewCanvas, realNewImage
+
+T.check(out ~= pic and built ~= nil,
+  "the pic comes back rebuilt: there was paper to put back")
+local function opaque(x, y) return built.px[y * W + x] > 0.5 end
+
+-- the belly, filled edge to edge. Every one of these has bare frame under it
+-- rather than ink, which is the case that used to leave a channel of world
+-- showing straight down the middle of the mon
+T.check(opaque(2, 3) and opaque(3, 4) and opaque(5, 5),
+  "the figure's white insides are filled back in, so it is not see-through")
+
+-- the sky between two ears is NOT paper, and this is what the third ray is
+-- for: nothing is drawn over it
+T.check(not opaque(3, 0) and not opaque(4, 1),
+  "the sky between its ears stays sky -- there is no drawing over it")
+
+-- the outside is untouched, which is what keeps the silhouette cutting
+-- cleanly against the world instead of standing in a white box
+T.check(not opaque(0, 0) and not opaque(7, 0),
+  "the corners it never covered stay transparent")
+T.check(not opaque(0, 4) and not opaque(7, 4),
+  "and so do the columns beside it -- ink on one side is not being inside")
+
+-- the notch between the legs, on the other hand, has a belly over it and legs
+-- either side, so it is paper. The hardware drew white there too
+T.check(opaque(2, 7), "the notch between its legs is under the drawing")
+
+-- and the answer is cached on the image, so a pic costs one readback a
+-- session rather than one a frame
+T.eq(BattlePics.filled(pic), out, "the rebuilt pic is cached on the original")
+BattlePics.invalidate()
 end
 
 -- ------- the way out of a battle is a fade, not a cut

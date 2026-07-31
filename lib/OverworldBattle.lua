@@ -72,24 +72,25 @@ function OverworldBattle.enabled()
   return OverworldBattle.setting:get() and true or false
 end
 
--- ------- BACK: the player's own mon stays on the menu
+-- ------- BACK SPRITES: the player's own mon stays on the menu
 --
 -- The staged shot stands BOTH mons on the map, which is the mode's whole
 -- claim -- but it costs the one piece of framing Gen 1 is most recognisable
 -- by: your own Pokemon, seen from behind, sitting on top of the battle menu
 -- with its feet on the box. That silhouette is the series' shot.
 --
--- So BACK is offered as a middle setting rather than a compromise imposed on
--- everyone. With it on the foe is still geometry standing on its tile at the
--- far end of the arena, and the player's side goes back to being the GB's own
--- flat back pic in the GB's own slot: same art, same 2x, same feet on row 96.
+-- So BACK SPRITES is offered as a middle setting rather than a compromise
+-- imposed on everyone. With it on the foe is still geometry standing on its
+-- tile at the far end of the arena, and the player's side goes back to being
+-- the GB's own flat back pic in the GB's own slot: same art, same 2x, same
+-- feet on row 96.
 -- Nothing else about the shot moves -- the arena, the camera and the drift are
 -- solved exactly as they were, so the foe stands where it always stood and the
 -- player's cell is simply empty ground in the foreground.
 --
 -- OFF by default: what the mode advertises is the pair of them out there.
 OverworldBattle.BACK_KEY = "battleBack"
-OverworldBattle.BACK_LABEL = "BACK"
+OverworldBattle.BACK_LABEL = "BACK SPRITES"
 
 OverworldBattle.backSetting = ModSetting.new(OverworldBattle.BACK_KEY,
                                              OverworldBattle.BACK_LABEL,
@@ -112,7 +113,7 @@ end
 -- through the engine's own pokemon.sprite hook -- the seam that exists for
 -- exactly this, so no battle code has to be touched to get it.
 --
--- Unless BACK is on, which is the setting that asks for the back pic back:
+-- Unless BACK SPRITES is on, the setting that asks for the back pic back:
 -- that mon is drawn in its own slot on the menu, seen from behind, and the
 -- front art would be it turned round to face the player it belongs to.
 --
@@ -594,6 +595,50 @@ local function withoutBoxFill(battle, fn)
   if not ok then error(err, 0) end
 end
 
+-- ------- the hour's light, on a pic that is not geometry
+--
+-- Everything standing in the arena goes through the voxel shader, and that
+-- shader multiplies by the hour's tint: at dusk the whole diorama warms, at
+-- night it goes blue, and the two mons' cards go with it because they are
+-- drawn in the same pass as the ground they stand on.
+--
+-- A back pic pinned to the menu is not in that pass. It is the engine's own
+-- flat blit over the finished shot, so it arrived at noon while the world
+-- behind it was at midnight -- a mon lit by nothing in the frame.
+--
+-- So the tint is applied by hand, to that one draw. Every colour the pics
+-- layer sets is multiplied on its way past, which is the whole of it: the
+-- layer draws the pic with love.graphics.draw and LOVE multiplies by the draw
+-- colour, so tinting the colour tints the pixels -- and the alpha, the faint
+-- slide's fade and the blink's own colour all compose with it rather than
+-- being overwritten.
+--
+-- What this does NOT get is the sun: the cards are shadow-mapped, so one
+-- standing under a tree is darker than the tint alone, and this pic has no
+-- position in the scene to be shadowed at. It carries the hour and not the
+-- weather, which is the part the eye reads.
+local function withTint(tint, fn, ...)
+  if not tint then return fn(...) end
+  local r, g, b = tint[1] or 1, tint[2] or 1, tint[3] or 1
+  if r > 0.999 and g > 0.999 and b > 0.999 then return fn(...) end
+  local gfx = love.graphics
+  local setColor = gfx.setColor
+  gfx.setColor = function(cr, cg, cb, ca, ...)
+    if type(cr) == "table" then
+      return setColor({ (cr[1] or 1) * r, (cr[2] or 1) * g, (cr[3] or 1) * b,
+                        cr[4] }, cg, ...)
+    end
+    if cr == nil then return setColor(cr, cg, cb, ca, ...) end
+    return setColor(cr * r, (cg or 1) * g, (cb or 1) * b, ca, ...)
+  end
+  local ok, err = pcall(fn, ...)
+  gfx.setColor = setColor
+  -- the layer leaves whatever colour it last set, and that one is tinted;
+  -- hand the next caller plain white rather than a dimmed one
+  setColor(1, 1, 1, 1)
+  if not ok then error(err, 0) end
+end
+
 -- ------- the mons, as textures for the 3D pass
 --
 -- The two Pokemon are not composited over the world any more: they are quads
@@ -724,7 +769,7 @@ end
 
 -- Both sides, or nil when neither has anything to show.
 --
--- One side under BACK: the player's mon is not standing on the map at all
+-- One side under BACK SPRITES: the player's mon is not standing on the map at all
 -- there, it is on the menu, so it has no card to be a texture for -- and
 -- nothing downstream has to know that. No billboard, and no shadow on the
 -- ground under a mon that is not on it.
@@ -851,17 +896,28 @@ function OverworldBattle.install()
   -- nothing left to do here. Skipped rather than left to draw underneath, or
   -- every Pokemon would appear twice: once on its tile and once in its slot.
   --
-  -- Except under BACK, where the player's side never became geometry and this
+  -- Except under BACK SPRITES, where the player's side never became geometry and this
   -- layer is the only thing that draws it. The engine's own onlySide argument
   -- does the whole job: one call, the player's branches alone, in the slot and
   -- at the scale the GB always put them -- feet on the box, 2x, back view.
   innerPics = BattleState.drawPicsLayer
   function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
-    if not self.dramaticShapeShot then
+    local shot = self.dramaticShapeShot
+    if not shot then
       return innerPics(self, slide, sx, sy, onlySide, skipMenuClip)
     end
     if OverworldBattle.backPinned() and onlySide ~= "enemy" then
-      return innerPics(self, slide, sx, sy, "player", skipMenuClip)
+      -- under the hour's own light, like everything else in the frame -- see
+      -- withTint, and the tint BattleScene hands over with the shot.
+      --
+      -- Except on the wavy path, where the pic is baked into the GRAYSCALE bg
+      -- canvas for the zone pass to colour by region. That pass keys off the
+      -- red channel, and a night tint pulls red down -- it would not darken
+      -- the mon, it would remap it to the wrong shade. SE_WAVY_SCREEN lasts a
+      -- second and the hour survives it fine.
+      local tint = not self.grayPics and shot.tint or nil
+      return withTint(tint, innerPics, self, slide, sx, sy, "player",
+                      skipMenuClip)
     end
   end
 
@@ -894,7 +950,7 @@ function OverworldBattle.install()
     -- mons' projected positions, less the midpoint of the slots they used to
     -- sit in. A hit still lands on the mon it is aimed at.
     local a = OverworldBattle.ANCHOR
-    -- BACK leaves the player's mon exactly where the GB put it, so that side
+    -- BACK SPRITES leaves the player's mon exactly where the GB put it, so that side
     -- contributes no movement at all and the pair's centre has gone half as
     -- far as the foe's mark did.
     local px, py = shot.player[1], shot.player[2]
