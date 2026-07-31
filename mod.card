@@ -2,10 +2,10 @@
 -- and the manager detail pane; never by the loader's merge.
 return {
   summary = "The overworld as a 3D diorama, and battles fought on it: real occlusion, tilt-shift, over-the-shoulder fights.",
-  author = "DramaticShape",
-  contact = "https://github.com/DramaticShape/DRAMATIC_SHAPE",
+  author = "BartInTheField",
+  contact = "https://github.com/BartInTheField/gen1recomp-ds",
   tags = { "graphics", "3d", "voxel", "render-pipeline", "presentation",
-           "battle" },
+           "battle", "dual-screen" },
   differences = {
     changed = {
       "with VOXEL on, the overworld draws as 3D geometry instead of flat tiles",
@@ -16,6 +16,7 @@ return {
       "a battle's letterbox voids go black rather than white, because the battle canvas is no longer white",
       "the engine's TILT and GBC FX rows are taken OFF the OPTIONS menu and held at off for as long as this mod is installed -- TILT is the flat fake of what this mode does for real, GBC FX is a full-screen pass over the top of it; uninstalling puts both rows back",
       "hotkeys 3 and 5 are taken over from those two, which have no key and no row while this is loaded",
+      "with DUAL SCREEN on the voxel diorama is the top screen and every UI layer -- menus, text boxes, battles -- the bottom; an on-map staged battle stands down for the split and the engine's own battle draws below",
     },
     added = {
       "VOXEL options row and hotkey 3 (OFF / 15 / 35 / 50 / 75 degrees)",
@@ -35,6 +36,7 @@ return {
       "the battle backdrop renders at the GB's 160x144 to match the pics composited over it, so it is chunkier than the free-roam pass",
       "menus and cutscenes are unaffected -- outside a battle the mode only draws the free-roam overworld",
       "terrain meshes are cached per map, so the first frame after entering a large map costs a build",
+      "under DUAL SCREEN the top screen is the diorama and battles are the engine's classic 160x144 on the bottom, so the on-map staged fight (3D-BTL) is off for the duration of the split",
     },
   },
   credits = {

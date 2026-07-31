@@ -1,7 +1,8 @@
 # Dramatic Shape Voxel Mod
 
-A mod for the [Pokémon Gen 1 Recompilation
-Project](https://github.com/bryanthaboi/pokemon-gen1-recomp-project).
+A mod for [Gen1Recomp-DS](https://github.com/BartInTheField/gen1recomp-ds),
+the dual-screen fork of the native LÖVE2D
+[gen1recomp](https://github.com/bryanthaboi/gen1recomp).
 
 The overworld as a 3D diorama. Terrain is extruded into real geometry,
 occlusion comes from a depth buffer rather than a y-sort, characters stand
@@ -39,6 +40,21 @@ menu.
 
 **3D-BTL** is on by default and is independent of **VOXEL**: battles draw
 on the world whether or not the free-roam camera is pitched over.
+
+## Dual screen
+
+Gen1Recomp-DS stacks the game as two Game Boy screens, and this mode is built
+for it: with the engine's **DUAL SCREEN** row on, the voxel diorama is the
+**top** screen and every UI layer — menus, text boxes and battles — is the
+**bottom** one.
+
+Because the top screen is one fixed 160×144 Game Boy screen, the diorama
+renders at that screen's size rather than filling the window, and the survey
+**ZOOM** and the engine's own **TILT** stand down while DUAL SCREEN is on —
+the same way they already do for each other. **3D-BTL** stands down for the
+split too: a battle is a full-screen state, so it draws as the engine's
+classic 160×144 screen on the bottom while the top holds the diorama the
+fight was called from. Turn DUAL SCREEN off and the on-map battle returns.
 
 Two of the engine's own rows are taken away while this mod is installed:
 **TILT**, which is the flat fake of what this mode does for real, and **GBC

@@ -50,6 +50,20 @@ local ChunkMesher = V.require("ChunkMesher")
 
 local OverworldBattle = {}
 
+-- gen1recomp-ds DUAL SCREEN: a battle is a full-screen UI state and draws on
+-- the BOTTOM screen (the top holds the frozen diorama), so a fight is not
+-- staged over the map -- the engine's own 160x144 battle runs instead. Gated
+-- here rather than reworking the shot; memoized so a per-frame caller does not
+-- re-search package.path on an engine that has no such module.
+local dsModule = nil
+local function dualScreen()
+  if dsModule == nil then
+    local ok, DS = pcall(require, "src.render.DualScreen")
+    dsModule = (ok and DS) or false
+  end
+  return dsModule and dsModule.active() and true or false
+end
+
 -- DS_BATTLE_DEBUG=1 logs what the HUD's brightness probe is reading, once a
 -- second, which is how the glyph flip is checked from a shot run. Read
 -- through pcall: the loader's sandbox does not hand a mod `os`, and a
@@ -127,6 +141,7 @@ local staged = { mapId = nil, ok = false }
 
 function OverworldBattle.wantsFront()
   if not OverworldBattle.enabled() then return false end
+  if dualScreen() then return false end
   if OverworldBattle.backPinned() then return false end
   if not Voxel3D.available() then return false end
   -- required here rather than through the file's own helper: this runs
@@ -359,6 +374,7 @@ end
 function OverworldBattle.begin(state, battle)
   OverworldBattle.finish()
   if not OverworldBattle.enabled() then return false end
+  if dualScreen() then return false end
   if not (state and state.map and state.player) then return false end
   if not Voxel3D.available() then return false end
 

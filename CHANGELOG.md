@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.0
+
+### Added
+
+- **Built for gen1recomp-ds and its DUAL SCREEN mode.** With the engine's
+  DUAL SCREEN row on, the voxel diorama is drawn on the top screen and every
+  UI layer -- menus, text boxes and battles -- on the bottom.
+
+  The world pass is one fixed 160x144 Game Boy screen there, so the scene is
+  rendered at that screen's region size rather than the whole window -- a
+  window-sized canvas would frame a 160x144 view into a widescreen and stretch
+  it -- and the field-FX overlay (emote bubbles, dust, the fishing rod) scales
+  with it. On-map staged battles (3D-BTL) stand down while the split is on: a
+  battle is a full-screen state, so the engine's own classic 160x144 battle
+  draws on the bottom screen while the top holds the diorama the fight was
+  called from. The mode falls back to its single-screen behaviour on an engine
+  that does not offer dual screen.
+
+### Changed
+
+- Retargeted to
+  [gen1recomp-ds](https://github.com/BartInTheField/gen1recomp-ds): manifest,
+  README and mod.card now point at the dual-screen fork. The mod id
+  (`DRAMATIC_SHAPE`) is unchanged, so an existing save's day/night clock and
+  this mod's settings carry over untouched.
+
 ## 1.3.0
 
 ### Added

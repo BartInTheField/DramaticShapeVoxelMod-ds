@@ -1,5 +1,6 @@
--- Dramatic Shape Voxel Mod: a full 3D diorama overworld, shipped as a
--- rendering pipeline mod.
+-- Dramatic Shape Voxel Mod (for gen1recomp-ds): a full 3D diorama overworld,
+-- shipped as a rendering pipeline mod. Built for dual screen -- the diorama
+-- is the top screen; menus, text boxes and battles are the bottom one.
 --
 -- The engine's render_pipelines registry (src/mods/Schemas.lua) lets a mod
 -- own part of the frame.  This mod registers two:
@@ -108,12 +109,34 @@ local applyFull
 -- is ALREADY in pixels per world pixel (Zoom.scale over Renderer:fitScale,
 -- which measures the drawable), so the closures ctx.drawFx runs were being
 -- scaled for a canvas 2.6x bigger than the one they drew into.
+-- gen1recomp-ds's DUAL SCREEN mode, when the engine offers it: the world
+-- pass is one 160x144 Game Boy screen (the top one), so this mode is the top
+-- screen. pcall-guarded so an engine without the module answers no.
+local dsModule = nil          -- nil: not yet resolved; false: absent; table: the module
+local function dualScreen()
+  if dsModule == nil then
+    local ok, DS = pcall(require, "src.render.DualScreen")
+    dsModule = (ok and DS) or false      -- cache the miss; a failed require is not
+  end                                    -- kept in package.loaded, so resolve once
+  if not dsModule then return false, nil end
+  return dsModule.active() and true or false, dsModule
+end
+
 local function sceneSize(ctx)
+  local pw, ph
   if love.graphics and love.graphics.getPixelDimensions then
-    local pw, ph = love.graphics.getPixelDimensions()
-    if pw and ph and pw > 0 and ph > 0 then return pw, ph end
+    pw, ph = love.graphics.getPixelDimensions()
   end
-  return ctx.width, ctx.height
+  if not (pw and ph and pw > 0 and ph > 0) then pw, ph = ctx.width, ctx.height end
+  -- On the top screen render at that screen's region size (160:144), not the
+  -- whole window: worldViewSize is fixed to 160x144 here, so a window-sized
+  -- canvas would frame a Game Boy screen into a widescreen and stretch it.
+  local ds, DS = dualScreen()
+  if ds and DS then
+    local _, world = DS.regions(pw, ph)
+    if world and world.w > 0 and world.h > 0 then return world.w, world.h end
+  end
+  return pw, ph
 end
 
 local voidFill = { last = nil }
@@ -206,8 +229,13 @@ mod.content.render_pipelines:register("voxel", {
                                      ctx.vw, ctx.vh, ctx.paletteFor)
     if not canvas then return nil end   -- fall back to the 2D path
     if Voxel3D.beginOverlay() then
+      -- ctx.scale is canvas pixels per world pixel for the whole window; on
+      -- the smaller top-screen canvas the FX scale with it, or an emote bubble
+      -- or dust puff draws window-sized over a Game-Boy-sized diorama.
+      local fxScale = ctx.scale
+      if dualScreen() and ctx.vw and ctx.vw > 0 then fxScale = sw / ctx.vw end
       ctx.drawFx(function(wx, wy) return Voxel3D.project(wx, 0, wy) end,
-                 ctx.scale)
+                 fxScale)
       Voxel3D.endOverlay()
     end
     return canvas
@@ -848,7 +876,7 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "1.3.0"
+mod.exports.version = "1.4.0"
 -- exposed so a companion mod can pin its own tiles' shapes or read the
 -- camera without reaching into this mod's file layout
 mod.exports.lib = V
